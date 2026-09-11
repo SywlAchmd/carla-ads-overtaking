@@ -1,0 +1,18 @@
+__pycache__/
+*.pyc
+
+# Hasil run: diabaikan kecuali yang wajib ada atau dirujuk dokumentasi.
+out/*
+
+# WAJIB -- dibaca 7 file termasuk tests/test_mpc.py. Tanpa ini clone baru gagal uji.
+# Kalau hilang, bangkitkan ulang: python extract_params.py (butuh server CARLA).
+!out/vehicle_params.json
+
+# Gambar untuk bab metodologi & hasil, dirujuk RANGKUMAN_PENULISAN.md (~2,7 MB).
+!out/*.png
+
+# Data validasi model Tahap 1 (kecil).
+!out/*.csv
+
+# Yang diabaikan: *.mp4 (~18 MB, bisa dibangkitkan ulang dengan record_*.py)
+# dan *.npz (log run, bisa dibangkitkan ulang dengan main.py).

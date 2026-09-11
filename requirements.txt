@@ -1,0 +1,21 @@
+# Dipasang dan diuji pada Python 3.10.12, Ubuntu 22.04, 11 September 2026.
+# Semua versi di-pin persis: bagian 11.1 menuntut hasil yang reproducible, dan
+# versi CasADi/IPOPT memengaruhi waktu solve maupun jumlah iterasi.
+#
+# PENTING -- carla:
+#   Versi paket klien WAJIB sama persis dengan versi server CARLA. Server di sini
+#   0.9.16. Beda versi memberi galat koneksi yang membingungkan, bukan pesan
+#   "versi tidak cocok". Wheel carla juga spesifik versi Python (3.10).
+#
+# Dependensi SISTEM (bukan pip):
+#   ffmpeg    -- dipakai record_path.py dan record_maneuver.py untuk encode video
+#                sudo apt install ffmpeg
+#   CARLA 0.9.16 server -- tidak dipasang lewat pip
+
+carla==0.9.16          # klien simulator; harus == versi server
+casadi==3.7.2          # MPC: Opti + IPOPT (control.py)
+numpy==2.2.6           # seluruh modul numerik
+
+# Hanya untuk gambar dan video, tidak memengaruhi hasil kendali
+matplotlib==3.10.9     # validate_model.py, show_lanes.py
+Pillow==12.3.0         # overlay kandidat di record_maneuver.py
