@@ -239,6 +239,11 @@ def test_throttle_pi():
         t, _ = pi.update(2.0, 0.5, DT)
     assert t > 0.2, t
     assert 0.0 <= t <= 1.0
+    # regresi: saat jelajah, a_ref -0,0016 (praktis nol) dulu memutus throttle
+    # dan me-reset integrator -> kecepatan anjlok. Split-range: tetap throttle.
+    pi.i = 0.4
+    t, b = pi.update(-0.0016, 0.0, DT)
+    assert t > 0.35 and b == 0.0 and pi.i > 0.39, (t, b, pi.i)
 
 
 def test_command_lengkap():

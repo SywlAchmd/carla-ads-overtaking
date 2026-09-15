@@ -94,11 +94,13 @@ MPC_TOL = 1e-4
 
 # Konversi a -> throttle/brake (bagian 7.5). PI, bukan tabel kalibrasi:
 # tidak perlu sapuan di CARLA dan mengoreksi diri terhadap tanjakan & drag.
-# Disapu dengan tuning.py. kp 0,08 -> 0,3: error kecepatan rata-rata 0,110 ->
-# 0,021 m/s dan dip saat manuver 45,8 -> 48,0 km/jam (referensi 48,2).
-# Optimumnya tajam: 0,25 dan 0,4 sama-sama memberi ~0,1-0,19.
-THROTTLE_KP = 0.3
-THROTTLE_KI = 0.25
+# kp = 1/gain plant lokal: terukur 7,1-8,6 m/s² per satuan throttle di 48 km/jam
+# (gigi 3-4), jadi 1/K = 0,12-0,14 -> suku kp*a_ref memberi tepat throttle yang
+# dibutuhkan. Setelah PI split-range, v err datar 0,011-0,016 m/s untuk kp
+# 0,035-0,3 dan rusak di 0,56 (berosilasi): margin x2 dan x4 ke tepi plateau.
+# "Optimum tajam kp=0,3" dulu artefak reset integrator, TUNING_MPC.md bagian 10-11.
+THROTTLE_KP = 0.14
+THROTTLE_KI = 0.25                  # tengah geometrik plateau 0,125-0,5
 
 V_MAX = 13.9                        # m/s, 50 km/jam -- UU 22/2009 Ps. 21; PP 79/2013 Ps. 23(4)
 # v_ref DIPISAH dari v_max (bagian 0.2 memang membedakannya: v_ref ego 40-50

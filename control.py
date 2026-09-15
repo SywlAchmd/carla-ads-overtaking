@@ -82,12 +82,14 @@ class ThrottlePI:
         self.i = 0.0
 
     def update(self, a_ref, a_ukur, dt):
-        if a_ref < 0.0:                                  # mengerem: rem murni
-            self.i = 0.0
-            return 0.0, float(np.clip(-a_ref / abs(config.A_MIN), 0.0, 1.0))
-
         err = a_ref - a_ukur
         keluaran = self.kp * a_ref + self.i + self.kp * err
+        # Split-range: rem hanya bila throttle sudah jenuh di nol. Dulu setiap
+        # a_ref < 0 langsung ke rem dan me-reset integrator -- a_ref -0,0016 m/s²
+        # (praktis nol) memutus throttle 0,38 -> 0,02 dan kecepatan anjlok.
+        # Integrator dibekukan saat jenuh (anti-windup), tidak di-reset.
+        if keluaran <= 0.0 and a_ref < 0.0:
+            return 0.0, float(np.clip(-a_ref / abs(config.A_MIN), 0.0, 1.0))
         if 0.0 < keluaran < 1.0:                         # anti-windup
             self.i += self.ki * err * dt
             self.i = float(np.clip(self.i, -0.5, 0.8))
