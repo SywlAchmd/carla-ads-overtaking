@@ -1075,10 +1075,13 @@ sudah menggambarkan konfigurasi itu. Perlu diulang setelah S2/S4/S5 dan vision.
 
 ### 13.8 Terbuka
 
-- **Zona memakai kotak sejajar sumbu.** Pada yaw 7 derajat saat pindah lajur, sudut
-  bodi bergeser ~0,31 m yang tidak dihitung. `evaluation.jarak_kotak` memakai
-  asumsi yang sama, jadi penilaian konsisten dengan constraint -- tapi jarak bodi
-  sebenarnya bisa lebih kecil daripada yang dilaporkan.
+- **Zona memakai kotak sejajar sumbu; penilai sudah tidak.** Penilai kini memutar
+  kotak menurut sudut hadap tiap kendaraan (15 Sep 2026), jadi angka yang dilaporkan
+  eksak. Constraint tetap memakai sudut nol, dan itu memadai menurut hasil ukur:
+  saat kedua bodi berdampingan sudut hadap ego <= 5,1 derajat (S1 3,4; S3 1,3),
+  sementara jarak yang tercapai 1,43-1,51 m terhadap syarat 1,0 m. Menggemukkan
+  zona untuk yaw terburuk (13,6 derajat, terjadi jauh sebelum berpapasan) menuntut
+  ruang lateral 4,1 m di lajur selebar 3,5 m -- manuvernya justru jadi mustahil.
 - **Dimensi kendaraan lain dianggap Nissan Patrol** (terbesar di skenario);
   perception tidak mengukur dimensi, jadi zona memakai satu ukuran tetap.
 

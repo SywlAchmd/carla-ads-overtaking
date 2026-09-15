@@ -362,10 +362,12 @@ bukan hasil kendali MPC. Physics dimatikan dan posisi ego ditempelkan ke lintasa
 Beri label "lintasan hasil local planner". Video hasil kendali sudah bisa dibuat
 (Tahap 5 selesai), tapi `record_maneuver.py` belum diubah.
 
-**Gambar yang perlu dibangkitkan ulang sebelum masuk skripsi:** `run_s1_mpc.png`
-dan seluruh grafik hasil kendali dibuat sebelum perbaikan bagian 15, jadi angkanya
-tidak lagi cocok dengan bagian 14. Jalankan ulang `main.py` untuk S1 dan S3, lalu
-buat grafiknya dari `out/run_s1_mpc_gt.npz` dan `out/run_s3_mpc_gt.npz`.
+**Grafik hasil kendali sudah diperbarui** dan cocok dengan angka bagian 14:
+`run_s1_mpc.png` dan `run_s3_mpc.png`, dibuat `plot_run.py` langsung dari log
+(`out/run_s1_mpc_gt.npz`, `out/run_s3_mpc_gt.npz`) tanpa menjalankan simulasi
+ulang. Empat panel: simpangan lateral, kecepatan, jarak antar bodi ke tiap
+kendaraan, dan sudut kemudi + waktu solve; latar tiap panel diwarnai menurut
+state FSM.
 
 Data mentah: `vehicle_params.json`, `model_validation.csv`,
 `model_validation_18kmh.csv`.
@@ -404,10 +406,12 @@ Data mentah: `vehicle_params.json`, `model_validation.csv`,
   **Sudah diperbaiki di kode dan diverifikasi di CARLA** (meleset <= 4%), tapi
   tetap perlu ditulis sebagai penyimpangan dari proposal.
 - Sitasi Flash & Hogan (1985) belum diverifikasi.
-- **Zona aman dan penilai sama-sama memakai kotak sejajar sumbu.** Pada sudut
-  hadap 7° saat pindah lajur, sudut bodi bergeser ~0,31 m yang tidak dihitung.
-  Keduanya konsisten satu sama lain, jadi penilaian tidak bias, tapi jarak bodi
-  sebenarnya bisa lebih kecil daripada yang dilaporkan. Masuk batasan masalah.
+- **Constraint MPC memakai kotak sejajar sumbu, penilai tidak lagi.** Penilai kini
+  memutar kotak menurut sudut hadap masing-masing kendaraan, jadi angka jarak yang
+  dilaporkan sudah eksak. Constraint tetap memakai sudut nol; itu pendekatan desain,
+  dan kecukupannya ditunjukkan hasil ukur: saat kedua bodi berdampingan sudut hadap
+  ego hanya <= 5,1° dan jarak yang tercapai 1,43-1,51 m terhadap syarat 1,0 m.
+  Nyatakan sebagai asumsi perancangan, bukan sebagai celah.
 - **Dimensi kendaraan lain dianggap tetap** (Nissan Patrol, yang terbesar di
   skenario); perception tidak mengukur dimensi. Masuk batasan masalah.
 - Skenario S2, S4, S5 belum ada. Definisi S3 dibuat tanpa naskah bagian 11.3
@@ -475,7 +479,7 @@ dibutuhkan di Tahap 9 untuk success rate, bukan untuk ketepatan satu run).
 |---|---|---|
 | Susunan | target 7,0 m/s, 60 m di depan, lajur kanan kosong | idem + kendaraan 13,9 m/s di lajur kanan, mulai 10 m di belakang ego |
 | Vonis bagian 11.2 | **BERHASIL** | **BERHASIL** |
-| Jarak minimum antar bodi | 1,39 m | 1,49 m |
+| Jarak minimum antar bodi | 1,43 m | 1,51 m |
 | Deviasi dari tengah lajur saat `LANE_KEEPING` | 0,011 m rata-rata, 0,152 m maks | 0,012 m rata-rata, 0,131 m maks |
 | Durasi manuver | 11,7 s | 19,2 s |
 | Kecepatan terendah | 47,8 km/jam | 18,9 km/jam (saat mengikuti; acuan `v_goal` turun sampai 14,5) |

@@ -2063,3 +2063,38 @@ bukan disimpulkan dari korelasi.
 
 **Terbuka:** zona dan penilai sama-sama memakai kotak sejajar sumbu; pada yaw 7
 derajat sudut bodi bergeser ~0,31 m yang tidak dihitung (README #1).
+
+---
+
+## Penilai Jarak: Kotak Berputar dan Titik Acuan Bodi
+
+15 September 2026. Menutup butir terbuka terakhir dari bagian 13 `TUNING_MPC.md`.
+
+**Dua cacat di alat ukur, bukan di kendali:**
+
+1. **Kotak ego ditaruh di sumbu belakang**, bukan pusat bodi -- geser 1,433 m di
+   arah memanjang, persis kesalahan yang sama dengan bias XTE di Tahap 1.
+2. **Sudut hadap diabaikan.** Pada 5 derajat, kotak sejajar sumbu melebihkan jarak
+   ~0,2 m.
+
+`evaluation.jarak_kotak` sekarang memutar kedua kotak menurut sudut hadapnya dan
+mengukur dari pusat bodi. Poligon cembung yang terpisah selalu punya jarak minimum
+di pasangan titik-sudut ke sisi, jadi cukup memeriksa kedua arah, ditambah uji
+sumbu pemisah untuk kasus bertumpuk. Yaw kendaraan lain ikut dicatat di log: yang
+dipaksa searah jalan hanya kecepatannya, arah hadap bodinya bebas (terukur <= 0,45
+derajat, jadi asumsi lama hampir benar -- sekarang tidak perlu diasumsikan).
+
+**Efek kedua cacat hampir saling meniadakan.** S1 1,39 -> 1,43 m, S3 1,49 -> 1,51 m.
+Kalau hanya salah satu diperbaiki, angkanya akan menyesatkan ke arah berlawanan.
+
+**Constraint MPC sengaja tidak diubah.** Urutannya dibalik: perbaiki dulu alat
+ukurnya, jalankan, baru putuskan. Hasilnya menunjukkan sudut nol memadai -- saat
+kedua bodi berdampingan sudut hadap ego <= 5,1 derajat, dan jarak yang tercapai
+1,43-1,51 m terhadap syarat 1,0 m. Menggemukkan zona untuk yaw terburuk (13,6
+derajat, terjadi jauh sebelum berpapasan) akan menuntut ruang lateral 4,1 m di
+lajur selebar 3,5 m dan justru melumpuhkan manuver.
+
+**`plot_run.py`** dibuat untuk grafik bab 4: empat panel (simpangan lateral,
+kecepatan, jarak antar bodi tiap kendaraan, kemudi + waktu solve) dengan latar
+diwarnai menurut state FSM, dibaca langsung dari log tanpa menjalankan simulasi
+ulang. `out/run_s1_mpc.png` dan `out/run_s3_mpc.png` sudah dibangkitkan ulang.

@@ -32,7 +32,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 65 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 66 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -53,6 +53,7 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python validate_model.py --scan` | cari spawn point ruas lurus |
 | `python record_maneuver.py --kamera atas` | video dengan overlay kandidat |
 | `python show_lanes.py` | gambar lingkungan uji dan kandidat planner |
+| `python plot_run.py --skenario S3` | grafik hasil run dari log (tidak butuh server) |
 
 ## Arsitektur
 
@@ -90,8 +91,8 @@ Hasil terakhir (MPC + GT perception, 12 Sep 2026), identik bit-per-bit antar-run
 
 | Skenario | Vonis | Jarak min antar bodi | Deviasi lajur | Durasi manuver | Catatan |
 |---|---|---|---|---|---|
-| S1 | **BERHASIL** | 1,39 m | 0,011 m | 11,7 s | flying overtaking |
-| S3 | **BERHASIL** | 1,49 m | 0,012 m | 19,2 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
+| S1 | **BERHASIL** | 1,43 m | 0,011 m | 11,7 s | flying overtaking |
+| S3 | **BERHASIL** | 1,51 m | 0,012 m | 19,2 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
 
 Deviasi turun 0,161 -> 0,011 m setelah syarat awal percepatan lateral planner
 diambil dari rencana, bukan hasil ukur (`TUNING_MPC.md` 13.5). S3 wajib
@@ -104,19 +105,12 @@ menabrak guardrail.
 
 Diurutkan dari yang paling mendesak.
 
-### 1. Zona aman mengabaikan sudut hadap
-Zona aman kini menjamin `JARAK_AMAN` (`TUNING_MPC.md` 13), tapi kotak terlarangnya
-**sejajar sumbu**: pada sudut hadap 7 derajat saat pindah lajur, sudut bodi bergeser
-~0,31 m yang tidak ikut dihitung. `evaluation.jarak_kotak` memakai asumsi yang sama,
-jadi penilaian konsisten dengan constraint -- tapi jarak bodi sebenarnya bisa lebih
-kecil dari yang dilaporkan. Perbaikannya: putar kotak menurut yaw di kedua tempat.
-
-### 2. Video hasil kendali MPC
+### 1. Video hasil kendali MPC
 `record_maneuver.py` masih **playback**: physics dimatikan, posisi ego ditempel
 ke lintasan planner. Ganti sumber gerakannya jadi `apply_control` dari MPC;
 bagian rekam (`record_path.capture`) dan overlay kandidat tidak perlu diubah.
 
-### 3. Skenario S2, S4, S5 belum ada; skrip rekam masih hardcode
+### 2. Skenario S2, S4, S5 belum ada; skrip rekam masih hardcode
 `main.py` kini membaca `config.SKENARIO` (S1, S3 -- definisi S3 dibuat tanpa
 naskah bagian 11.3, cocokkan). Skrip rekam belum:
 
@@ -130,7 +124,7 @@ Selain itu, `record_maneuver.py` baris ~181 menuliskan langsung offset sumbu bel
 `-1.4329...` alih-alih membaca `out/vehicle_params.json`. S5 (kendaraan depan
 mengerem mendadak) butuh profil kecepatan terjadwal.
 
-### 4. Tahap 8 — `VisionPerception`
+### 3. Tahap 8 — `VisionPerception`
 YOLOPX + ByteTrack + depth camera + Kalman filter, bagian 10 rencana kerja.
 Belum dimulai. Termasuk **perbaikan data leakage** YOLOPX (split per-frame;
 akurasi 96–98% sekarang tidak valid).
@@ -139,16 +133,16 @@ Antarmukanya sudah siap: keluarkan `ndarray (M, 4) = [x, y, vx, vy]` dalam
 **frame ego**, posisi dan kecepatan **relatif** terhadap ego — sama persis
 dengan `GroundTruthPerception`. Tidak perlu tahu soal frame jalan.
 
-### 5. Tuning ulang setelah Tahap 8
+### 4. Tuning ulang setelah Tahap 8
 Bagian 10.6: deteksi vision lebih berisik, bobot MPC dan parameter FSM **wajib**
 dituning ulang. Bobot sekarang dituning di atas ground truth. Harness-nya siap
 (`tuning.py`).
 
-### 6. Tahap 9 — eksperimen penuh
+### 5. Tahap 9 — eksperimen penuh
 Matriks bagian 11.4 tinggal dua baris: MPC + GT dan MPC + vision. Masing-masing
 skenario diulang 10–20 kali.
 
-### 7. Lain-lain
+### 6. Lain-lain
 - Sitasi Flash & Hogan (1985) belum diverifikasi ke sumber primer.
 - Klaim real-time: waktu solve **harus diukur di mesin senggang** — lihat
   "Perlu diperhatikan".
