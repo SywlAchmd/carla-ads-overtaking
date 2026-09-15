@@ -93,7 +93,11 @@ KAMERA_BASELINE = 0.54              # m, jarak kamera warna kiri-kanan
 # YOLOPX (Tahap 8). Repo model = folder tetangga repo skripsi supaya repo ini
 # tetap bersih; weight hasil pelatihan penulis ada di luar area skripsi.
 YOLOPX_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'YOLOPX')
-YOLOPX_WEIGHT = os.path.expanduser('~/sawal/data_acquisition/epoch-195.pth')
+# best.pth = hasil fine-tuning penulis ke domain CARLA (epoch 263, mAP50 0,991).
+# epoch-195.pth = weight resmi YOLOPX hasil latihan BDD100K, dipakai sebagai titik
+# awal fine-tuning dan sebagai pembanding domain di cek_deteksi.py --weight.
+YOLOPX_WEIGHT = os.path.join(os.path.dirname(YOLOPX_DIR), 'weights', 'best.pth')
+YOLOPX_WEIGHT_BDD = os.path.expanduser('~/sawal/data_acquisition/epoch-195.pth')
 DETEKSI_CONF = 0.5                  # ambang keyakinan; ditentukan cek_deteksi.py
 DETEKSI_IOU = 0.45                  # ambang NMS
 

@@ -70,10 +70,12 @@ def tempel_segmentasi(rgb, da, ll):
 def main_():
     ap = argparse.ArgumentParser()
     ap.add_argument('--lajur', type=int, default=0, help='0 = lajur ego, 1 = lajur menyalip')
+    ap.add_argument('--weight', default=None, help='bawaan: config.YOLOPX_WEIGHT (fine-tuned)')
+    ap.add_argument('--tag', default='', help='akhiran nama berkas gambar')
     args = ap.parse_args()
 
     params = json.load(open(config.VEHICLE_PARAMS_JSON))
-    net = yolopx.YOLOPX()
+    net = yolopx.YOLOPX(weight=args.weight)
     K = matriks_kamera()
     print(f'YOLOPX epoch {net.epoch}, perangkat {net.device}, half={net.half}')
     print(f'{"jarak":>6}{"GT piksel":>11}{"deteksi":>9}{"conf":>6}{"IoU":>6}'
@@ -147,7 +149,7 @@ def main_():
                         if gt is not None:
                             cv2.rectangle(gambar, (int(gt[0]), int(gt[1])), (int(gt[2]), int(gt[3])),
                                           (255, 255, 255), 1)
-                        jalur = f'{config.OUT_DIR}/deteksi_{jarak}m_lajur{args.lajur}.png'
+                        jalur = f'{config.OUT_DIR}/deteksi_{jarak}m_lajur{args.lajur}{args.tag}.png'
                         cv2.imwrite(jalur, gambar)
                         print(f'       gambar -> {jalur}')
                     target.destroy()

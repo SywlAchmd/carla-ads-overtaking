@@ -684,65 +684,96 @@ butir di bagian 16.
 
 ## 18. Kalibrasi deteksi YOLOPX terhadap ground truth (Tahap 8)
 
-15 September 2026, `cek_deteksi.py`. Kendaraan Nissan Patrol ditaruh pada sembilan
-jarak di depan ego, di lajur ego dan di lajur menyalip; tiap frame dibandingkan
-dengan kotak 2D hasil proyeksi bounding box 3D-nya. **Angka pelatihan (96-98%)
-tidak dipakai karena split-nya masih bocor** -- ini pengukuran terhadap simulator,
-dan skenarionya sama dengan yang dipakai eksperimen kendali.
+15 September 2026, `cek_deteksi.py`. Nissan Patrol ditaruh pada sembilan jarak di
+depan ego, di lajur ego dan lajur menyalip; tiap frame dibandingkan dengan kotak
+2D hasil proyeksi bounding box 3D-nya. Ini pengukuran terhadap **simulator**, di
+lingkungan uji yang sama dengan eksperimen kendali -- bukan angka pelatihan.
 
-Model: `epoch-195.pth`, satu kelas (kendaraan), masukan 1280x720 di-letterbox ke
-384x640, inferensi **14,4 ms** per frame di RTX 5060 (anggaran tick 50 ms).
+Dua model dibandingkan:
 
-### 18.1 Laju deteksi terhadap jarak
-
-| Jarak | Lebar target di citra | Lajur ego | Lajur menyalip |
-|---|---|---|---|
-| 10 m | 207-326 px | terdeteksi, conf 0,91 | terdeteksi, conf 0,90 |
-| 20 m | 77-100 px | 0,91 | 0,92 |
-| 30 m | 48-57 px | 0,90 | 0,90 |
-| 50 m | 27-30 px | 0,84 | 0,81 |
-| 80 m | 16-17 px | 0,84 | 0,78 |
-
-Terdeteksi di **seluruh** jarak 10-80 m, IoU terhadap ground truth 0,74-0,94.
-Jangkauan perception (80 m) melampaui yang dibutuhkan planner: horizon MPC 2 detik
-pada 13,4 m/s hanya 27 m, dan pemicu menyalip bekerja di ~32 m.
-
-### 18.2 Ambang keyakinan
-
-Positif palsu per frame pada jalan kosong maupun berisi target:
-
-| Ambang | Positif palsu | Deteksi benar |
+| | `best.pth` | `epoch-195.pth` |
 |---|---|---|
-| 0,3 (bawaan demo) | 4-8 | semua |
-| 0,4 | 0-2 | semua |
-| **0,5** | **0** | semua (terlemah 0,78) |
-| 0,6 / 0,7 | 0 | semua |
+| Asal | fine-tuning penulis ke domain CARLA, epoch 263 | weight resmi YOLOPX, latihan BDD100K |
+| Peran di skripsi | **model yang dipakai** | pembanding jarak domain, sekaligus titik awal fine-tuning |
 
-**`DETEKSI_CONF = 0,5`**: margin 0,28 terhadap deteksi terlemah, dan positif palsu
-hilang. Satu positif palsu sempat muncul di satu frame lalu tidak terulang saat
-diulang -- deteksi ambang-batas pada rumpun semak di garis horizon. Positif palsu
-pada ambang rendah semuanya berupa batu, semak, dan pagar di sekitar horizon,
-bukan kendaraan.
+Masukan 1280x720 di-letterbox ke 384x640; inferensi **14,4 ms** per frame di
+RTX 5060 (anggaran tick 50 ms, MPC memakai ~12 ms).
 
-### 18.3 Depth membaca MUKA kendaraan, bukan pusatnya
+### 18.1 Hasil fine-tuning (dari `out/yolopx_finetune_results.csv`)
+
+363 epoch, terbaik di epoch 263. Diukur pada split validasi penulis:
+
+| Metrik | Epoch 1 (masih BDD) | Epoch 263 |
+|---|---|---|
+| mAP50 | 0,945 | **0,991** |
+| mAP50-95 | 0,610 | **0,976** |
+| IoU area jalan | 0,554 | **0,990** |
+| Akurasi garis lajur | 0,000 | **0,988** |
+| IoU garis lajur | 0,000 | **0,582** |
+
+**Angka ini terlalu optimistis dan tidak boleh diklaim apa adanya**: split-nya masih
+bocor (frame berurutan dari sesi rekaman yang sama masuk ke train dan val
+sekaligus). Yang sah disimpulkan darinya hanyalah bahwa adaptasi domain bekerja.
+
+### 18.2 Laju deteksi terhadap jarak, di Town04
+
+| Jarak | Lebar target | `best.pth` lajur ego | `best.pth` lajur menyalip | `epoch-195.pth` |
+|---|---|---|---|---|
+| 10 m | 207-326 px | 0,99 | 0,99 | 0,91 |
+| 20 m | 77-100 px | 0,98 | 0,98 | 0,91 |
+| 30 m | 48-57 px | 0,99 | 0,99 | 0,91 |
+| 40 m | 34-39 px | 0,97 | 0,98 | 0,84 |
+| 50 m | 27-30 px | **tidak terdeteksi** | 0,62 | 0,84 |
+| 60 m | 22-24 px | **tidak terdeteksi** | **tidak terdeteksi** | 0,85 |
+| 80 m | 16-17 px | **tidak terdeteksi** | **tidak terdeteksi** | 0,84 |
+
+**Pertukaran yang harus ditulis di pembahasan:** fine-tuning menaikkan keyakinan di
+jarak dekat (0,84-0,92 menjadi 0,97-0,99) dan menghapus seluruh positif palsu,
+tetapi **memotong jangkauan dari 80 m menjadi 40-50 m**. Penyebab yang paling
+masuk akal: data latih penulis diambil di jalan kota, sehingga kendaraan sejauh
+50-80 m (lebar 16-30 piksel) nyaris tidak terwakili.
+
+Jangkauan 40-50 m masih memenuhi kebutuhan kendali, tapi marginnya tipis: pemicu
+menyalip bekerja pada celah ~32 m dan horizon MPC 2 detik setara 27 m.
+
+### 18.3 Positif palsu
+
+| Ambang | `best.pth` | `epoch-195.pth` |
+|---|---|---|
+| 0,3 | **0** | 4-8 |
+| 0,4 | **0** | 0-3 |
+| 0,5 | 0 | 0 |
+
+`DETEKSI_CONF = 0,5` dipertahankan: pada model fine-tuned ia bahkan tidak lagi
+diperlukan untuk menekan positif palsu, tetapi tetap memberi margin terhadap
+deteksi terlemah (0,62 pada 50 m). Positif palsu model BDD seluruhnya batu, semak,
+dan pagar di garis horizon -- bukan benda menyerupai kendaraan.
+
+### 18.4 Depth membaca MUKA kendaraan, bukan pusatnya
 
 Galat jarak dari depth camera konsisten **-2,3 m** terhadap pusat bodi target, di
-semua jarak. Itu tepat setengah panjang Nissan Patrol (4,605/2 = 2,30 m): depth
-mengukur permukaan yang terlihat. Diukur ulang terhadap muka kendaraan, galatnya
-tinggal **-0,48 sampai +0,19 m**.
+semua jarak dan pada kedua model. Itu tepat setengah panjang Nissan Patrol
+(4,605/2 = 2,30 m): depth mengukur permukaan yang terlihat. Diukur ulang terhadap
+muka kendaraan, galatnya tinggal **-0,48 sampai +0,19 m**.
 
-**Konsekuensi untuk `VisionPerception`:** keluarannya harus posisi PUSAT bodi,
-sama seperti `GroundTruthPerception`, supaya kedua konfigurasi di bagian 11.4
-membandingkan besaran yang sama. Jadi jarak depth perlu ditambah setengah panjang
-kendaraan yang diasumsikan (`LAIN_PANJANG`), dan asumsi itu masuk batasan masalah.
+**Konsekuensi untuk `VisionPerception`:** keluarannya harus posisi PUSAT bodi, sama
+seperti `GroundTruthPerception`, supaya perbandingan bagian 11.4 membandingkan
+besaran yang sama. Jarak depth perlu ditambah setengah panjang kendaraan yang
+diasumsikan (`LAIN_PANJANG`), dan asumsi itu masuk batasan masalah.
 
-### 18.4 Segmentasi
+### 18.5 Segmentasi
 
-Area jalan (drivable area) terdeteksi rapi menutupi keempat lajur searah dan
-berhenti tepat di pembatas beton. Garis lajur terdeteksi untuk marka sungguhan,
-tetapi memunculkan bercak palsu di sisi kanan pada area pagar dan rumput. Karena
-jalur kendali skripsi ini memakai lajur dari peta (bukan dari kamera), kedua
-keluaran itu dipakai sebagai bahan pembahasan, bukan masukan kendali.
+Dengan `best.pth`, area jalan bersih dan garis lajur terdeteksi sebagai marka
+putus-putus yang mengikuti marka sebenarnya. Dengan `epoch-195.pth`, keluaran
+lajur pecah menjadi 7-8 komponen dan mengecat bahu jalan kanan beserta pagar
+(3 komponen rapi pada citra BDD asli sebagai pembanding).
 
-Gambar: `out/deteksi_15m_lajur0.png`, `out/deteksi_30m_lajur0.png`,
-`out/deteksi_60m_lajur0.png` dan padanannya untuk lajur menyalip.
+Perlu dikonfirmasi ke anotasi: pada keluaran fine-tuned, area jalan menutupi lajur
+di kanan ego tetapi **tidak menutupi lajur yang sedang ditempati ego**. Itu
+mengikuti konvensi anotasi data latih, bukan kekeliruan model.
+
+Karena kendali skripsi ini memakai geometri lajur dari peta, dua keluaran
+segmentasi itu berperan sebagai bahan pembahasan, bukan masukan kendali.
+
+Gambar: `out/deteksi_30m_lajur0.png` (fine-tuned), `out/deteksi_30m_lajur0_bdd.png`
+(BDD, pembanding), `out/deteksi_15m_lajur1.png` (lajur menyalip).

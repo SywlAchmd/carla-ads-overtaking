@@ -2136,3 +2136,51 @@ Pada ambang bawaan demo 0,3 muncul 4-8 positif palsu per frame, seluruhnya batu,
 semak, dan pagar di garis horizon. Pada 0,5 hilang, sementara deteksi benar
 terlemah 0,78. Satu positif palsu sempat muncul lalu tidak terulang saat diulang;
 render kamera tidak sedeterministik fisika.
+
+---
+
+## Tahap 8 Langkah 2 — Weight yang Benar, dan Pertukaran Jangkauan
+
+15 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 18.
+
+### Jalan buntu: menguji weight yang salah
+
+`epoch-195.pth` yang ada di mesin ternyata **weight resmi YOLOPX hasil latihan
+BDD100K**, bukan hasil fine-tuning penulis. Di notebook Kaggle ia dipakai sebagai
+`MODEL.PRETRAINED`, dan hasil fine-tuning keluar sebagai `runs/yolopx/best.pth`
+yang belum pernah diunduh.
+
+Dugaan awal saya keliru dua kali sebelum ini ketahuan: mula-mula saya menyalahkan
+pascaproses `connect_lane` (padahal tidak pernah aktif), lalu menuduh jarak domain
+data latih. Yang menyelesaikannya dua ukuran, bukan penalaran:
+
+| Bukti | Hasil |
+|---|---|
+| Langkah optimizer di checkpoint | 426.496 = ~70.000 citra/epoch x 195 epoch (ukuran BDD100K), bukan ~1.500 citra milik penulis |
+| IoU terhadap anotasi penulis, pada data latihnya sendiri | lajur 0,016 dan area jalan 0,429 -- model yang dilatih di situ mustahil serendah itu |
+
+`best.pth` yang benar: epoch 263, lr 4,27e-05, 25.503 langkah (~97 langkah/epoch,
+jadi data latih Kaggle ~1.550 citra -- salinan lokal 457 frame hanya sebagian).
+
+### TEMUAN: fine-tuning menukar jangkauan dengan ketelitian
+
+| | Dekat (10-40 m) | Jauh (50-80 m) | Positif palsu @0,3 |
+|---|---|---|---|
+| BDD100K | conf 0,84-0,92 | terdeteksi semua | 4-8 per frame |
+| Fine-tuned | conf 0,97-0,99 | **hilang di atas 40-50 m** | **0** |
+
+Data latih penulis diambil di jalan kota, sehingga kendaraan selebar 16-30 piksel
+(50-80 m di Town04) nyaris tidak terwakili. Jangkauan 40-50 m masih cukup untuk
+kendali -- pemicu menyalip bekerja di celah ~32 m, horizon MPC 27 m -- tapi
+marginnya tipis, dan ini harus masuk pembahasan, bukan disembunyikan.
+
+Kalau jangkauan itu mau dinaikkan, datanya perlu ditambah adegan jalan tol dengan
+kendaraan jauh; rig kamera untuk mengumpulkannya sudah siap dan penempatannya
+sama persis dengan yang dipakai eksperimen kendali.
+
+### Segmentasi
+
+Dengan `best.pth` keluaran lajur rapi mengikuti marka, dan area jalan bersih.
+Dengan BDD, lajur pecah 7-8 komponen dan bahu kanan ikut dicat. Perlu dikonfirmasi
+ke anotasi: area jalan versi fine-tuned tidak mencakup lajur yang sedang ditempati
+ego.
