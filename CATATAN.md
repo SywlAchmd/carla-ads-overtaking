@@ -1901,3 +1901,165 @@ untuk skripsi berpipeline YOLOPX justru lebih pusat.
 Matriks eksperimen bagian 11.4 dan daftar metrik bagian 11.5 perlu disesuaikan
 saat menulis bab 3 -- hapus baris baseline, jangan biarkan tertinggal di
 proposal.
+
+---
+
+## Pindah Mesin: Race Perintah, PI Split-Range, Verifikasi Ulang Tuning
+
+11 September 2026. Repo di-clone ke mesin baru (RTX 5060, server CARLA
+`-quality-level=Low`). Rincian angka di `TUNING_MPC.md` bagian 10-11.
+
+**Setup.** venv di `.venv` (uv, versi `requirements.txt` persis). torch dan
+torchvision milik sistem (`~/.local`) tidak disentuh; dibuat terlihat dari venv
+lewat berkas `.pth` yang ditaruh SETELAH site-packages venv, supaya numpy 2.2.6
+milik venv yang menang. 57 uji lolos.
+
+### TEMUAN: klaim "deterministik bit-per-bit" tidak berlaku
+
+Lima run `main.py` berkonfigurasi identik: lima hasil berbeda sejak tick pertama
+(kecepatan ego setelah pemanasan 11,92-13,21 m/s), satu **gagal
+`lane_departure`** -- FSM terjebak di `CHECK_OVERTAKE`, ego membelok ke kiri
+sampai y = +2,05 m dan melewati target dengan jarak bodi 0.
+
+Penelusuran berurutan:
+
+| Hipotesis | Uji | Hasil |
+|---|---|---|
+| World perlu di-reload antar-episode | reload -> run, x2 | tetap berbeda -- gugur |
+| Fisika CARLA tidak deterministik | throttle tetap tanpa pipeline, 4 run | selisih 0 -- gugur |
+| IPOPT berbatas waktu CPU | periksa opsi solver | tidak ada -- gugur |
+| Perintah asinkron balapan dengan tick | kirim lewat `apply_batch_sync` dulu | **3 run identik** |
+
+Tanda di log run gagal: throttle berselang-seling 0,37/0,19 tiap tick (rata-rata
+perubahan 0,091 vs 0,014 run normal) -- ciri perintah yang berlaku satu frame
+terlambat.
+
+**Kenapa di mesin lama tampak deterministik:** tidak diketahui. Race bergantung
+penjadwalan thread server; mesin berbeda, peluangnya berbeda. Pelajarannya:
+determinisme yang tidak ditegakkan oleh kode hanyalah kebetulan.
+
+**Perbaikan:** `simulation.tick(world, perintah)` -- satu-satunya jalan perintah
+aktor. `tests/test_arsitektur.py` menolak `.apply_control(`,
+`.set_target_velocity(`, `.set_transform(` di luar `simulation.py`.
+
+### TEMUAN: optimum `kp = 0,3` adalah artefak
+
+`ThrottlePI` lama me-reset integrator pada setiap `a_ref < 0`. Satu permintaan
+-0,0016 m/s² memutus throttle 0,38 -> 0,02. `kp = 0,3` "optimal" hanya karena
+`a_cmd`-nya kebetulan tidak pernah negatif. Diganti logika split-range (rem hanya
+bila throttle jenuh di nol, integrator dibekukan). Setelah itu `kp` datar di
+0,035-0,3; dipilih **0,14 = 1/gain plant terukur**. `ki = 0,25`, `Q_psi = 450`,
+`Q_Y = 20`, `Rd_delta = 20` terkonfirmasi ulang.
+
+Plant throttle -> percepatan terukur sangat nonlinier: throttle 0 meluncur
+-0,10 m/s² (netral), throttle 0,1 justru -3,40 m/s² (turun ke gigi 1, engine
+braking).
+
+### TEMUAN: deviasi `LANE_KEEPING` mengukur ekor manuver
+
+Sebelum manuver 0,001 m, setelah kembali 0,21-0,27 m. Metrik README 0,120 m
+hampir seluruhnya ekor. Metrik menyesatkan keempat.
+
+### Yang masih terbuka
+
+- **FSM terjebak di `CHECK_OVERTAKE`** tanpa perilaku mengikuti kendaraan depan.
+  Tidak terpicu di S1 setelah race diperbaiki, tapi S3 (lajur tujuan terisi)
+  pasti memicunya.
+- Overshoot saat kembali ke lajur naik +0,15 -> +0,31 m setelah kecepatan
+  tertahan lebih rapat. Masih < 0,5 m, belum dijelaskan.
+- `validate_model.py --steer` baris 20 km/jam, delta 0,20: kecepatan terbaca
+  -4,7 km/jam. Belum diperiksa; baris 50 km/jam meleset <= 1,5%.
+- `out/model_validation.csv` dibangkitkan ulang dengan kode baru: selisih
+  <= 1,6e-5, angka ringkasan identik (0,309 m @ 2 s, 0,538 m akhir).
+
+---
+
+## FSM: Mengikuti Kendaraan Depan dan Menyalip Ulang (S3)
+
+11 September 2026. Keputusan penulis: setelah mengikuti, ego **boleh mencoba
+menyalip lagi**. Rincian dan angka di `TUNING_MPC.md` bagian 12.
+
+**Yang diubah (`planning.BehaviorFSM`):** `v_goal` mengikuti kendaraan depan bila
+menyalip tidak mungkin; pemicu dan batal memakai `max(v_ego, V_REF)` supaya ego
+yang sudah melambat tetap bisa memicu menyalip. Hasilnya perilaku *accelerative
+overtaking*. `main.py` kini menjalankan skenario dari `config.SKENARIO`.
+
+**Jalan buntu yang ditempuh, berurutan:**
+
+1. **Hukum akar `dv = sqrt(2ae)`** -- kebablasan: celah turun ke 14,3 m (d* 17,5),
+   ego mundur ke 4,7 m/s di belakang kendaraan 7 m/s. Mengabaikan jeda quartic
+   planner 3-4 s. Diganti hukum linier `2e/T` yang diturunkan dari planner itu
+   sendiri; konstanta `A_IKUT` hilang.
+2. **Tabrakan guardrail di t ~ 30 s** -- bukan FSM: run 35 detik melewati ujung ruas
+   lurus 400 m. FSM lama menabrak di titik yang sama. S3 dijalankan 25 detik.
+3. **Jarak 0,87 m ke penghalang saat ego diam di lajurnya** -- kendaraan skenario
+   hanya dipaksa kecepatannya searah hadapnya sendiri, arah hadap berputar oleh
+   gaya ban, penghalang bergeser -3,50 -> -2,83 m. Kecepatan kini dipaksa searah
+   jalan; drift tinggal <= 0,08 m.
+4. **`WAKTU_IKUT` 2,0 s memicu pelambatan di S1** sebelum pemicu menyalip (d* 21 m,
+   hukum aktif di celah < 33,8 m). Syarat "hanya bila menyalip tidak mungkin"
+   diberlakukan juga di `LANE_KEEPING`; dikunci `test_tidak_melambat_bila_bisa_menyalip`.
+
+**Hasil:** S3 BERHASIL (jarak bodi 1,42 m, durasi 18,9 s), FSM lama GAGAL (0,00 m).
+S1 tetap BERHASIL; jarak minimum 1,71 -> 1,43 m karena target kini benar-benar
+di tengah lajur (dulu bergeser +0,3 m menjauhi ego -- angka lama terlalu optimis).
+
+**Sitasi:** penulis menetapkan sitasi baru harus terbit <= 4 tahun, ber-URL, dan
+isinya dibuka. ISO 15622 (2018), Rajamani (2012), Li dkk. (2011), dan buku teks
+kendali klasik karena itu **tidak dipakai**. Nilai time gap ISO 15622 dari sumber
+<= 4 tahun tidak ditemukan -- `WAKTU_IKUT` bersandar pada sapuan eksperimen.
+
+**Terbuka:** `ELLIPSE_B` 2,2 m tidak menjamin `JARAK_AMAN` 1,0 m (README #1).
+
+---
+
+## Zona Aman yang Menjamin Jarak Aman, dan Lup Planner-MPC
+
+11-12 September 2026. Angka lengkap di `TUNING_MPC.md` bagian 13.
+
+**Pertanyaan awal:** apakah constraint yang dipakai planner dan MPC menjamin
+syarat lulus jarak bodi 1,0 m? **Tidak.** Elips lama (A=7,0, B=2,2 dari sumbu
+belakang) hanya setara jarak bodi 0,29 m saat berpapasan. Jarak yang selama ini
+tercapai datang dari lebar lajur, bukan dari constraint.
+
+**Zona baru.** Elips-super pangkat 4 antar pusat bodi, memuat seluruh persegi
+terlarang (setengah sisi 5,81 x 2,91 m = dimensi kedua kendaraan + JARAK_AMAN).
+`A = 7,709` dan `B = 3,204` **diturunkan di config dari dimensi terukur**, tidak
+diketik. Elips biasa butuh A 11-14 m untuk memuat sudut yang sama, terlalu panjang.
+Dikunci dua uji baru.
+
+**Dua jalan buntu sebelum akar masalah ketemu:**
+
+1. **Margin B.** Setelah zona dipasang, `WAKTU_IKUT` 1,0 dan 2,5 s gagal
+   lane_departure. Dikira margin B terhadap jalur berpapasan terlalu tipis;
+   disapu B 3,0/3,1/3,2 dengan p=6 -- hasilnya praktis sama, 2,5 s tetap gagal.
+   Bentuk zona bukan penyebab.
+2. **Gerbang kembali.** Korelasi 16 run bersih: semua run gagal memulai kembali ke
+   lajur saat ego masih bergerak menjauh 0,91-1,89 m/s. Dipasang `DD_KEMBALI`
+   0,1 m/s (didukung analisis quintic dan derau 0,0014 m/s). Ego memang tidak lagi
+   mulai kembali di tengah ayunan, **tapi 1,0 dan 2,5 s tetap gagal** karena
+   lemparannya sudah terjadi lebih awal, saat `OVERTAKING`. Gerbang dipertahankan
+   sebagai pengaman; setelah akar masalah diperbaiki ia tidak pernah terpicu lagi.
+
+**Akar masalah: lup planner-MPC.** Rekonstruksi planner offline per tick
+menunjukkan urutannya: kandidat habis ditolak zona -> acuan cadangan dan constraint
+MPC memberi tendangan keluar -> planner memulai rencana berikutnya dari percepatan
+lateral **terukur**, MPC mengikuti kelengkungan awalnya, percepatan itu terukur
+lagi. Lintasan pilihan planner sendiri makin menukik: ymin -3,79 -> -5,77 m.
+
+Ini persis TEMUAN 2 Tahap 5 di sisi lateral; `a0` longitudinal sudah lama memakai
+nilai yang diperintahkan. Perbaikan: `y''` awal diambil dari lintasan rencana
+sebelumnya (`Trajectory.lateral_at`), posisi dan kecepatan tetap terukur.
+
+**Hasil.** S1 dan S3 BERHASIL dan deterministik; `WAKTU_IKUT` 1,0-2,5 s semuanya
+lolos. Deviasi lajur S1 turun 0,161 -> **0,011 m** (maks 0,530 -> 0,152 m), dan
+ego tidak lagi terdorong sampai menyentuh garis lajur ketiga.
+
+**Pelajaran:** pertanyaan "apakah constraint benar-benar menjamin kriteria
+penilaian" ternyata membuka tiga cacat berbeda. Dan dua perbaikan pertama --
+keduanya masuk akal, keduanya didukung data korelasi -- hanya mengobati gejala.
+Yang membedakan perbaikan ketiga: mekanismenya direkonstruksi tick demi tick,
+bukan disimpulkan dari korelasi.
+
+**Terbuka:** zona dan penilai sama-sama memakai kotak sejajar sumbu; pada yaw 7
+derajat sudut bodi bergeser ~0,31 m yang tidak dihitung (README #1).

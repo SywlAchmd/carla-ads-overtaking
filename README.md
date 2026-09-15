@@ -22,7 +22,8 @@ sudo apt install ffmpeg
 # 2. dependensi Python (3.10)
 pip install -r requirements.txt
 
-# 3. jalankan server CARLA 0.9.16 terpisah, lalu:
+# 3. jalankan server CARLA 0.9.16 terpisah (kualitas Low: hasil kendali identik), lalu:
+#    ./CarlaUE4.sh -RenderOffScreen -nosound -quality-level=Low
 python extract_params.py      # hanya kalau out/vehicle_params.json hilang
 ```
 
@@ -31,7 +32,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 57 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 65 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -45,6 +46,7 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | Perintah | Fungsi |
 |---|---|
 | `python main.py` | skenario S1 lengkap, loop tertutup, vonis berhasil/gagal |
+| `python main.py --skenario S3 --detik 25` | lajur tujuan terisi: mengikuti, lalu menyalip ulang |
 | `python tuning.py --sweep Q_PSI 300,450,600` | harness tuning step response |
 | `python validate_model.py` | validasi bicycle model terhadap plant |
 | `python validate_model.py --steer` | verifikasi konversi kemudi |
@@ -79,14 +81,22 @@ rencana kerja). Ditegakkan oleh `tests/test_arsitektur.py`.
 | 3 | Local planner (quintic + quartic) | selesai |
 | 4 | Behavior FSM | selesai |
 | 5 | MPC + tuning bobot | selesai |
-| 6 | Integrasi end-to-end | **tercapai**, verifikasi akhir belum (lihat #1 di bawah) |
+| 6 | Integrasi end-to-end | selesai: S1 dan S3 BERHASIL, deterministik |
 | 7 | Baseline Pure Pursuit/Stanley | **dibatalkan** (keputusan penulis) |
 | 8 | Perception lengkap (YOLOPX) | belum |
 | 9 | Eksperimen penuh | belum |
 
-Hasil terakhir skenario S1 (MPC + GT perception): deviasi tengah lajur 0,120 m
-rata-rata saat `LANE_KEEPING`, 0 solver gagal, 0 tabrakan, urutan state FSM
-lengkap.
+Hasil terakhir (MPC + GT perception, 12 Sep 2026), identik bit-per-bit antar-run:
+
+| Skenario | Vonis | Jarak min antar bodi | Deviasi lajur | Durasi manuver | Catatan |
+|---|---|---|---|---|---|
+| S1 | **BERHASIL** | 1,39 m | 0,011 m | 11,7 s | flying overtaking |
+| S3 | **BERHASIL** | 1,49 m | 0,012 m | 19,2 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
+
+Deviasi turun 0,161 -> 0,011 m setelah syarat awal percepatan lateral planner
+diambil dari rencana, bukan hasil ukur (`TUNING_MPC.md` 13.5). S3 wajib
+`--detik 25`: lebih lama dari itu ego melewati ujung ruas lurus 400 m dan
+menabrak guardrail.
 
 ---
 
@@ -94,23 +104,25 @@ lengkap.
 
 Diurutkan dari yang paling mendesak.
 
-### 1. `main.py` dengan kriteria keberhasilan belum pernah dijalankan end-to-end
-Kriteria bagian 11.2 selesai ditulis dan lolos 7 uji sintetis, tapi server CARLA
-mati sebelum sempat dijalankan penuh. **Jalankan `python main.py` lebih dulu**
-dan pastikan vonisnya `BERHASIL — berhasil`.
+### 1. Zona aman mengabaikan sudut hadap
+Zona aman kini menjamin `JARAK_AMAN` (`TUNING_MPC.md` 13), tapi kotak terlarangnya
+**sejajar sumbu**: pada sudut hadap 7 derajat saat pindah lajur, sudut bodi bergeser
+~0,31 m yang tidak ikut dihitung. `evaluation.jarak_kotak` memakai asumsi yang sama,
+jadi penilaian konsisten dengan constraint -- tapi jarak bodi sebenarnya bisa lebih
+kecil dari yang dilaporkan. Perbaikannya: putar kotak menurut yaw di kedua tempat.
 
 ### 2. Video hasil kendali MPC
 `record_maneuver.py` masih **playback**: physics dimatikan, posisi ego ditempel
 ke lintasan planner. Ganti sumber gerakannya jadi `apply_control` dari MPC;
 bagian rekam (`record_path.capture`) dan overlay kandidat tidak perlu diubah.
 
-### 3. Skenario S2–S5 belum ada, dan parameter skenario tidak konsisten
-Bagian 11.1 minta definisi skenario sebagai konstanta di `config.py`, ditetapkan
-sekali. Sekarang tersebar dan **saling bertentangan**:
+### 3. Skenario S2, S4, S5 belum ada; skrip rekam masih hardcode
+`main.py` kini membaca `config.SKENARIO` (S1, S3 -- definisi S3 dibuat tanpa
+naskah bagian 11.3, cocokkan). Skrip rekam belum:
 
 | Berkas | Kecepatan ego | Kecepatan target | Jarak awal |
 |---|---|---|---|
-| `main.py` | `config.V_REF` = 13,4 m/s | 7,0 (hardcode) | 60 m (hardcode) |
+| `main.py` | `config.V_REF` = 13,4 m/s | `config.SKENARIO` | `config.SKENARIO` |
 | `record_maneuver.py` | **13,9 (hardcode)** | 7,0 (hardcode) | **50 m (hardcode)** |
 | `record_path.py` | **13,9 (hardcode)** | — | — |
 
@@ -148,6 +160,11 @@ skenario diulang 10–20 kali.
 ## Hal yang Perlu Diperhatikan
 
 **Lingkungan**
+
+- **Semua perintah aktor wajib lewat `simulation.tick`.** `apply_control`,
+  `set_target_velocity`, `set_transform` asinkron dan balapan dengan
+  `world.tick()`: tanpa ini lima run identik memberi lima hasil berbeda, satu
+  gagal. Ditegakkan `test_arsitektur.py`.
 
 - **Server CARLA menurun setelah berjalan berjam-jam.** Terukur: kode identik,
   waktu solve 26–31 ms saat senggang vs 70 ms saat CARLA memakai 141% CPU.
