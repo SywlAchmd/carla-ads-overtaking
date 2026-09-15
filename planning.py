@@ -95,6 +95,17 @@ def _curvature(dx, dy, ddx, ddy):
     return np.abs(dx * ddy - dy * ddx) / np.maximum(speed**3, 1e-6)
 
 
+def zona_aman(dx, dy):
+    """g >= 1 berarti aman. dx, dy = pusat bodi ego ke pusat kendaraan lain.
+
+    Elips-super ((dx/A)^p + (dy/B)^p)^(1/p); dipakai bersama planner (numpy) dan
+    MPC (CasADi). Akar ke-p membuat g berskala seperti jarak: tanpa itu slot kosong
+    MPC (diparkir 1e4 m) memberi gradien ~1e9. p genap, jadi tanda dx/dy tak penting.
+    """
+    p = config.ELLIPSE_P
+    return ((dx / config.ELLIPSE_A) ** p + (dy / config.ELLIPSE_B) ** p + 1e-12) ** (1.0 / p)
+
+
 def _ellipse_g(states, obstacles):
     """g_j untuk tiap obstacle di tiap sampel. g >= 1 berarti aman (bagian 7.2)."""
     if obstacles is None or len(obstacles) == 0:
@@ -104,8 +115,10 @@ def _ellipse_g(states, obstacles):
     obs = np.asarray(obstacles, dtype=float)          # (M, 4) = [x, y, vx, vy]
     xj = obs[:, 0:1] + obs[:, 2:3] * k                # prediksi kecepatan konstan
     yj = obs[:, 1:2] + obs[:, 3:4] * k
-    return (((states[0] - xj) / config.ELLIPSE_A)**2
-            + ((states[1] - yj) / config.ELLIPSE_B)**2)
+    # states = sumbu belakang; zona diukur dari pusat bodi
+    xc = states[0] + config.SUMBU_KE_PUSAT * np.cos(states[2])
+    yc = states[1] + config.SUMBU_KE_PUSAT * np.sin(states[2])
+    return zona_aman(xc - xj, yc - yj)
 
 
 def _cost(t, states, ddy, T, y_lane_center, v_desired, cy, cx, g):

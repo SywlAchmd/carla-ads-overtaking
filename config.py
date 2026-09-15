@@ -42,7 +42,7 @@ LATERAL_OFFSETS = (3.0, 3.5, 4.0)   # m, magnitudo -- dikalikan SIDE_SIGN
 MANEUVER_TIMES = (3.0, 3.5, 4.0)    # detik
 MAX_LATERAL_ACCEL = 3.0             # m/s², batas kenyamanan
 MIN_TURN_RADIUS = 5.6               # m, dari L=3.044 dan delta_max=0.5 rad
-ELLIPSE_A, ELLIPSE_B = 7.0, 2.2     # m, margin elips penghindaran (bagian 7.3)
+# ELLIPSE_A, ELLIPSE_B, ELLIPSE_P: zona aman, diturunkan di bawah JARAK_AMAN
 
 # Bobot seleksi kandidat: J = W_LAT*J_lat + W_LON*J_lon + W_COL*J_col
 W_LAT, W_LON, W_COL = 1.0, 1.0, 1.0
@@ -125,3 +125,23 @@ LULUS_LATERAL = 0.5                 # m, ambang "kembali ke lajur semula"
 LULUS_TAHAN = 2.0                   # detik, harus bertahan selama ini
 JARAK_AMAN = 1.0                    # m, jarak minimum antar bodi kendaraan
 BATAS_MANUVER = 20.0                # detik, sejak keluar dari LANE_KEEPING
+
+# Zona aman planner & MPC (bagian 7.2), antar PUSAT bodi:
+#   g = ((dx/A)^p + (dy/B)^p)^(1/p) >= 1
+# Harus memuat "persegi terlarang" (setengah sisi = jumlah setengah dimensi +
+# JARAK_AMAN) supaya constraint menjamin syarat lulus. Elips lama A=7, B=2,2 dari
+# sumbu belakang setara jarak bodi 0,29 m saat berpapasan. Elips biasa (p=2) yang
+# memuat sudut persegi butuh A ~14 m; p=4 cukup 7,71 m. TUNING_MPC.md bagian 13.
+# Dimensi ego = out/vehicle_params.json (dikunci tests/test_planning.py). Kendaraan
+# lain = Nissan Patrol, bounding box CARLA terukur 11 Sep 2026: terbesar di
+# skenario, dan perception tidak mengukur dimensi.
+EGO_PANJANG, EGO_LEBAR = 5.008, 1.882
+SUMBU_KE_PUSAT = 1.433              # m, sumbu belakang (state MPC) -> pusat bodi ego
+LAIN_PANJANG, LAIN_LEBAR = 4.605, 1.932
+ELLIPSE_P = 4
+_SETENGAH_PANJANG = (EGO_PANJANG + LAIN_PANJANG) / 2 + JARAK_AMAN     # 5,81 m
+_SETENGAH_LEBAR = (EGO_LEBAR + LAIN_LEBAR) / 2 + JARAK_AMAN          # 2,91 m
+# B di tengah antara batas perlu (2,91) dan jarak berpapasan di tengah lajur (3,50):
+# margin sama ~0,30 m ke keduanya. A = nilai terkecil yang memuat sudut persegi.
+ELLIPSE_B = (LANE_WIDTH + _SETENGAH_LEBAR) / 2                       # 3,20 m
+ELLIPSE_A = _SETENGAH_PANJANG / (1 - (_SETENGAH_LEBAR / ELLIPSE_B) ** ELLIPSE_P) ** (1 / ELLIPSE_P)  # 7,71 m

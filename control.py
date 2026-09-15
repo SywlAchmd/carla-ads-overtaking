@@ -13,6 +13,7 @@ import casadi as ca
 import numpy as np
 
 import config
+import planning
 
 PARKIR = 1.0e4          # slot obstacle kosong diparkir sejauh ini, g jadi raksasa
 
@@ -161,8 +162,9 @@ class MPCController:
             for j in range(self.n_obs):
                 xj = obs[0, j] + obs[2, j] * (k * dt)
                 yj = obs[1, j] + obs[3, j] * (k * dt)
-                g = ((X[0, k] - xj) / config.ELLIPSE_A) ** 2 \
-                    + ((X[1, k] - yj) / config.ELLIPSE_B) ** 2
+                # zona diukur dari pusat bodi, state X = sumbu belakang
+                g = planning.zona_aman(X[0, k] + config.SUMBU_KE_PUSAT * ca.cos(X[2, k]) - xj,
+                                       X[1, k] + config.SUMBU_KE_PUSAT * ca.sin(X[2, k]) - yj)
                 # slack per obstacle, TIDAK dijumlahkan: satu kendaraan yang mepet
                 # tidak boleh menghapus batas aman terhadap kendaraan lain
                 opti.subject_to(g >= 1 - eps[j, k])

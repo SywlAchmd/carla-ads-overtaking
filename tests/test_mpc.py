@@ -105,8 +105,8 @@ def test_menjejak_lintasan_planner_melewati_halangan():
         assert ok, f'solver gagal di tick {i}'
         acuan = traj.sample_at(t0)
         err.append(math.hypot(x[0] - acuan[0], x[1] - acuan[1]))
-        g_min.append(((x[0] - 45.0) / config.ELLIPSE_A) ** 2
-                     + ((x[1] - 0.0) / config.ELLIPSE_B) ** 2)
+        g_min.append(planning.zona_aman(x[0] + config.SUMBU_KE_PUSAT * math.cos(x[2]) - 45.0,
+                                        x[1] + config.SUMBU_KE_PUSAT * math.sin(x[2])))
         s = bicycle_rk4(x[:3], x[3], delta, PARAMS['L'], DT)
         x = np.array([s[0], s[1], s[2], x[3] + a * DT])
 

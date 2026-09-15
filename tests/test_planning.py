@@ -11,6 +11,27 @@ from planning import (Trajectory, peak_lateral_accel, plan_lane_change,   # noqa
                       quartic_coeffs, quintic_coeffs, _deriv, _val)
 
 
+def test_zona_aman_memuat_persegi_terlarang():
+    """Constraint g >= 1 harus menjamin JARAK_AMAN (bagian 11.2): seluruh tepi
+    persegi terlarang ada di dalam zona (g <= 1), dan berpapasan di tengah lajur
+    sebelah tetap boleh (g >= 1). Elips lama A=7, B=2,2 gagal di sudut."""
+    from planning import zona_aman
+    hl = (config.EGO_PANJANG + config.LAIN_PANJANG) / 2 + config.JARAK_AMAN
+    hw = (config.EGO_LEBAR + config.LAIN_LEBAR) / 2 + config.JARAK_AMAN
+    for s in np.linspace(0.0, 1.0, 11):
+        assert zona_aman(hl * s, hw) <= 1.0 + 1e-9, (hl * s, hw)
+        assert zona_aman(hl, hw * s) <= 1.0 + 1e-9, (hl, hw * s)
+    assert zona_aman(0.0, config.LANE_WIDTH) >= 1.0
+
+
+def test_dimensi_ego_di_config_sama_dengan_hasil_ukur():
+    import json
+    p = json.load(open(config.VEHICLE_PARAMS_JSON))
+    assert abs(config.EGO_PANJANG - p['length']) < 1e-3
+    assert abs(config.EGO_LEBAR - p['width']) < 1e-3
+    assert abs(config.SUMBU_KE_PUSAT + p['rear_axle_offset_x']) < 1e-3
+
+
 def test_quintic_memenuhi_syarat_batas():
     T = 3.0
     c = quintic_coeffs(0.5, 0.2, -0.1, -3.5, 0.0, 0.0, T)
