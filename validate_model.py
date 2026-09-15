@@ -99,13 +99,12 @@ def uji_steer(world, ego, params):
         for delta in (0.02, 0.05, 0.10, 0.20):
             for i in range(30):                       # tahan kecepatan + tunggu roda mapan
                 yaw = math.radians(ego.get_transform().rotation.yaw)
-                ego.set_target_velocity(carla.Vector3D(v_target * math.cos(yaw),
-                                                       v_target * math.sin(yaw), 0.0))
                 v = ego.get_velocity()
                 v_now = v.x * math.cos(yaw) + v.y * math.sin(yaw)
-                ego.apply_control(carla.VehicleControl(
-                    throttle=0.0, steer=control.steer_command(delta, v_now, params)))
-                world.tick()
+                simulation.tick(world, [
+                    simulation.kecepatan(ego, v_target),
+                    carla.command.ApplyVehicleControl(ego.id, carla.VehicleControl(
+                        throttle=0.0, steer=control.steer_command(delta, v_now, params)))])
             # negasi ke right-handed, sama seperti wheel_delta di run():
             # membandingkan dengan sudut mentah CARLA menyembunyikan salah tanda
             nyata = -math.radians(sum(ego.get_wheel_steer_angle(w) for w in WHEELS)
@@ -122,18 +121,15 @@ def run(world, ego, rear_offset_x):
     loc = localization.CarlaGTLocalization(ego, rear_offset_x)
     control = carla.VehicleControl(throttle=config.VALIDATION_THROTTLE)
 
-    yaw = math.radians(ego.get_transform().rotation.yaw)
-    ego.set_target_velocity(carla.Vector3D(config.VALIDATION_SPEED * math.cos(yaw),
-                                           config.VALIDATION_SPEED * math.sin(yaw), 0.0))
+    kirim = [simulation.kecepatan(ego, config.VALIDATION_SPEED)]
     for _ in range(int(config.VALIDATION_WARMUP / dt)):
-        ego.apply_control(control)
-        world.tick()
+        simulation.tick(world, kirim + [carla.command.ApplyVehicleControl(ego.id, control)])
+        kirim = []
 
     control.steer = config.VALIDATION_STEER
     log, off_road = [], 0
     for k in range(int(config.VALIDATION_DURATION / dt)):
-        ego.apply_control(control)
-        world.tick()
+        simulation.tick(world, [carla.command.ApplyVehicleControl(ego.id, control)])
         s = loc.update()
         delta = -math.radians(sum(ego.get_wheel_steer_angle(w) for w in WHEELS) / len(WHEELS))
         log.append(dict(t=k * dt, x=s.x, y=s.y, yaw=s.yaw, v=s.v,

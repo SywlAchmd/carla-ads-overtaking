@@ -61,11 +61,6 @@ def spawn_target(world, ref, ego_x):
     return world.spawn_actor(bp, carla.Transform(loc, carla.Rotation(yaw=yaw)))
 
 
-def jaga_kecepatan(actor, v):
-    yaw = math.radians(actor.get_transform().rotation.yaw)
-    actor.set_target_velocity(carla.Vector3D(v * math.cos(yaw), v * math.sin(yaw), 0.0))
-
-
 def siapkan_jalan(world):
     """Reference path + koordinat s. Dipakai bersama main.py dan tuning.py."""
     sp = world.get_map().get_spawn_points()[config.SPAWN_IDX]
@@ -89,6 +84,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik):
     log, states = [], []
     n_warm = int(config.WARMUP_DETIK / dt)
     target = None
+    kirim = []                                # perintah aktor untuk tick berikutnya
 
     for k in range(-n_warm, int(max_detik / dt)):
         if k == 0:
@@ -96,8 +92,8 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik):
             # posisi ego yang SEBENARNYA -- bukan relatif titik spawn.
             target = spawn_target(world, ref5, frame.ego(loc.update()).x)
         if target is not None:
-            jaga_kecepatan(target, V_TARGET)
-        world.tick()
+            kirim.append(simulation.kecepatan(target, V_TARGET))
+        simulation.tick(world, kirim)
         t = k * dt
 
         ego = frame.ego(loc.update())                        # 20 Hz
@@ -132,7 +128,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik):
         xref = (xref_tahan(ego, fsm.y_goal, config.V_REF) if traj is None
                 else xref_dari(traj, t - t_traj))
         cmd = mpc.compute(ego.as_vector(), xref, a_filt, obs)  # 20 Hz
-        ego_actor.apply_control(to_carla(cmd))
+        kirim = [carla.command.ApplyVehicleControl(ego_actor.id, to_carla(cmd))]
         a_cmd_prev = cmd.accel_cmd
         if not cmd.solver_ok:
             print(f'  solver gagal t={t:5.2f}s  state={fsm.state:<22} '
@@ -165,8 +161,8 @@ def main():
         ref, ref5 = siapkan_jalan(world)
 
         with simulation.ego_vehicle(world) as ego:
-            jaga_kecepatan(ego, config.EGO_V0)     # bagian 11.1: ego mulai di v0
-            world.tick()
+            # bagian 11.1: ego mulai di v0
+            simulation.tick(world, [simulation.kecepatan(ego, config.EGO_V0)])
             target, dim_tgt = None, (5.5, 2.1)
             with evaluation.pantau_tabrakan(world, ego) as monitor:
                 try:

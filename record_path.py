@@ -46,10 +46,9 @@ def capture(world, ego, poses, out_name, cam_tf=None, extras=None, annotate=None
     cam.listen(images.put)
     try:
         for i, tf in enumerate(poses):
-            ego.set_transform(tf)
-            for actor, other in (extras or []):
-                actor.set_transform(other[min(i, len(other) - 1)])
-            world.tick()
+            simulation.tick(world, [carla.command.ApplyTransform(ego.id, tf)] + [
+                carla.command.ApplyTransform(actor.id, other[min(i, len(other) - 1)])
+                for actor, other in (extras or [])])
             images.get(timeout=5.0).save_to_disk(f'{frames_dir}/{i:05d}.png')
     finally:
         cam.stop(); cam.destroy()

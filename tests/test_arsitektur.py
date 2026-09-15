@@ -48,6 +48,16 @@ def test_sensor_tabrakan_hanya_di_evaluation():
     assert 'sensor.other.collision' in open(os.path.join(AKAR, 'evaluation.py')).read()
 
 
+def test_perintah_aktor_lewat_simulation_tick():
+    """Perintah aktor asinkron balapan dengan world.tick() dan merusak determinisme
+    (docstring simulation.tick). Wajib dikirim lewat simulation.tick."""
+    for berkas in os.listdir(AKAR):
+        if berkas.endswith('.py') and berkas != 'simulation.py':
+            isi = open(os.path.join(AKAR, berkas)).read()
+            for pola in ('.apply_control(', '.set_target_velocity(', '.set_transform('):
+                assert pola not in isi, f'{berkas} memanggil {pola} langsung -- pakai simulation.tick'
+
+
 if __name__ == '__main__':
     for nama, fn in sorted(globals().items()):
         if nama.startswith('test_'):

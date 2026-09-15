@@ -1,5 +1,6 @@
 """Setup dunia CARLA: koneksi, mode sinkron, spawn ego, reference path."""
 import contextlib
+import math
 
 import carla
 import numpy as np
@@ -7,12 +8,16 @@ import numpy as np
 import config
 import localization
 
+_klien = None           # diisi carla_world(), dipakai tick()
+
 
 @contextlib.contextmanager
 def carla_world():
     """Mode sinkron dipaksa aktif; setting dunia dikembalikan saat keluar."""
+    global _klien
     client = carla.Client(config.CARLA_HOST, config.CARLA_PORT)
     client.set_timeout(config.CARLA_TIMEOUT)
+    _klien = client
 
     world = client.get_world()
     if not world.get_map().name.endswith(config.TOWN):
@@ -29,6 +34,34 @@ def carla_world():
         yield world
     finally:
         world.apply_settings(original)
+
+
+def tick(world, perintah=()):
+    """Terapkan perintah aktor, BARU tick. Semua perintah aktor wajib lewat sini.
+
+    `apply_control`, `set_target_velocity`, dan `set_transform` dikirim tanpa
+    menunggu, sedangkan `world.tick()` menunggu. Server bisa memproses tick
+    sebelum perintahnya tiba, sehingga perintah kadang baru berlaku satu frame
+    kemudian -- acak, tergantung penjadwalan thread server. Terukur 11 Sep 2026:
+    lima run main.py berkonfigurasi identik memberi lima hasil berbeda sejak
+    tick pertama, satu gagal lane_departure. Fisika CARLA sendiri deterministik.
+
+    `apply_batch_sync` baru kembali setelah perintah diterapkan, jadi urutannya
+    terjamin: tiga run identik bit-per-bit. Ditegakkan tests/test_arsitektur.py.
+    """
+    if perintah:
+        for r in _klien.apply_batch_sync(list(perintah), False):
+            if r.has_error():
+                raise RuntimeError(f'perintah ke aktor {r.actor_id} gagal: {r.error}')
+    return world.tick()
+
+
+def kecepatan(actor, v, yaw_deg=None):
+    """Perintah kecepatan bodi `v` m/s searah `yaw_deg` (derajat, frame CARLA);
+    bawaan = arah hadap aktor saat ini."""
+    yaw = math.radians(actor.get_transform().rotation.yaw if yaw_deg is None else yaw_deg)
+    return carla.command.ApplyTargetVelocity(
+        actor.id, carla.Vector3D(v * math.cos(yaw), v * math.sin(yaw), 0.0))
 
 
 @contextlib.contextmanager

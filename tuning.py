@@ -15,6 +15,7 @@ kemudi tidak bergetar, (3) Q_V dan R_A untuk tracking kecepatan.
 import argparse
 import json
 
+import carla
 import numpy as np
 
 import config
@@ -59,16 +60,15 @@ def step_response(world, params, ref, bobot, step, detik):
     with simulation.ego_vehicle(world) as ego_actor:
         loc = localization.CarlaGTLocalization(ego_actor,
                                                params['rear_axle_offset_x'])
-        main.jaga_kecepatan(ego_actor, config.EGO_V0)
-        world.tick()
+        simulation.tick(world, [simulation.kecepatan(ego_actor, config.EGO_V0)])
         return _jalankan(world, ego_actor, frame, loc, mpc, step, detik)
 
 
 def _jalankan(world, ego_actor, frame, loc, mpc, step, detik):
     dt = config.FIXED_DELTA_SECONDS
-    a_filt, v_prev, log = 0.0, None, []
+    a_filt, v_prev, log, kirim = 0.0, None, [], []
     for k in range(-int(config.WARMUP_DETIK / dt), int(detik / dt)):
-        world.tick()
+        simulation.tick(world, kirim)
         ego = frame.ego(loc.update())
         a_mentah = 0.0 if v_prev is None else (ego.v - v_prev) / dt
         v_prev = ego.v
@@ -78,7 +78,7 @@ def _jalankan(world, ego_actor, frame, loc, mpc, step, detik):
         y_target = step if k >= 0 else 0.0            # lompatan acuan tepat di t=0
         cmd = mpc.compute(ego.as_vector(),
                           main.xref_tahan(ego, y_target, config.V_REF), a_filt)
-        ego_actor.apply_control(main.to_carla(cmd))
+        kirim = [carla.command.ApplyVehicleControl(ego_actor.id, main.to_carla(cmd))]
         if k >= 0:
             log.append([k * dt, ego.y, cmd.delta_cmd, cmd.solve_time_ms,
                         float(cmd.solver_ok), ego.v])
