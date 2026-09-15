@@ -202,6 +202,26 @@ def _terdepan(obs):
     return depan[np.argmin(depan[:, 0])] if len(depan) else None
 
 
+def _v_ikut(depan):
+    """Kecepatan acuan untuk mengikuti kendaraan depan pada jarak ikut d*.
+
+    d* = ELLIPSE_A + SUMBU_KE_PUSAT + WAKTU_IKUT·v_depan (kebijakan jarak
+    waktu-tetap; celah diukur dari sumbu belakang ego). Menjamin jarak pusat ke
+    pusat >= ELLIPSE_A: posisi mengikuti tidak melanggar zona aman MPC sendiri.
+
+    v = v_depan + 2e/T, e = celah - d*, T = max(MANEUVER_TIMES). Diturunkan dari
+    planner: quartic longitudinal mengubah kecepatan secara halus selama T, jadi
+    menutup selisih dv menempuh jarak relatif dv·T/2; agar tidak melampaui e,
+    dv <= 2e/T. Hukum akar dv = sqrt(2ae) sempat dipakai dan kebablasan di S3
+    karena mengabaikan jeda itu: celah 14,3 m (d* 17,5), ego mundur ke 4,7 m/s.
+    e < 0 (terlalu dekat) memberi kecepatan di bawah v_depan: mundur ke d*.
+    """
+    v_depan = max(float(depan[2]), 0.0)
+    e = float(depan[0]) - (config.ELLIPSE_A + config.SUMBU_KE_PUSAT
+                           + config.WAKTU_IKUT * v_depan)
+    return float(np.clip(v_depan + 2.0 * e / max(config.MANEUVER_TIMES), 0.0, config.V_REF))
+
+
 class BehaviorFSM:
     """Memutuskan KAPAN menyalip. Local planner memutuskan BAGAIMANA.
 
@@ -216,6 +236,7 @@ class BehaviorFSM:
         self.state = LANE_KEEPING
         self._calon = None            # (state tujuan, waktu permintaan pertama)
         self.abort_terakhir = None    # untuk logging bagian 11.5
+        self.v_goal = config.V_REF    # kecepatan acuan untuk planner, lihat _v_ikut
 
     @property
     def y_goal(self):
@@ -237,25 +258,31 @@ class BehaviorFSM:
         """Abort tidak menunggu dwell -- menunda 0,3 s justru menambah risiko."""
         self.state, self._calon = tujuan, None
 
-    def update(self, t, d, v_ego, obstacles):
+    def update(self, t, d, v_ego, obstacles, dd=0.0):
         """Satu langkah FSM. `obstacles` = (M,4) [x, y, vx, vy], x relatif ego.
 
-        `d` = simpangan lateral ego dari lajur asal. Kembalikan nama state.
+        `d` = simpangan lateral ego dari lajur asal, `dd` = lajunya (m/s).
+        Kembalikan nama state.
         """
         y_tujuan = self.side_sign * config.LANE_WIDTH
         depan = _terdepan(_di_lajur(obstacles, 0.0))
         lajur_tujuan = _di_lajur(obstacles, y_tujuan)
+        # Pemicu & batal memakai kecepatan yang INGIN dipakai, bukan v_ego saja.
+        # Saat mengikuti, v_ego ~ v_depan: TTC terhadap v_ego tak hingga dan FSM
+        # tidak akan pernah menyalip ulang. Alasan menyalip adalah kendaraan depan
+        # lebih lambat daripada V_REF. Saat mendekat (v_ego >= V_REF) tidak berubah.
+        v_mau = max(v_ego, config.V_REF)
 
         if self.state == LANE_KEEPING:
-            if depan is not None and (_ttc(depan, v_ego) < config.TTC_TRIGGER
-                                      and v_ego - depan[2] > config.DV_TRIGGER):
+            if depan is not None and (_ttc(depan, v_mau) < config.TTC_TRIGGER
+                                      and v_mau - depan[2] > config.DV_TRIGGER):
                 self._minta(CHECK_OVERTAKE, t)
             else:
                 self._calon = None
 
         elif self.state == CHECK_OVERTAKE:
-            batal = (depan is None or _ttc(depan, v_ego) > config.TTC_EXIT
-                     or v_ego - depan[2] < config.DV_EXIT)
+            batal = (depan is None or _ttc(depan, v_mau) > config.TTC_EXIT
+                     or v_mau - depan[2] < config.DV_EXIT)
             if batal:
                 self._minta(LANE_KEEPING, t)
             elif self._lajur_tujuan_aman(lajur_tujuan) and self._sempat(depan, v_ego):
@@ -277,7 +304,12 @@ class BehaviorFSM:
             # sehingga kendaraan yang baru terlewati 1 m sudah dianggap hilang.
             asal = _di_lajur(obstacles, 0.0)
             belum_lewat = asal[asal[:, 0] > -config.PASS_MARGIN]
-            if len(belum_lewat) == 0:
+            # Jangan mulai kembali selagi masih bergerak menjauhi lajur asal: quintic
+            # kembali berangkat dengan laju itu dan kebablasan keluar. Di S3 kelima
+            # run gagal mulai kembali pada 0,91-1,89 m/s menjauh; semua yang lolos
+            # sudah bergerak ke arah lajur asal.
+            menjauh = self.side_sign * dd > config.DD_KEMBALI
+            if len(belum_lewat) == 0 and not menjauh:
                 self._minta(LANE_CHANGE_RETURN, t)
             else:
                 self._calon = None
@@ -288,6 +320,19 @@ class BehaviorFSM:
             else:
                 self._calon = None
 
+        # Selama belum/tidak bisa menyalip: ikuti kendaraan depan. Dulu planner
+        # tetap diberi V_REF, ego terus mendekat, _sempat gugur, FSM terjebak di
+        # CHECK_OVERTAKE dan MPC terpaksa membelok menembus elips.
+        # Hanya bila menyalip tidak mungkin (depan tidak cukup lambat, waktu tidak
+        # cukup, atau lajur tujuan terisi). Melambat saat menyalip masih mungkin
+        # membuang selisih kecepatan yang justru dipakai untuk menyalip.
+        self.v_goal = config.V_REF
+        if self.state in (LANE_KEEPING, CHECK_OVERTAKE) and depan is not None:
+            bisa_salip = (v_mau - depan[2] > config.DV_TRIGGER
+                          and self._sempat(depan, v_ego)
+                          and self._lajur_tujuan_aman(lajur_tujuan))
+            if not bisa_salip:
+                self.v_goal = _v_ikut(depan)
         return self.state
 
     def _lajur_tujuan_aman(self, lajur_tujuan):

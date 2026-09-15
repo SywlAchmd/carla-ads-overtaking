@@ -65,7 +65,20 @@ D_SAFE_DEPAN = 25.0                 # m, lajur tujuan harus kosong ke depan
 D_SAFE_BELAKANG = 15.0              # m, dan ke belakang
 LATERAL_MASUK = 0.9                 # fraksi lebar lajur -> dianggap sudah pindah
 PASS_MARGIN = 8.0                   # m, ego harus unggul sejauh ini sebelum kembali
+# Laju lateral menjauhi lajur asal maksimum untuk mulai kembali (TUNING_MPC.md 13).
+# Quintic kembali (T=4 s) yang berangkat dengan laju menjauh u kebablasan keluar:
+# u=0,1 -> 0,017 m; u=0,91 -> 0,40 m (terukur 0,47 m di run gagal). 0,1 m/s juga
+# ~70x di atas derau laju lateral saat menjaga lajur (maks 0,0014 m/s).
+DD_KEMBALI = 0.1                    # m/s
 LATERAL_SELESAI = 0.3               # m, kembali ke lajur asal dianggap selesai
+# Mengikuti kendaraan depan selama belum/tidak bisa menyalip (planning._v_ikut).
+# Jarak ikut d* = ELLIPSE_A + SUMBU_KE_PUSAT + WAKTU_IKUT * v_depan (jarak waktu-tetap).
+# Sapuan S3 (TUNING_MPC.md bagian 13.7). Setelah zona aman menjamin JARAK_AMAN,
+# 1,0-2,5 s semuanya lolos dan jarak bodi tidak lagi bergantung nilai ini (1,42-
+# 1,69 m). 2,0 s = nilai terkecil yang tidak pernah membuat planner kehabisan
+# kandidat (1,0 s -> 12 tick nol, 1,5 s -> 4, 2,0 dan 2,5 s -> 0); tick nol itu
+# yang dulu menendang ego keluar lajur. 2,5 s hanya menambah jarak ikut.
+WAKTU_IKUT = 2.0                    # s
 
 # MPC (bagian 7.3)
 MPC_N = 20                          # horizon 2 detik
@@ -145,3 +158,12 @@ _SETENGAH_LEBAR = (EGO_LEBAR + LAIN_LEBAR) / 2 + JARAK_AMAN          # 2,91 m
 # margin sama ~0,30 m ke keduanya. A = nilai terkecil yang memuat sudut persegi.
 ELLIPSE_B = (LANE_WIDTH + _SETENGAH_LEBAR) / 2                       # 3,20 m
 ELLIPSE_A = _SETENGAH_PANJANG / (1 - (_SETENGAH_LEBAR / ELLIPSE_B) ** ELLIPSE_P) ** (1 / ELLIPSE_P)  # 7,71 m
+
+# Skenario (bagian 11.1): kendaraan lain = (jarak awal dari ego m, lajur, kecepatan m/s).
+# Lajur 0 = lajur ego, 1 = lajur menyalip. Kendaraan pertama = target yang disalip.
+SKENARIO = {
+    'S1': [(60.0, 0, 7.0)],                     # depan lambat, lajur kanan kosong
+    # Lajur tujuan terisi kendaraan dari belakang di batas kecepatan: ego harus
+    # menunggu sambil mengikuti, lalu menyalip ulang (accelerative overtaking).
+    'S3': [(60.0, 0, 7.0), (-10.0, 1, V_MAX)],
+}

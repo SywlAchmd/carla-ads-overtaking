@@ -75,9 +75,10 @@ def jarak_kotak(dx, dy, dim_a, dim_b):
     return np.hypot(np.maximum(celah_x, 0.0), np.maximum(celah_y, 0.0))
 
 
-def nilai_run(t, x, y, states, x_tgt, y_tgt, tabrakan, dim_ego, dim_tgt):
+def nilai_run(t, x, y, states, x_tgt, y_tgt, tabrakan, dim_ego, dim_tgt, lain=()):
     """Menilai satu run terhadap lima syarat bagian 11.2.
 
+    `lain` = [(x, y, dim), ...] kendaraan selain target; ikut syarat jarak aman.
     Kembali: (berhasil, kategori, rincian). Kategori mengikuti bagian 11.2 --
     `abort` BUKAN kegagalan sistem melainkan keputusan FSM untuk tidak menyalip.
     """
@@ -85,7 +86,8 @@ def nilai_run(t, x, y, states, x_tgt, y_tgt, tabrakan, dim_ego, dim_tgt):
     keluar = np.nonzero(states != 'LANE_KEEPING')[0]
 
     # Syarat 4 dan 3 berlaku sepanjang run, bukan hanya saat manuver
-    r['jarak_min'] = float(jarak_kotak(x_tgt - x, y_tgt - y, dim_ego, dim_tgt).min())
+    r['jarak_min'] = float(min(jarak_kotak(xo - x, yo - y, dim_ego, d).min()
+                               for xo, yo, d in [(x_tgt, y_tgt, dim_tgt), *lain]))
     r['tabrakan'] = bool(tabrakan)
 
     if len(keluar) == 0:

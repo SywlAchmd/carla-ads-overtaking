@@ -139,6 +139,18 @@ def test_kembali_setelah_unggul_pass_margin():
     assert jalan(fsm, 1.0, d, [depan(sudah)]) == P.LANE_CHANGE_RETURN
 
 
+def test_tidak_kembali_selagi_bergerak_menjauhi_lajur_asal():
+    """Target sudah tertinggal, tapi ego masih bergerak keluar 1 m/s: tunggu.
+    Begitu laju lateralnya berhenti, kembali seperti biasa."""
+    fsm = P.BehaviorFSM()
+    fsm.state = P.OVERTAKING
+    sudah = [depan(-(config.PASS_MARGIN + 2.0))]
+    for i in range(20):
+        fsm.update(i * 0.05, Y_SALIP, V_EGO, sudah, config.SIDE_SIGN * 1.0)
+    assert fsm.state == P.OVERTAKING
+    assert jalan(fsm, 1.0, Y_SALIP, sudah, t0=1.0) == P.LANE_CHANGE_RETURN
+
+
 def test_selesai_saat_kembali_ke_tengah_lajur():
     fsm = P.BehaviorFSM()
     fsm.state = P.LANE_CHANGE_RETURN
@@ -153,6 +165,44 @@ def test_y_goal_mengikuti_state():
                         (P.LANE_CHANGE_RETURN, 0.0)]:
         fsm.state = state
         assert fsm.y_goal == goal, (state, fsm.y_goal)
+
+
+def test_tidak_melambat_bila_depan_jauh():
+    fsm = P.BehaviorFSM()
+    fsm.update(0.0, 0.0, V_EGO, [depan(60.0)])
+    assert fsm.v_goal == config.V_REF
+
+
+def test_tidak_melambat_bila_bisa_menyalip():
+    """Depan dekat & lambat, lajur tujuan kosong, waktu cukup: jangan melambat --
+    selisih kecepatan itu yang dipakai untuk menyalip (S1 tidak boleh berubah)."""
+    fsm = P.BehaviorFSM()
+    fsm.update(0.0, 0.0, V_EGO, [depan(25.0)])
+    assert fsm.state == P.LANE_KEEPING and fsm.v_goal == config.V_REF
+
+
+def test_mengikuti_bila_belum_bisa_menyalip():
+    """Lajur tujuan terisi: tertahan di CHECK, v_goal turun; tepat di jarak ikut
+    = kecepatan depan; lebih dekat = di bawahnya (mundur ke jarak ikut)."""
+    d_ikut = config.ELLIPSE_A + config.SUMBU_KE_PUSAT + config.WAKTU_IKUT * V_LAMBAT
+    fsm = P.BehaviorFSM()
+    assert jalan(fsm, 2.0, 0.0, [depan(20.0), di_lajur_salip(10.0)]) == P.CHECK_OVERTAKE
+    assert fsm.v_goal < config.V_REF
+    fsm.update(2.0, 0.0, V_EGO, [depan(d_ikut), di_lajur_salip(10.0)])
+    assert abs(fsm.v_goal - V_LAMBAT) < 1e-9
+    fsm.update(2.05, 0.0, V_EGO, [depan(d_ikut - 3.0), di_lajur_salip(10.0)])
+    assert fsm.v_goal < V_LAMBAT
+
+
+def test_menyalip_ulang_setelah_mengikuti():
+    """Accelerative overtaking: ego sudah melambat (v_ego = v_depan) sehingga TTC
+    terhadap v_ego tak hingga. FSM lama tidak pernah terpicu lagi di sini."""
+    d_ikut = config.ELLIPSE_A + config.SUMBU_KE_PUSAT + config.WAKTU_IKUT * V_LAMBAT
+    fsm = P.BehaviorFSM()
+    assert jalan(fsm, 1.0, 0.0, [depan(d_ikut), di_lajur_salip(5.0)],
+                 v_ego=V_LAMBAT) == P.CHECK_OVERTAKE
+    assert jalan(fsm, 1.0, 0.0, [depan(d_ikut)], t0=1.0,
+                 v_ego=V_LAMBAT) == P.LANE_CHANGE_OVERTAKE
 
 
 def test_urutan_lengkap_sesuai_tabel_bagian_6():
