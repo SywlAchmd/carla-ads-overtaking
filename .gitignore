@@ -16,3 +16,7 @@ out/*
 
 # Yang diabaikan: *.mp4 (~18 MB, bisa dibangkitkan ulang dengan record_*.py)
 # dan *.npz (log run, bisa dibangkitkan ulang dengan main.py).
+
+# Weight model (ratusan MB) tidak masuk repo; lihat config.YOLOPX_WEIGHT.
+*.pth
+Model/
