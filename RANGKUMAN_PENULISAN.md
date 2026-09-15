@@ -640,3 +640,41 @@ eksperimen sendiri, bukan pada standar.
 asal konsep di bab 2 — Werling dkk. (2010), Hayward (1972), Flash & Hogan (1985).
 Mengganti ketiganya akan melemahkan landasan teori, karena justru merekalah
 sumber pertamanya.
+
+
+---
+
+## 17. Konfigurasi sensor (Tahap 8)
+
+Penempatan kamera mengikuti rig KITTI, keputusan penulis 15 September 2026.
+Angka KITTI diambil dari Gambar 3 makalah datasetnya (Geiger dkk., 2013):
+
+| Besaran | KITTI | Skripsi ini |
+|---|---|---|
+| Tinggi kamera di atas jalan | 1,65 m | 1,65 m (terukur di simulator 1,652 m) |
+| Jarak di depan sumbu roda belakang | 1,68 m | 1,68 m (terukur 1,680 m) |
+| Baseline stereo kamera warna | 0,54 m | 0,54 m (tersedia, belum dipakai) |
+| Sudut buka lensa | ~90 derajat (lensa 4 mm) | 90 derajat |
+| Resolusi | 1392 x 512 | **1280 x 720** (keputusan penulis) |
+| Tinggi Velodyne | 1,73 m | tidak dipakai |
+
+Depth camera ditaruh satu titik dengan kamera warna kiri, sehingga piksel hasil
+deteksi bisa langsung dibaca kedalamannya tanpa kalibrasi antar sensor. Depth di
+CARLA adalah sensor ideal -- sudah masuk aturan penulisan nomor 3.
+
+**Yang perlu masuk batasan masalah:** kap mesin Dodge Charger memenuhi sekitar 15%
+bagian bawah citra, karena rig KITTI dipasang di atap station wagon sedangkan di
+sini kamera berada di atas kabin sedan. Bagian itu tidak membawa informasi jalan.
+
+Verifikasi penempatan dilakukan terhadap simulator, bukan terhadap nilai yang
+diminta: `cek_sensor.py` membaca transform sensor yang benar-benar terjadi dan
+membandingkannya dengan titik terbawah bodi sebagai permukaan jalan.
+
+**Catatan sitasi:** makalah KITTI terbit 2013, di luar aturan empat tahun. Ia
+dipakai sebagai spesifikasi rig yang ditiru, bukan sebagai klaim state of the art,
+jadi perlakuannya sama dengan sumber asal konsep di bab 2 -- putuskan bersama
+butir di bagian 16.
+
+> Geiger, A., Lenz, P., Stiller, C., & Urtasun, R. (2013). Vision meets Robotics:
+> The KITTI Dataset. *International Journal of Robotics Research*, 32(11),
+> 1231-1237. https://www.cvlibs.net/publications/Geiger2013IJRR.pdf

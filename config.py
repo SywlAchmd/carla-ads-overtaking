@@ -80,6 +80,16 @@ LATERAL_SELESAI = 0.3               # m, kembali ke lajur asal dianggap selesai
 # yang dulu menendang ego keluar lajur. 2,5 s hanya menambah jarak ikut.
 WAKTU_IKUT = 2.0                    # s
 
+# Sensor kamera (Tahap 8, bagian 10). Penempatan mendekati rig KITTI (Geiger dkk.,
+# IJRR 2013, Gambar 3): seluruh kamera 1,65 m di atas permukaan jalan dan 1,68 m di
+# depan sumbu roda belakang, baseline stereo warna 0,54 m. Lensa KITTI 4 mm dengan
+# sudut buka ~90 derajat. Resolusi 1280x720 (KITTI 1392x512) -- keputusan penulis.
+KAMERA_LEBAR, KAMERA_TINGGI = 1280, 720
+KAMERA_FOV = 90.0                   # derajat, sudut buka horizontal
+KAMERA_Z = 1.65                     # m di atas permukaan jalan
+KAMERA_DEPAN_SUMBU = 1.68           # m di depan sumbu roda belakang
+KAMERA_BASELINE = 0.54              # m, jarak kamera warna kiri-kanan
+
 # MPC (bagian 7.3)
 MPC_N = 20                          # horizon 2 detik
 MPC_DT = 0.1                        # detik
