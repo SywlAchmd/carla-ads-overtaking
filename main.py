@@ -78,7 +78,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik):
     mpc = control.MPCController(params)
 
     dt = config.FIXED_DELTA_SECONDS
-    traj, t_traj, dy_prev, v_prev = None, 0.0, 0.0, None
+    traj, t_traj, v_prev = None, 0.0, None
     a_filt, a_cmd_prev = 0.0, 0.0
     n_layak, offset_pilih = 0, 0.0
     log, states = [], []
@@ -112,10 +112,12 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik):
                 obs_rel[:, 0] -= ego.x        # FSM memakai x relatif terhadap ego
             fsm.update(t, ego.y, ego.v, obs_rel)
             dy = ego.v * math.sin(ego.yaw)
-            ddy = (dy - dy_prev) / (2 * dt)
-            dy_prev = dy
-            # a0 quartic memakai percepatan yang DIPERINTAHKAN tick lalu, bukan
-            # hasil ukur: perintah MPC halus karena suku Rd, hasil ukur tidak.
+            # Percepatan awal lateral (y'') dan longitudinal (a0) dari RENCANA/
+            # PERINTAH, bukan hasil ukur. Hasil ukur menutup lup planner-MPC: MPC
+            # mengikuti kelengkungan awal rencana, percepatan itu terukur, lalu
+            # jadi syarat awal rencana berikutnya. Di S3 satu tendangan kecil
+            # tumbuh jadi simpangan 2,3 m keluar lajur (TUNING_MPC.md 13).
+            ddy = 0.0 if traj is None else float(traj.lateral_at(t - t_traj)[2])
             traj, layak = planning.plan_lane_change(ego.y, dy, ddy, ego.x, ego.v,
                                                     a_cmd_prev, config.V_REF,
                                                     obstacles=obs, y_goal=fsm.y_goal)
