@@ -150,9 +150,12 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan):
             # dinilai penilai harus benar, yang dipakai mobil boleh berisik
             pos = []
             for a in aktor:
-                tl = a.get_transform().location
-                pos.append(frame.titik(tl.x, -tl.y))
-            tx, ty = pos[0]
+                tf = a.get_transform()
+                # yaw ikut dicatat: yang dipaksa searah jalan hanya kecepatannya,
+                # arah hadap bodi tetap bebas berputar (dipakai penilai jarak)
+                pos.append((*frame.titik(tf.location.x, -tf.location.y),
+                            localization.wrap(-math.radians(tf.rotation.yaw) - frame.psi0)))
+            tx, ty = pos[0][:2]
             log.append([t, ego.x, ego.y, ego.yaw, ego.v, xref[1, 0], fsm.y_goal,
                         ego.y - fsm.y_goal, cmd.accel_cmd, cmd.delta_cmd, cmd.steer,
                         cmd.throttle, cmd.brake, cmd.solve_time_ms,
@@ -214,10 +217,12 @@ def main():
         print(f'offset terpilih: {sorted(set(np.round(off[off > 0], 1)))}')
     print(f'tabrakan: {monitor.ringkas()}')
     dim_ego = (params['length'], params['width'])
-    lain = [(posisi[:, i, 0], posisi[:, i, 1], dims[i]) for i in range(1, len(aktor))]
+    lain = [(posisi[:, i, 0], posisi[:, i, 1], posisi[:, i, 2], dims[i])
+            for i in range(1, len(aktor))]
     berhasil, kategori, rincian = evaluation.nilai_run(
         log[:, k['t']], log[:, k['x']], log[:, k['y']], states,
-        log[:, k['x_tgt']], log[:, k['y_tgt']], monitor.tabrakan, dim_ego, dims[0], lain)
+        log[:, k['x_tgt']], log[:, k['y_tgt']], monitor.tabrakan, dim_ego, dims[0], lain,
+        yaw=log[:, k['yaw']], yaw_tgt=posisi[:, 0, 2])
     print()
     print(evaluation.ringkas_penilaian(berhasil, kategori, rincian))
     print(f'\nlog: {path}')

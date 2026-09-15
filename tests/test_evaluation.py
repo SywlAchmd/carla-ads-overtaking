@@ -88,6 +88,19 @@ def test_berdampingan_terlalu_rapat_digagalkan():
     assert r['jarak_min'] <= config.JARAK_AMAN
 
 
+def test_yaw_ego_memperkecil_jarak_bodi():
+    """Kotak ego ikut berputar. Mengabaikan yaw melebihkan jarak: pada 5 derajat
+    dan simpangan lateral 3,5 m, selisihnya ~0,2 m."""
+    lurus = E.jarak_kotak(np.array([0.0]), np.array([3.5]), DIM_EGO, DIM_TGT)[0]
+    miring = E.jarak_kotak(np.array([0.0]), np.array([3.5]), DIM_EGO, DIM_TGT,
+                           np.radians(5.0))[0]
+    assert lurus - miring > 0.15, (lurus, miring)
+    # sejajar sumbu harus tetap sama dengan rumus analitik
+    assert abs(lurus - (3.5 - (DIM_EGO[1] + DIM_TGT[1]) / 2)) < 1e-9
+    assert E.jarak_kotak(np.array([10.0]), np.array([0.0]), DIM_EGO, DIM_TGT,
+                         np.radians(5.0))[0] > 0.0
+
+
 if __name__ == '__main__':
     for nama, fn in sorted(globals().items()):
         if nama.startswith('test_'):
