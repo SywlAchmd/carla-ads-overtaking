@@ -18,20 +18,21 @@ Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
 | 2 | Localization + global planner | **selesai** |
 | 3 | Local planner (quintic + quartic) | **selesai** |
 | 4 | Behavior planner (FSM) | **selesai** |
-| 5 | MPC (CasADi + IPOPT) | belum |
-| 6 | Integrasi end-to-end | belum |
+| 5 | MPC (CasADi + IPOPT) + tuning bobot | **selesai** |
+| 6 | Integrasi end-to-end (S1 dan S3) | **selesai** |
 | 7 | Baseline Pure Pursuit/Stanley | **DIBATALKAN** — lihat bagian 13 |
 | 8 | Perception lengkap (perbaikan leakage) | belum |
 | 9 | Eksperimen penuh | belum |
 
-Kode: 1.634 baris, 44 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+Kode: 3.238 baris, 65 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+Terakhir diperbarui 12 September 2026.
 
-**Yang boleh ditulis sekarang:** bab 3 (metodologi) bagian kendaraan uji,
-lingkungan uji, localization, trajectory generation, behavior planning. Plus
-bab 2 untuk landasan teori quintic polynomial dan TTC.
+**Yang boleh ditulis sekarang:** seluruh bab 3 (metodologi), dan bab 4 untuk
+hasil kendali satu run per skenario S1 dan S3 (bagian 14), tuning bobot
+(`TUNING_MPC.md` bagian 10-11), serta temuan metodologis (bagian 15).
 
-**Belum boleh ditulis:** apa pun tentang hasil kendali MPC, tracking error,
-success rate, atau perbandingan dengan baseline. Belum ada datanya.
+**Belum boleh ditulis:** success rate (butuh 10-20 ulangan per skenario,
+Tahap 9), skenario S2/S4/S5, dan apa pun tentang perception berbasis vision.
 
 ---
 
@@ -160,7 +161,11 @@ rendah.
 | Offset lateral kandidat | 3,0 / 3,5 / 4,0 m | |
 | Durasi manuver kandidat | 3,0 / 3,5 / 4,0 s | |
 | Batas percepatan lateral | 3,0 m/s² | kenyamanan |
-| Elips penghindaran `a_e`, `b_e` | 7,0 m, 2,2 m | |
+| Zona aman: pangkat `p` | 4 | elips-super, bagian 14.3 |
+| Zona aman `A`, `B` | 7,709 m, 3,204 m | diturunkan dari dimensi + `JARAK_AMAN` |
+| Geser sumbu belakang -> pusat bodi | 1,433 m | zona diukur antar pusat bodi |
+| Jarak ikut `WAKTU_IKUT` | 2,0 s | jarak waktu-tetap, bagian 14.4 |
+| Laju menjauh maks untuk kembali | 0,1 m/s | gerbang `DD_KEMBALI` |
 | Frekuensi local planner | 10 Hz | |
 | Frekuensi MPC | 20 Hz | |
 | `TTC_TRIGGER` | 5,0 s | mulai mempertimbangkan menyalip |
@@ -354,8 +359,13 @@ karena PDGJ 2021 memuat semua yang dibutuhkan.
 
 **Label video wajib:** semua video saat ini adalah **playback lintasan planner**,
 bukan hasil kendali MPC. Physics dimatikan dan posisi ego ditempelkan ke lintasan.
-Beri label "lintasan hasil local planner". Video hasil kendali baru bisa dibuat
-setelah Tahap 5.
+Beri label "lintasan hasil local planner". Video hasil kendali sudah bisa dibuat
+(Tahap 5 selesai), tapi `record_maneuver.py` belum diubah.
+
+**Gambar yang perlu dibangkitkan ulang sebelum masuk skripsi:** `run_s1_mpc.png`
+dan seluruh grafik hasil kendali dibuat sebelum perbaikan bagian 15, jadi angkanya
+tidak lagi cocok dengan bagian 14. Jalankan ulang `main.py` untuk S1 dan S3, lalu
+buat grafiknya dari `out/run_s1_mpc_gt.npz` dan `out/run_s3_mpc_gt.npz`.
 
 Data mentah: `vehicle_params.json`, `model_validation.csv`,
 `model_validation_18kmh.csv`.
@@ -391,8 +401,17 @@ Data mentah: `vehicle_params.json`, `model_validation.csv`,
   penyebut normalisasi `steer`). Proposal bagian 7.5 menulis
   `steer = delta/delta_max` — itu salah dan menyebabkan understeer ~2,4×.
   Penyebutnya harus `delta_max_phys × curve(v)`, dengan `v` dalam km/jam.
+  **Sudah diperbaiki di kode dan diverifikasi di CARLA** (meleset <= 4%), tapi
+  tetap perlu ditulis sebagai penyimpangan dari proposal.
 - Sitasi Flash & Hogan (1985) belum diverifikasi.
-- Skenario abort (S3) belum diuji di simulator; uji unit sudah mencakupnya.
+- **Zona aman dan penilai sama-sama memakai kotak sejajar sumbu.** Pada sudut
+  hadap 7° saat pindah lajur, sudut bodi bergeser ~0,31 m yang tidak dihitung.
+  Keduanya konsisten satu sama lain, jadi penilaian tidak bias, tapi jarak bodi
+  sebenarnya bisa lebih kecil daripada yang dilaporkan. Masuk batasan masalah.
+- **Dimensi kendaraan lain dianggap tetap** (Nissan Patrol, yang terbesar di
+  skenario); perception tidak mengukur dimensi. Masuk batasan masalah.
+- Skenario S2, S4, S5 belum ada. Definisi S3 dibuat tanpa naskah bagian 11.3
+  rencana kerja, jadi cocokkan dulu sebelum ditulis.
 - `D_SAFE_DEPAN`, `D_SAFE_BELAKANG`, `PASS_MARGIN` masih memakai nilai proposal
   apa adanya, belum dituning.
 
@@ -435,6 +454,185 @@ itu sumbu perbandingan yang lebih pusat daripada baseline kendali.
    2 detik; degradasi ~6x dari 18 ke 50 km/jam)
 2. Ambang pemicu FSM harus berbasis TTC, bukan jarak -- lengkap dengan
    pertidaksamaan yang mengikat ambang, durasi manuver, dan dwell time
-3. Hasil tuning bobot: `Q[psi]` proposal meleset 45x, sedangkan `Q[Y]`,
-   `Rd[delta]`, dan `ki` sudah benar (lihat `TUNING_MPC.md`)
+3. Hasil tuning bobot: `Q[psi]` proposal meleset 45x dan `kp` throttle meleset
+   ~1,8x, sedangkan `Q[Y]`, `Rd[delta]`, dan `ki` sudah benar sejak awal — dan
+   ketiganya dibuktikan lewat sapuan, bukan didiamkan (lihat `TUNING_MPC.md`)
 4. Perbandingan GT versus vision perception (Tahap 8)
+
+
+---
+
+## 14. Hasil kendali dan parameter final (Tahap 5 & 6)
+
+Diukur 12 September 2026, CARLA 0.9.16 kualitas Low, satu run per skenario.
+Simulasinya deterministik: dua run berkonfigurasi sama memberi log **identik
+bit-per-bit**, jadi satu run menggambarkan konfigurasi itu (ulangan tetap
+dibutuhkan di Tahap 9 untuk success rate, bukan untuk ketepatan satu run).
+
+### 14.1 Hasil per skenario
+
+| | S1 (flying overtaking) | S3 (accelerative overtaking) |
+|---|---|---|
+| Susunan | target 7,0 m/s, 60 m di depan, lajur kanan kosong | idem + kendaraan 13,9 m/s di lajur kanan, mulai 10 m di belakang ego |
+| Vonis bagian 11.2 | **BERHASIL** | **BERHASIL** |
+| Jarak minimum antar bodi | 1,39 m | 1,49 m |
+| Deviasi dari tengah lajur saat `LANE_KEEPING` | 0,011 m rata-rata, 0,152 m maks | 0,012 m rata-rata, 0,131 m maks |
+| Durasi manuver | 11,7 s | 19,2 s |
+| Kecepatan terendah | 47,8 km/jam | 18,9 km/jam (saat mengikuti; acuan `v_goal` turun sampai 14,5) |
+| Perlambatan terdalam | −0,15 m/s² | −1,91 m/s² |
+| Waktu solve MPC | 12,9 ms rata-rata, 22,7 ms maks | 11,8 ms rata-rata, 18,2 ms maks |
+| Solver gagal | 0 dari 400 | 0 dari 500 |
+| Urutan state FSM | lengkap | lengkap |
+
+Anggaran waktu satu tick 50 ms; solve terukur di mesin senggang (lihat catatan
+waktu solve di `TUNING_MPC.md` bagian 10).
+
+### 14.2 Bobot dan gain final
+
+| Parameter | Proposal 7.3 | Final | Dasar |
+|---|---|---|---|
+| `Q` = (X, Y, psi, v) | (1; 20; 10; 2) | **(1; 20; 450; 2)** | `Q[psi]` = titik redaman kritis empiris |
+| `Qf` | 5·Q | 5·Q | tidak disentuh |
+| `R` = (a, delta) | (0,1; 1,0) | (0,1; 1,0) | tidak disentuh |
+| `Rd` = (a, delta) | (1,0; 20,0) | (1,0; 20,0) | disapu, terbukti optimal |
+| `rho` | 1000 | 1000 | tidak disentuh |
+| `kp` throttle | 0,08 | **0,14** | = 1/gain plant terukur |
+| `ki` throttle | 0,25 | 0,25 | tengah geometrik plateau |
+
+Alasan tiap angka, deret sapuan, dan tafsiran fisiknya ada di `TUNING_MPC.md`
+bagian 11 — itu bahan langsung untuk sub-bab tuning di bab 3.
+
+### 14.3 Zona aman: constraint yang menyiratkan kriteria penilaian
+
+Syarat lulus bagian 11.2 menuntut jarak antar bodi >= 1,0 m. Agar constraint
+benar-benar menjaminnya, zona aman harus memuat seluruh "persegi terlarang"
+antar pusat bodi: setengah sisi `(L_ego + L_lain)/2 + 1,0` = 5,81 m dan
+`(W_ego + W_lain)/2 + 1,0` = 2,91 m.
+
+Elips biasa tidak bisa: dengan `B` di bawah lebar lajur (syarat agar berpapasan
+tetap layak), memuat sudut persegi menuntut `A` 11-14 m. Dipakai **elips-super
+pangkat 4**: `g = ((dx/A)^4 + (dy/B)^4)^(1/4) >= 1` dengan `A = 7,709 m` dan
+`B = 3,204 m`, keduanya diturunkan dari dimensi terukur.
+
+Kalimat siap pakai untuk bab 3:
+
+> Batas aman dinyatakan sebagai zona elips-super berpangkat empat antara pusat
+> bodi kendaraan. Parameternya diturunkan agar zona memuat persegi terlarang
+> yang dibentuk dimensi kedua kendaraan ditambah jarak aman minimum, sehingga
+> constraint pada optimasi menyiratkan kriteria keberhasilan yang dinilai.
+
+### 14.4 Perilaku mengikuti dan menyalip ulang
+
+Bila menyalip tidak mungkin (kendaraan depan tidak cukup lambat, waktu tidak
+cukup, atau lajur tujuan terisi), ego mengikuti kendaraan depan pada jarak
+`d* = A + 1,433 + 2,0·v_depan` dengan kecepatan acuan `v_depan + 2e/T`,
+`e = celah − d*`, `T` = durasi manuver terpanjang. Begitu lajur tujuan aman,
+ego menyalip dari posisi mengikuti — *accelerative overtaking* menurut
+klasifikasi Fabricius dkk. (2022), berbeda dari S1 yang *flying*.
+
+Pemicu memakai `max(v_ego, V_REF)`, bukan `v_ego`: alasan menyalip adalah
+kendaraan depan lebih lambat daripada kecepatan yang **diinginkan**. Tanpa itu,
+ego yang sudah melambat mengikuti punya TTC tak hingga dan tidak akan pernah
+mencoba menyalip lagi.
+
+---
+
+## 15. Temuan metodologis (12 September 2026)
+
+Lima temuan berikut layak masuk bab pembahasan. Semuanya punya pola sama:
+**angka yang terlihat baik karena alasan yang salah.**
+
+### 15.1 Determinisme harus ditegakkan kode, bukan diasumsikan
+
+Lima run `main.py` berkonfigurasi identik memberi lima hasil berbeda sejak tick
+pertama, satu di antaranya gagal. Fisika CARLA sendiri terbukti deterministik.
+Penyebabnya perintah aktor (`apply_control`, `set_target_velocity`) dikirim
+asinkron sementara `world.tick()` menunggu, sehingga perintah kadang berlaku
+satu frame terlambat. Setelah perintah dikirim lewat `apply_batch_sync` yang
+menunggu, run kembali identik bit-per-bit.
+
+### 15.2 "Optimum" yang ternyata artefak
+
+Sapuan `kp` throttle menunjukkan optimum tajam di 0,3 (error 0,021 m/s versus
+~0,105 di sekitarnya). Penyebabnya bukan kualitas pengendali: `ThrottlePI`
+me-reset integrator setiap `a_ref < 0`, dan pada `kp = 0,3` permintaan negatif
+kebetulan tidak pernah muncul. Setelah logika rem diperbaiki, `kp` datar di
+seluruh rentang 0,035-0,3 dan nilainya bisa dipilih dari teori (1/gain plant).
+
+### 15.3 Lup umpan balik planner-MPC
+
+Planner memakai percepatan lateral **terukur** sebagai syarat awal. MPC
+mengikuti kelengkungan awal lintasan, percepatan itu terukur lagi, lalu jadi
+syarat awal rencana berikutnya. Di S3 satu gangguan kecil tumbuh menjadi
+simpangan 2,3 m keluar lajur, padahal planner terus menargetkan tengah lajur.
+Perbaikannya memakai percepatan dari rencana sebelumnya; deviasi lajur S1 turun
+dari 0,122 ke 0,011 m.
+
+### 15.4 Constraint yang tidak menyiratkan kriteria penilaian
+
+Elips lama hanya menjamin jarak bodi 0,29 m, sementara syarat lulus 1,0 m.
+Selama jalur uji lebar, angkanya tetap lolos — kecacatan baru muncul pada
+manuver dari posisi mengikuti. Pelajaran: **kriteria penilaian harus bisa
+diturunkan dari constraint**, bukan sekadar terpenuhi secara kebetulan.
+
+### 15.5 Metrik yang mengukur hal lain
+
+"Deviasi dari tengah lajur saat `LANE_KEEPING`" hampir seluruhnya berisi ekor
+setelah kembali ke lajur; sebelum manuver angkanya 0,001 m. Pisahkan per fase
+saat mendefinisikan metrik bab 4.
+
+**Dua perbaikan yang sempat ditempuh sebelum 15.3 ketemu** (margin zona dan
+gerbang laju lateral) keduanya masuk akal dan didukung korelasi data, tapi hanya
+mengobati gejala. Yang membedakan perbaikan yang benar: mekanismenya
+direkonstruksi tick demi tick, bukan disimpulkan dari korelasi.
+
+---
+
+## 16. Sitasi tambahan — terbit <= 4 tahun, ber-URL, isi sudah dibuka
+
+Aturan penulis (11 September 2026): sitasi baru harus nyata, ber-URL, terbit
+maksimal empat tahun terakhir, dan isinya dibaca langsung — bukan dari cuplikan
+hasil pencarian.
+
+**Arsitektur kendali bertingkat (MPC sebagai HLC, PI sebagai LLC):**
+
+> Yuan, T., & Zhao, R. (2022). LQR-MPC-Based Trajectory-Tracking Controller of
+> Autonomous Vehicle Subject to Coupling Effects and Driving State Uncertainties.
+> *Sensors*, 22(15), 5556. https://doi.org/10.3390/s22155556
+
+> Pitschi, P., Sagmeister, S., Goblirsch, S., Lienkamp, M., & Lohmann, B. (2025).
+> Longitudinal Control for Autonomous Racing with Combustion Engine Vehicles.
+> arXiv:2504.17418. https://arxiv.org/abs/2504.17418
+
+**Zona aman berbentuk elips-super:**
+
+> Moran, R., Bagley, S., Kasmann, S., Martin, R., Pasley, D., Trimble, S.,
+> Dianics, J., & Sopasakis, P. (2024). NMPC for Collision Avoidance by
+> Superellipsoid Separation. *Modeling, Estimation, and Control Conference
+> (MECC 2024)*. arXiv:2404.14257. https://arxiv.org/abs/2404.14257
+
+**Kebijakan jarak waktu-tetap dan klasifikasi manuver menyalip:**
+
+> El-Baklish, S. K., Kouvelas, A., & Makridis, M. A. (2025). Driving Towards
+> Stability and Efficiency: A Variable Time Gap Strategy for Adaptive Cruise
+> Control. arXiv:2402.14110. https://arxiv.org/abs/2402.14110
+
+> Lee, K., & Lee, C. (2025). String Stability Analysis and Design Guidelines for
+> PD Controllers in Adaptive Cruise Control Systems. *Sensors*, 25(11), 3518.
+> https://doi.org/10.3390/s25113518
+
+> Fabricius, V., Habibovic, A., Rizgary, D., Andersson, J., & Wärnestål, P.
+> (2022). Interactions between heavy trucks and vulnerable road users—A
+> systematic review to inform the interactive capabilities of highly automated
+> trucks. *Frontiers in Robotics and AI*, 9, 818019.
+> https://doi.org/10.3389/frobt.2022.818019
+
+**Yang sengaja TIDAK dikutip:** nilai time gap ISO 15622 (standarnya 2018, dan
+sumber <= 4 tahun yang memuat angkanya tidak ditemukan), Rajamani (2012), serta
+buku teks kendali klasik. Nilai `WAKTU_IKUT` karena itu bersandar pada sapuan
+eksperimen sendiri, bukan pada standar.
+
+**Perlu keputusan penulis:** apakah aturan 4 tahun berlaku juga untuk sumber
+asal konsep di bab 2 — Werling dkk. (2010), Hayward (1972), Flash & Hogan (1985).
+Mengganti ketiganya akan melemahkan landasan teori, karena justru merekalah
+sumber pertamanya.
