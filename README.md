@@ -55,6 +55,7 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python show_lanes.py` | gambar lingkungan uji dan kandidat planner |
 | `python plot_run.py --skenario S3` | grafik hasil run dari log (tidak butuh server) |
 | `python cek_sensor.py` | pasang rig kamera, verifikasi penempatan, simpan contoh frame |
+| `python cek_deteksi.py --lajur 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
 
 ## Arsitektur
 

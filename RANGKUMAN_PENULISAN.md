@@ -678,3 +678,71 @@ butir di bagian 16.
 > Geiger, A., Lenz, P., Stiller, C., & Urtasun, R. (2013). Vision meets Robotics:
 > The KITTI Dataset. *International Journal of Robotics Research*, 32(11),
 > 1231-1237. https://www.cvlibs.net/publications/Geiger2013IJRR.pdf
+
+
+---
+
+## 18. Kalibrasi deteksi YOLOPX terhadap ground truth (Tahap 8)
+
+15 September 2026, `cek_deteksi.py`. Kendaraan Nissan Patrol ditaruh pada sembilan
+jarak di depan ego, di lajur ego dan di lajur menyalip; tiap frame dibandingkan
+dengan kotak 2D hasil proyeksi bounding box 3D-nya. **Angka pelatihan (96-98%)
+tidak dipakai karena split-nya masih bocor** -- ini pengukuran terhadap simulator,
+dan skenarionya sama dengan yang dipakai eksperimen kendali.
+
+Model: `epoch-195.pth`, satu kelas (kendaraan), masukan 1280x720 di-letterbox ke
+384x640, inferensi **14,4 ms** per frame di RTX 5060 (anggaran tick 50 ms).
+
+### 18.1 Laju deteksi terhadap jarak
+
+| Jarak | Lebar target di citra | Lajur ego | Lajur menyalip |
+|---|---|---|---|
+| 10 m | 207-326 px | terdeteksi, conf 0,91 | terdeteksi, conf 0,90 |
+| 20 m | 77-100 px | 0,91 | 0,92 |
+| 30 m | 48-57 px | 0,90 | 0,90 |
+| 50 m | 27-30 px | 0,84 | 0,81 |
+| 80 m | 16-17 px | 0,84 | 0,78 |
+
+Terdeteksi di **seluruh** jarak 10-80 m, IoU terhadap ground truth 0,74-0,94.
+Jangkauan perception (80 m) melampaui yang dibutuhkan planner: horizon MPC 2 detik
+pada 13,4 m/s hanya 27 m, dan pemicu menyalip bekerja di ~32 m.
+
+### 18.2 Ambang keyakinan
+
+Positif palsu per frame pada jalan kosong maupun berisi target:
+
+| Ambang | Positif palsu | Deteksi benar |
+|---|---|---|
+| 0,3 (bawaan demo) | 4-8 | semua |
+| 0,4 | 0-2 | semua |
+| **0,5** | **0** | semua (terlemah 0,78) |
+| 0,6 / 0,7 | 0 | semua |
+
+**`DETEKSI_CONF = 0,5`**: margin 0,28 terhadap deteksi terlemah, dan positif palsu
+hilang. Satu positif palsu sempat muncul di satu frame lalu tidak terulang saat
+diulang -- deteksi ambang-batas pada rumpun semak di garis horizon. Positif palsu
+pada ambang rendah semuanya berupa batu, semak, dan pagar di sekitar horizon,
+bukan kendaraan.
+
+### 18.3 Depth membaca MUKA kendaraan, bukan pusatnya
+
+Galat jarak dari depth camera konsisten **-2,3 m** terhadap pusat bodi target, di
+semua jarak. Itu tepat setengah panjang Nissan Patrol (4,605/2 = 2,30 m): depth
+mengukur permukaan yang terlihat. Diukur ulang terhadap muka kendaraan, galatnya
+tinggal **-0,48 sampai +0,19 m**.
+
+**Konsekuensi untuk `VisionPerception`:** keluarannya harus posisi PUSAT bodi,
+sama seperti `GroundTruthPerception`, supaya kedua konfigurasi di bagian 11.4
+membandingkan besaran yang sama. Jadi jarak depth perlu ditambah setengah panjang
+kendaraan yang diasumsikan (`LAIN_PANJANG`), dan asumsi itu masuk batasan masalah.
+
+### 18.4 Segmentasi
+
+Area jalan (drivable area) terdeteksi rapi menutupi keempat lajur searah dan
+berhenti tepat di pembatas beton. Garis lajur terdeteksi untuk marka sungguhan,
+tetapi memunculkan bercak palsu di sisi kanan pada area pagar dan rumput. Karena
+jalur kendali skripsi ini memakai lajur dari peta (bukan dari kamera), kedua
+keluaran itu dipakai sebagai bahan pembahasan, bukan masukan kendali.
+
+Gambar: `out/deteksi_15m_lajur0.png`, `out/deteksi_30m_lajur0.png`,
+`out/deteksi_60m_lajur0.png` dan padanannya untuk lajur menyalip.

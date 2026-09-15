@@ -2098,3 +2098,41 @@ lajur selebar 3,5 m dan justru melumpuhkan manuver.
 kecepatan, jarak antar bodi tiap kendaraan, kemudi + waktu solve) dengan latar
 diwarnai menurut state FSM, dibaca langsung dari log tanpa menjalankan simulasi
 ulang. `out/run_s1_mpc.png` dan `out/run_s3_mpc.png` sudah dibangkitkan ulang.
+
+---
+
+## Tahap 8 Langkah 1 — Rig Kamera dan Kalibrasi Deteksi
+
+15 September 2026. Angka lengkap di `RANGKUMAN_PENULISAN.md` bagian 17 dan 18.
+
+**Rig kamera** mengikuti KITTI (keputusan penulis): 1,65 m di atas jalan, 1,68 m di
+depan sumbu roda belakang, fov 90 derajat, resolusi 1280x720. Diverifikasi terhadap
+simulator, bukan terhadap nilai yang diminta: terukur 1,652 m dan 1,680 m. Depth
+camera satu titik dengan kamera warna.
+
+**Weight `epoch-195.pth` bukan model utuh**, melainkan checkpoint berisi `epoch`,
+`model`, `state_dict` (914 tensor), dan `optimizer`. Arsitekturnya datang dari repo
+penulis sendiri (`SywlAchmd/YOLOPX`, commit c253eb1), di-clone sebagai folder
+tetangga supaya repo skripsi tetap bersih. `load_state_dict(strict=True)` melaporkan
+seluruh kunci cocok. Tidak ada paket yang menyentuh torch/torchvision.
+
+**Hasil kalibrasi:** terdeteksi di seluruh jarak 10-80 m (conf 0,78-0,92), inferensi
+14,4 ms, ambang 0,5 memberi nol positif palsu.
+
+### TEMUAN: depth membaca muka kendaraan, bukan pusatnya
+
+Galat jarak konsisten -2,3 m di semua jarak -- persis setengah panjang Nissan Patrol.
+Bukan bug: depth camera mengukur permukaan terdekat yang terlihat, sedangkan ground
+truth diukur ke pusat bodi. Terhadap muka kendaraan galatnya tinggal -0,48..+0,19 m.
+
+Kalau ini tidak disadari, `VisionPerception` akan melaporkan kendaraan 2,3 m lebih
+dekat daripada `GroundTruthPerception`, dan seluruh perbandingan bagian 11.4 jadi
+membandingkan dua besaran berbeda -- persis jenis kesalahan yang sama dengan bias
+titik referensi sumbu belakang di Tahap 1.
+
+### Positif palsu hanya soal ambang
+
+Pada ambang bawaan demo 0,3 muncul 4-8 positif palsu per frame, seluruhnya batu,
+semak, dan pagar di garis horizon. Pada 0,5 hilang, sementara deteksi benar
+terlemah 0,78. Satu positif palsu sempat muncul lalu tidak terulang saat diulang;
+render kamera tidak sedeterministik fisika.

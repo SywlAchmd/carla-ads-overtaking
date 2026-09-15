@@ -90,6 +90,13 @@ KAMERA_Z = 1.65                     # m di atas permukaan jalan
 KAMERA_DEPAN_SUMBU = 1.68           # m di depan sumbu roda belakang
 KAMERA_BASELINE = 0.54              # m, jarak kamera warna kiri-kanan
 
+# YOLOPX (Tahap 8). Repo model = folder tetangga repo skripsi supaya repo ini
+# tetap bersih; weight hasil pelatihan penulis ada di luar area skripsi.
+YOLOPX_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'YOLOPX')
+YOLOPX_WEIGHT = os.path.expanduser('~/sawal/data_acquisition/epoch-195.pth')
+DETEKSI_CONF = 0.5                  # ambang keyakinan; ditentukan cek_deteksi.py
+DETEKSI_IOU = 0.45                  # ambang NMS
+
 # MPC (bagian 7.3)
 MPC_N = 20                          # horizon 2 detik
 MPC_DT = 0.1                        # detik
