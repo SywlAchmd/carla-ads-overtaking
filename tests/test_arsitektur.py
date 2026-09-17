@@ -11,7 +11,9 @@ import sys
 AKAR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, AKAR)
 
-MURNI = ('planning.py', 'control.py')
+# tracking.py ikut murni: Kalman filter dan asosiasi harus bisa diuji tanpa
+# simulator, torch, maupun kamera -- lihat tests/test_tracking.py.
+MURNI = ('planning.py', 'control.py', 'tracking.py')
 TERLARANG = {'carla', 'simulation', 'perception', 'evaluation', 'localization', 'main'}
 
 

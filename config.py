@@ -101,21 +101,59 @@ YOLOPX_WEIGHT_BDD = os.path.expanduser('~/sawal/data_acquisition/epoch-195.pth')
 DETEKSI_CONF = 0.5                  # ambang keyakinan; ditentukan cek_deteksi.py
 DETEKSI_IOU = 0.45                  # ambang NMS
 
+# Pelacakan antar frame (Tahap 8, bagian 10.3). Lihat docstring tracking.py.
+# Inferensi dijalankan di ambang RENDAH supaya deteksi lemah tersedia untuk tahap
+# dua ByteTrack; pemisahan tinggi/rendah terjadi di pelacak, bukan di NMS.
+TRACK_CONF_TINGGI = DETEKSI_CONF    # di atas ini deteksi boleh melahirkan track
+# 0,3 = ambang terendah yang masih memberi NOL positif palsu pada best.pth
+# (bagian 18.3). Di bawah itu model BDD mulai mengecat batu dan pagar.
+TRACK_CONF_RENDAH = 0.3             # hanya menahan track yang sudah ada
+TRACK_IOU_MIN = 0.15                # gerbang asosiasi; di bawah ini tidak dipasangkan
+TRACK_N_INIT = 3                    # frame berturut sebelum track dilaporkan
+# Melayang maksimum. Di 10 Hz, 5 frame = 0,5 s. Harus lebih pendek daripada
+# FSM_DWELL + waktu reaksi supaya halangan hantu tidak sempat mengubah keputusan,
+# tapi cukup panjang menutupi kedipan deteksi di tepi jangkauan (bagian 18.2).
+TRACK_MAX_HILANG = 5
+TRACK_SIGMA_A = 2.0                 # m/s², derau proses: percepatan kendaraan lain
+TRACK_SIGMA_V0 = 5.0                # m/s, ragu kecepatan awal (tak terukur dari 1 frame)
+# Derau ukur. Memanjang: galat depth terhadap muka kendaraan -0,48..+0,19 m
+# (bagian 18.4). Melintang: kuantisasi kotak, sigma_y = SIGMA_PIKSEL * d / f --
+# tumbuh dengan jarak, jadi dibangun per-deteksi di perception.py.
+TRACK_SIGMA_D = 0.5                 # m
+TRACK_SIGMA_PIKSEL = 4.0            # px
+
 # MPC (bagian 7.3)
 MPC_N = 20                          # horizon 2 detik
 MPC_DT = 0.1                        # detik
 # Q_psi dinaikkan 10 -> 450 lewat sapuan tuning.py (bagian 7.6 langkah 1).
 # Nilai awal bagian 7.3 kurang teredam: overshoot 26,4%, settling 2,35 s.
 # Di 450: overshoot 0,0%, settling 1,05 s, jitter 7,76 -> 3,47 mrad.
-MPC_Q = (1.0, 20.0, 450.0, 2.0)     # bobot error X, Y, psi, v
+#
+# Q_y 20 -> 150 dan Q_psi 450 -> 3400 saat tuning ulang di atas vision (bagian
+# 20). Q_y dipilih dari sapuan SKENARIO PENUH: ia titik terakhir sebelum jarak
+# bodi dan jumlah kandidat mulai memburuk, dan ia yang mengembalikan ego ke
+# dalam lajur tujuan (lambungan -5,39 -> -4,75 m, tepi lajur -5,25 m).
+#
+# Q_psi WAJIB ikut naik. Redaman ditentukan RASIO Q_psi/Q_y, bukan Q_psi sendiri:
+# 450/20 = 22,5, dan 22,5 x 150 = 3375 ~ 3400 yang terpilih dari sapuan step
+# response. Tanpa itu Q_y=150 memberi overshoot 28,9% dan chatter 50x lipat.
+# Di 3400 step response kembali ke kualitas semula (overshoot 7,5% vs 7,4%,
+# settling 1,60 vs 1,60 s, chatter 0,0003 vs 0,0008 mrad). Di 6000 chatter
+# meledak ke 0,1929 mrad -- itu batas atasnya.
+MPC_Q = (1.0, 150.0, 3400.0, 2.0)   # bobot error X, Y, psi, v
 MPC_QF_SCALE = 5.0                  # Qf = 5*Q
 MPC_R = (0.1, 1.0)                  # bobot input a, delta
 MPC_RD = (1.0, 20.0)                # bobot perubahan input -- delta jauh lebih besar
 MPC_RHO = 1000.0                    # penalti slack elips
+# Penalti slack batas percepatan lateral MPC (bagian 19.12). 20x di bawah MPC_RHO:
+# batas ini soal kenyamanan, zona aman soal keselamatan, dan urutan prioritasnya
+# harus tegas. Keras tanpa slack menurunkan jarak bodi 1,30 -> 1,13 m.
 A_MIN, A_MAX = -6.0, 3.0            # m/s²
 DDELTA_MAX = 0.05                   # rad per langkah, ~2,9°
 # Slot tetap (graf Opti dibangun sekali). Skenario S1-S5 paling banyak butuh 2
 # kendaraan; tiap slot menambah 21 constraint elips dan ~10 ms waktu solve.
+MPC_RHO_LAT = 50.0
+
 MPC_MAX_OBSTACLES = 2
 # Sempat dinaikkan ke 300 untuk mengejar solver gagal, ternyata gejala saja:
 # akar masalahnya batas kecepatan berlaku di k=0. Setelah itu diperbaiki, 100
@@ -172,6 +210,12 @@ BATAS_MANUVER = 20.0                # detik, sejak keluar dari LANE_KEEPING
 EGO_PANJANG, EGO_LEBAR = 5.008, 1.882
 SUMBU_KE_PUSAT = 1.433              # m, sumbu belakang (state MPC) -> pusat bodi ego
 LAIN_PANJANG, LAIN_LEBAR = 4.605, 1.932
+LAIN_TINGGI = 1.855                 # m, bounding box CARLA terukur 16 Sep 2026
+# Depth membaca permukaan yang TERLIHAT (bagian 18.4), dan permukaan itu berbeda
+# saat target di depan (muka belakang) dan saat berdampingan (sisi). Rasio
+# lebar/tinggi kotak deteksi membedakannya; keduanya terpisah 2,4x.
+AR_BELAKANG = LAIN_LEBAR / LAIN_TINGGI                               # 1,04
+AR_SAMPING = LAIN_PANJANG / LAIN_TINGGI                              # 2,48
 ELLIPSE_P = 4
 _SETENGAH_PANJANG = (EGO_PANJANG + LAIN_PANJANG) / 2 + JARAK_AMAN     # 5,81 m
 _SETENGAH_LEBAR = (EGO_LEBAR + LAIN_LEBAR) / 2 + JARAK_AMAN          # 2,91 m

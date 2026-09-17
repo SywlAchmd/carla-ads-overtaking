@@ -12,6 +12,7 @@ antrean supaya frame yang dipakai pasti milik tick yang sama.
 import queue
 
 import carla
+import numpy as np
 
 import config
 
@@ -38,6 +39,7 @@ class RigKamera:
         titik = {'rgb': -dy, 'depth': -dy}
         if stereo:
             titik['rgb_kanan'] = +dy
+        self.x = x                      # m, kamera di depan titik asal aktor ego
         self.sensor, self.antrean = {}, {}
         for nama, y in titik.items():
             tipe = 'sensor.camera.depth' if nama == 'depth' else 'sensor.camera.rgb'
@@ -68,8 +70,17 @@ def depth_meter(image):
 
     CARLA mengkodekan jarak di tiga kanal warna; rumusnya ada di dokumentasi
     sensor: (R + G*256 + B*256^2) / (256^3 - 1) * 1000 meter.
+
+    Nilainya jarak PLANAR (sepanjang sumbu optik), bukan radial -- diukur 16
+    September 2026 terhadap permukaan jalan, rasio tepi/tengah 1,000 vs 1,28
+    yang diprediksi radial. Lihat CATATAN.
     """
-    import numpy as np
     buf = np.frombuffer(image.raw_data, dtype=np.uint8).reshape(image.height, image.width, 4)
     b, g, r = (buf[:, :, i].astype(np.float64) for i in range(3))
     return (r + g * 256.0 + b * 65536.0) / (16777215.0) * 1000.0
+
+
+def rgb_array(image):
+    """Citra RGB CARLA -> ndarray (H, W, 3), urutan RGB."""
+    buf = np.frombuffer(image.raw_data, dtype=np.uint8).reshape(image.height, image.width, 4)
+    return buf[:, :, :3][:, :, ::-1].copy()
