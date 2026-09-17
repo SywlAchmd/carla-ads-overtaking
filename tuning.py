@@ -77,7 +77,7 @@ def _jalankan(world, ego_actor, frame, loc, mpc, step, detik):
 
         y_target = step if k >= 0 else 0.0            # lompatan acuan tepat di t=0
         cmd = mpc.compute(ego.as_vector(),
-                          main.xref_tahan(ego, y_target, config.V_REF), a_filt)
+                          main.xref_tahan(ego, config.V_REF, y_target), a_filt)
         kirim = [carla.command.ApplyVehicleControl(ego_actor.id, main.to_carla(cmd))]
         if k >= 0:
             log.append([k * dt, ego.y, cmd.delta_cmd, cmd.solve_time_ms,
