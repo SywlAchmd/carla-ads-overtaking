@@ -19,6 +19,14 @@ out/*
 # supaya metrik bab 4 bisa didefinisikan ulang tanpa mengulang eksperimen.
 !out/experiment_*.npz
 
+# Log run tunggal yang menjadi sumber setiap grafik bab 4 (376 KB). plot_run.py,
+# plot_compare.py, dan metrics.py sengaja tidak butuh server CARLA -- tanpa log
+# ini, clone di mesin tanpa CARLA hanya bisa MEMAKAI gambarnya, tidak bisa
+# membangkitkan ulang atau mengubah skala, label, maupun panelnya.
+!out/run_s1_mpc_gt.npz
+!out/run_s1_mpc_vision.npz
+!out/run_s3_mpc_gt.npz
+
 # Yang diabaikan: *.mp4 (~18 MB, bisa dibangkitkan ulang dengan record_*.py)
 # dan *.npz log run tunggal (bisa dibangkitkan ulang dengan main.py).
 
