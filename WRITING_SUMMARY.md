@@ -1786,3 +1786,163 @@ Dua konsekuensi yang layak ditulis:
 Setara galat kecepatan rata-rata 0,23 m/s (GT) dan 0,19 m/s (vision) sepanjang
 run 20 detik. Vision **lebih kecil** karena manuvernya selesai lebih cepat,
 bukan karena pengendalinya lebih baik — jangan diklaim terbalik.
+
+---
+
+## 26. Dua cacat jalur vision, ditemukan 17 September 2026
+
+Keduanya muncul dari satu sebab fisik yang sama: **rig satu kamera depan
+(fov 90°) kehilangan target tepat saat ego berdampingan dengannya.** Yang
+berbeda adalah akibatnya — satu membuat FSM memutuskan tanpa bukti, satu
+membuat MPC menghindari halangan yang tidak ada.
+
+Sumber angka: `out/experiment_s1_vision.npz` dan `out/experiment_s1_gt.npz`
+(Tahap 9, 10 run vision + 5 run GT). Ketiga run vision pertama identik sampai
+0,01 m, jadi angka di bawah memakai run 0 dan berlaku untuk seluruhnya.
+
+### 26.1 Keputusan kembali ke lajur diambil saat ego buta
+
+Gerbang kembali di `planning.BehaviorFSM`:
+
+```python
+belum_lewat = asal[asal[:, 0] > -config.PASS_MARGIN]
+if len(belum_lewat) == 0 and not menjauh:
+```
+
+`len(...) == 0` **ambigu**. Daftar kosong bisa berarti dua hal yang berlawanan:
+
+- "target sudah saya lewati sejauh `PASS_MARGIN` = 8 m" — aman
+- "saya tidak melihat apa-apa" — tidak tahu apa-apa
+
+Dengan `GroundTruthPerception` ambiguitas ini tidak pernah terwujud, karena
+target selalu terlihat. Dengan vision ia terwujud **di setiap run**.
+
+Runtutan kejadiannya, run 0:
+
+| t (s) | Jarak memanjang sesungguhnya | Keadaan perception |
+|---|---|---|
+| 8,60 | +4,23 m (target masih di depan) | pengukuran asli terakhir |
+| 8,65-8,85 | +3,89 → +2,53 m | **melayang** — Kalman menebak |
+| 8,90 | +2,18 m | `hilang` > `TRACK_MAX_HILANG`, track dihapus |
+| 9,70 | **-3,17 m** | daftar halangan masih kosong → **FSM memutuskan kembali** |
+
+Bukti bahwa 8,65-8,85 adalah lamunan, bukan pengukuran: `x_est` naik persis
+0,505 m tiap tick dan `y_est` persis 0,172 m tiap tick, konstan sampai tiga
+angka di belakang koma. Itu tanda tangan prediksi kecepatan tetap.
+
+**Keputusan kembali diambil setelah 1,10 detik tanpa satu pun pengukuran.**
+
+Ada tiga mekanisme yang menunda, tetapi **tidak satu pun memverifikasi bahwa
+target sudah terlewati**:
+
+| Mekanisme | Nilai | Yang sebenarnya dijaga |
+|---|---|---|
+| `TRACK_MAX_HILANG` | 5 frame = 0,25 s | track tidak mati karena satu frame gagal |
+| gerbang `menjauh` (`DD_KEMBALI`) | 0,1 m/s | quintic kembali tidak berangkat sambil menjauh |
+| `FSM_DWELL` | 0,3 s | derau tidak mengubah state |
+
+Ketiganya kebetulan menunda. Tidak ada yang bertanya "apakah saya benar-benar
+sudah melewatinya?"
+
+Akibatnya terukur:
+
+| | Jarak memanjang saat memutuskan kembali | Target terdeteksi? |
+|---|---|---|
+| MPC + GT (3 run) | **-10,40 m** (lewat 8 m, syarat terpenuhi) | ya |
+| MPC + vision (run 0, 1) | **-3,17 m** | **tidak** |
+| MPC + vision (run 2) | -2,34 m | **tidak** |
+
+`PASS_MARGIN = 8,0 m` **tidak pernah terpenuhi oleh bukti** di jalur vision.
+Ego memotong balik 7,2 m lebih awal daripada aturannya sendiri.
+
+**Kenapa tetap tidak menabrak.** Manuver kembali memakan 3,6 s, dan selama itu
+ego melaju ~6,4 m/s lebih cepat. Saat bodi ego benar-benar masuk kembali ke
+lajur asal, jaraknya sudah -27,6 m. Jarak bodi minimum vision 2,11 ± 0,01 m,
+justru lebih longgar daripada GT 1,42 m.
+
+Itu keselamatan yang datang dari **durasi manuver**, bukan dari gerbangnya.
+Harus ditulis begitu. Kalau target lebih cepat, atau manuver kembali lebih
+agresif, marginnya habis dan gerbangnya tidak akan menahan apa pun.
+
+### 26.2 TEMUAN: MPC menghindari halangan yang tidak pernah ada
+
+Saat ego mulai berdampingan, kotak deteksi berubah dari tampak belakang menjadi
+tampak samping. Di masa peralihan itu `perception.koreksi_muka` **gagal
+mengenali peralihannya**, dan estimasi target bergeser mendekat ke ego.
+
+Galat pada t = 8,15 s: **-0,43 m memanjang dan -1,06 m melintang**. Keduanya
+menunjuk ke arah ego.
+
+Angka -1,06 m itu bukan sembarang: `LAIN_LEBAR / 2 = 0,966 m`. Artinya koreksi
+melintang praktis **tidak diterapkan sama sekali** (`f ≈ 0`) justru pada saat ia
+paling dibutuhkan — estimasi berhenti di permukaan sisi yang terlihat, tidak
+diteruskan ke pusat bodi di baliknya.
+
+Akibatnya pada zona aman superelips `g = ((dx/A)^4 + (dy/B)^4)^(1/4)`:
+
+| t (s) | `g` dari estimasi | `g` dari ground truth | kandidat lolos | slack elips `eps` |
+|---|---|---|---|---|
+| 7,90 | 1,139 | 1,249 | 9 | 0,000 |
+| 8,00 | 1,061 | 1,207 | **0** | 0,301 |
+| 8,15 | 0,970 | 1,172 | **0** | **0,675** |
+| 8,45 | **0,921** | 1,233 | **0** | 0,495 |
+| 8,50 | 1,034 | 1,254 | 9 | 0,000 |
+
+**Geometri sesungguhnya tidak pernah melanggar.** `g` sebenarnya tidak pernah
+turun di bawah **1,169** — margin 17% sepanjang manuver. Yang dilihat MPC turun
+sampai **0,921**, yaitu pelanggaran 8%.
+
+Reaksinya persis seperti yang seharusnya untuk halangan sungguhan:
+
+- kandidat planner runtuh **9 → 0**
+- slack elips naik 0 → 0,675; dengan `rho = 1000` suku itu mendominasi biaya
+- kemudi berbalik dari -0,016 ke **+0,047** (membanting menjauhi lajur asal)
+- laju yaw berbalik dari **+4,0 °/s menjadi -9,3 °/s** — pembalikan 13 °/s
+- ego melebar sampai **-4,71 m**, dari tepi lajur -5,25 m
+
+Lalu pada t = 8,50 deteksi pulih (kotak sudah benar-benar tampak samping, rasio
+lebar/tinggi melewati ambang), `g` estimasi kembali di atas 1, 9 kandidat
+kembali lolos, dan ego berbelok pulih pada +12 °/s. Dari kursi pengemudi:
+membanting ke satu sisi lalu balik lagi, tanpa sebab yang terlihat.
+
+**Inilah "ketidakstabilan saat melambung" yang dilaporkan sejak bagian 19.**
+Sebabnya bukan tuning MPC, bukan acuan planner, melainkan **halangan hantu**
+yang dilahirkan galat estimasi melintang selama peralihan sudut pandang.
+
+### 26.3 38 tick tanpa kandidat terurai jadi tiga sebab berbeda
+
+Angka "40 tick" yang dipakai sejak bagian 19.13 ternyata gabungan tiga kejadian
+yang tidak berhubungan. Run 0, 38 tick:
+
+| Selang (s) | Tick | Sebab | Ada juga di GT? |
+|---|---|---|---|
+| 5,00-5,25 | 6 | jepitan awal pindah lajur | ya (4,90-5,05, 4 tick) |
+| 6,40-7,45 | 22 | **asimetri planner-MPC** (bagian 19.9): planner menolak keras di sepanjang horizon, `g` estimasi 2,38 → 1,51 — tidak ada pelanggaran sama sekali saat itu | tidak |
+| 8,00-8,45 | 10 | **halangan hantu** (bagian 26.2) | tidak |
+
+Perbedaannya penting untuk ditulis:
+
+- Di selang 6,40-7,45 galat perception **dapat diabaikan** — `g` estimasi dan
+  `g` sebenarnya hanya berbeda 0,02. Planner menolak karena melihat 2-4 detik ke
+  depan dan memproyeksikan pelanggaran di masa depan, sementara MPC menerimanya
+  secara lunak. Itu cacat **rancangan**, bukan cacat perception.
+- Di selang 8,00-8,45 galat perception **adalah** sebabnya.
+
+Jadi klaim lama "38-44 tick bertahan di seluruh sapuan parameter, berarti ini
+geometri bukan tuning" tetap benar untuk 22 tick, tetapi **tidak benar untuk 10
+tick berikutnya** — yang itu bisa hilang kalau `koreksi_muka` diperbaiki.
+
+### 26.4 Pilihan penanganan
+
+| | Ongkos | Yang bisa dipertahankan di sidang |
+|---|---|---|
+| **A. Tulis sebagai batasan** | nol | "rig satu kamera depan tidak dapat memverifikasi `PASS_MARGIN`; keselamatan bersandar pada durasi manuver". Jujur, tetapi mengakui gerbangnya tidak bekerja |
+| **B. Dead reckoning eksplisit** | ~10 baris | Saat track hilang sementara state masih `OVERTAKING`, teruskan posisi terakhirnya dengan kecepatan terakhir sampai jelas terlewat 8 m. Tetap tebakan, tetapi **dinyatakan** sebagai tebakan alih-alih disamarkan menjadi "kosong" |
+| **C. Kamera belakang** | 14,4 ms/tick | Perbaikan sebenarnya; menutup 26.1 dan 26.2 sekaligus. Lihat `README.md` pekerjaan belum selesai nomor 3 |
+
+Untuk 26.2 perbaikan yang setara adalah membuat `koreksi_muka` tidak bergantung
+pada rasio kotak saja — misalnya memakai sudut pandang geometris ke pusat kotak,
+yang diketahui pasti dari kalibrasi kamera, sebagai pembobot kedua. Belum
+dikerjakan.
+
+**Status: dicatat, belum diperbaiki.** Keputusan ada pada penulis.

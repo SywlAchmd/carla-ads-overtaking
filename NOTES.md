@@ -2593,3 +2593,95 @@ laporkan dan ternyata artefak anchoring.
 
 Validasi model Tahap 1 yang tampak seperti pekerjaan persiapan ternyata memberi
 batas bawah kinerja pengendali di akhir penelitian.
+
+---
+
+## Dua Cacat Jalur Vision — 17 September 2026
+
+Ditemukan saat menyiapkan penulisan, bukan saat menjalankan eksperimen. Sumber
+angka: log Tahap 9 yang sudah tersimpan (`out/experiment_s1_vision.npz`,
+`out/experiment_s1_gt.npz`); tidak ada run baru. Uraian lengkap dengan tabel:
+`WRITING_SUMMARY.md` bagian 26.
+
+### Satu sebab fisik, dua akibat
+
+Rig satu kamera depan fov 90° kehilangan target **tepat saat ego berdampingan**.
+Itu sudah diketahui sejak Tahap 8. Yang belum diketahui: apa akibatnya pada
+lapisan di atasnya. Ternyata dua, dan keduanya serius.
+
+### Cacat 1 — FSM memutuskan kembali ke lajur tanpa bukti
+
+Gerbang kembali menguji `len(belum_lewat) == 0`. Daftar kosong itu ambigu: bisa
+berarti "sudah terlewat 8 m", bisa berarti "saya tidak melihat apa pun". Kode
+memperlakukan keduanya sama.
+
+Dengan ground truth ambiguitas ini tidak pernah terwujud karena target selalu
+terlihat. Dengan vision ia terwujud di setiap run.
+
+Run 0: pengukuran asli terakhir pada t = 8,60 s (target masih +4,23 m di depan),
+lalu 5 frame melayang, lalu track dihapus pada 8,90. Keputusan kembali jatuh
+pada **9,70 s — setelah 1,10 detik tanpa satu pun pengukuran**, saat target
+sesungguhnya baru -3,17 m di belakang.
+
+Ground truth memutuskan pada -10,40 m, yaitu benar-benar melewati
+`PASS_MARGIN = 8 m`. Vision pada -3,17 m. **Syaratnya tidak pernah terpenuhi
+oleh bukti.**
+
+Cara mengenali frame lamunan: `x_est` naik persis 0,505 m tiap tick dan `y_est`
+persis 0,172 m tiap tick. Konstan sampai tiga desimal = prediksi kecepatan
+tetap, bukan pengukuran. Pola ini layak diingat untuk debugging berikutnya.
+
+Yang menunda ada tiga (`TRACK_MAX_HILANG` 0,25 s, gerbang `menjauh`,
+`FSM_DWELL` 0,3 s) tetapi **tidak satu pun memverifikasi bahwa target sudah
+terlewati**. Ketiganya kebetulan menunda.
+
+Tidak menabrak, karena manuver kembali memakan 3,6 s dan ego sudah -27,6 m di
+depan saat benar-benar masuk lajur. Tapi itu keselamatan dari durasi manuver,
+bukan dari gerbangnya. Ditulis apa adanya.
+
+### Cacat 2 — MPC menghindari halangan yang tidak pernah ada
+
+Saat kotak deteksi beralih dari tampak belakang ke tampak samping,
+`koreksi_muka` gagal mengenali peralihannya. Galat melintang pada t = 8,15 s
+mencapai **-1,06 m ke arah ego**.
+
+Angka itu bukan kebetulan: `LAIN_LEBAR / 2 = 0,966 m`. Koreksi melintang
+**praktis tidak diterapkan sama sekali** — estimasi berhenti di permukaan sisi
+yang terlihat, tidak diteruskan ke pusat bodi di baliknya.
+
+Akibatnya pada zona aman superelips: `g` yang dilihat MPC turun ke **0,921**
+(melanggar), sedangkan `g` sesungguhnya tidak pernah turun di bawah **1,169**
+(margin 17%). Reaksi sistem persis seperti untuk halangan sungguhan — kandidat
+runtuh 9 → 0, slack elips 0,675, kemudi berbalik, laju yaw membalik 13 °/s,
+ego melebar sampai -4,71 m dari tepi lajur -5,25 m. Lalu pada 8,50 deteksi
+pulih dan semuanya kembali normal.
+
+**Ini jawaban atas "kenapa pas melambung dia ga smooth" yang ditanyakan sejak
+Tahap 8.** Bukan tuning MPC, bukan acuan planner. Halangan hantu.
+
+Perbaikan B waktu itu (acuan cadangan menahan `y` berjalan) gagal karena
+sasarannya keliru, dan sudah tercatat di bagian 19.8. Sekarang jelas kenapa:
+yang salah ada dua lapis di bawahnya.
+
+### Yang berubah dari catatan lama
+
+"40 tick tanpa kandidat" ternyata gabungan tiga kejadian yang tidak
+berhubungan. Run 0, 38 tick: 6 tick jepitan awal pindah lajur (ada juga di GT),
+22 tick asimetri planner-MPC (galat perception **dapat diabaikan** di situ —
+selisih `g` hanya 0,02, jadi klaim "ini geometri bukan tuning" tetap benar),
+dan 10 tick halangan hantu (galat perception **adalah** sebabnya).
+
+Klaim lama benar untuk 22 tick, tidak benar untuk 10 tick sisanya.
+
+### Pelajaran metodologis
+
+Kelima kalinya pola yang sama muncul di skripsi ini: **yang tampak sebagai
+kegagalan pengendali ternyata cacat pada apa yang diberikan kepadanya.** MPC
+berperilaku benar di kedua kasus — menghindar dari halangan yang dilaporkan,
+kembali saat lajur dilaporkan bersih. Yang salah adalah laporannya.
+
+Konsekuensi praktis: sebelum menuning pengendali, periksa dulu apakah masukannya
+benar. Empat kali sebelumnya saya melewatkan langkah itu.
+
+**Status: dicatat, belum diperbaiki.** Tiga pilihan penanganan ada di
+`WRITING_SUMMARY.md` bagian 26.4; keputusan ada pada penulis.

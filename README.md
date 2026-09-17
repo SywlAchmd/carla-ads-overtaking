@@ -137,12 +137,32 @@ atau nyatakan eksplisit bahwa angka pelatihan tidak sah dan bersandar sepenuhnya
 pada pengukuran terhadap simulator (bagian 18.2-18.4 dan 19.2), yang memang
 bersih karena diukur di lingkungan uji, bukan di data latih.
 
-### 3. S3 dengan vision butuh kamera belakang
-Kendaraan lajur tujuan di S3 mulai **10 m di belakang ego**, dan rig satu kamera
-depan (fov 90°) baru melihatnya setelah ia melewati bumper ego. Gerbang
-`D_SAFE_BELAKANG` karena itu selalu lolos — bukan karena lajurnya aman,
-melainkan karena tidak terlihat. Ongkos kamera belakang 14,4 ms per tick;
-anggaran masih cukup (17,9 + 14,4 + 14,4 = 46,7 dari 50 ms).
+### 3. Dua cacat jalur vision — dicatat, belum diperbaiki
+Keduanya berakar pada satu sebab: rig satu kamera depan (fov 90°) kehilangan
+target tepat saat ego berdampingan. Uraian lengkap `WRITING_SUMMARY.md` bagian
+26, ringkas di `NOTES.md` entri 17 September 2026.
+
+- **FSM memutuskan kembali ke lajur tanpa bukti.** Gerbang kembali menguji
+  `len(belum_lewat) == 0`, dan daftar kosong itu ambigu antara "sudah terlewat
+  8 m" dan "tidak melihat apa pun". Vision memutuskan kembali pada jarak
+  **-3,17 m** setelah **1,10 detik tanpa satu pun pengukuran**; ground truth
+  pada -10,40 m dengan target terlihat. `PASS_MARGIN = 8 m` tidak pernah
+  terpenuhi oleh bukti. Tidak menabrak, tetapi keselamatannya datang dari durasi
+  manuver (3,6 s), bukan dari gerbangnya.
+- **MPC menghindari halangan yang tidak pernah ada.** Saat kotak deteksi beralih
+  dari tampak belakang ke tampak samping, `perception.koreksi_muka` gagal
+  mengenali peralihannya dan koreksi melintang praktis tidak diterapkan
+  (galat -1,06 m ≈ `LAIN_LEBAR/2` = 0,966 m). Zona aman yang **dilihat** MPC
+  turun ke `g` = 0,921 (melanggar) sementara `g` sesungguhnya tidak pernah di
+  bawah 1,169. Inilah penyebab "membanting lalu balik lagi" saat melambung.
+
+Tiga pilihan: (A) tulis sebagai batasan, (B) dead reckoning eksplisit ~10 baris,
+(C) **kamera belakang** — perbaikan sebenarnya, menutup keduanya sekaligus.
+Ongkos kamera belakang 14,4 ms per tick; anggaran masih cukup
+(17,9 + 14,4 + 14,4 = 46,7 dari 50 ms). S3 dengan vision juga menunggu (C) ini:
+kendaraan lajur tujuan mulai 10 m di belakang ego dan tidak pernah terlihat,
+sehingga gerbang `D_SAFE_BELAKANG` selalu lolos bukan karena aman melainkan
+karena tidak terlihat.
 
 ### 4. Validasi perception saat berdampingan belum terkendali
 `check_estimation.py` menyapu 55 → 9 m tetapi seluruhnya di lajur ego dengan ego
@@ -151,12 +171,23 @@ diambil dari log run loop tertutup — bukan sapuan yang dirancang. Padahal di
 situlah `perception.koreksi_muka` bekerja paling keras, dan asumsi "ego dan
 target sehadap" melemah saat yaw ego mencapai 10,8°.
 
-### 5. 40 tick tanpa kandidat planner (vision) versus 4 (ground truth)
-Bertahan 38-44 di **seluruh** sapuan parameter, jadi ini bukan soal tuning
-melainkan geometri zona aman (`WRITING_SUMMARY.md` 19.13). Tidak menurunkan
-keselamatan — jarak bodi vision justru 2,10 m versus 1,42 m milik GT — karena
-sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal bukan lagi
-kehilangan arah. Menyelesaikannya menuntut perubahan rancangan.
+### 5. 38 tick tanpa kandidat planner (vision) versus 4 (ground truth)
+Terurai jadi **tiga sebab berbeda** (`WRITING_SUMMARY.md` bagian 26.3), bukan
+satu seperti dicatat sebelumnya:
+
+| Selang | Tick | Sebab |
+|---|---|---|
+| 5,00-5,25 s | 6 | jepitan awal pindah lajur — ada juga di GT |
+| 6,40-7,45 s | 22 | asimetri planner-MPC (bagian 19.9); galat perception dapat diabaikan, selisih `g` hanya 0,02 |
+| 8,00-8,45 s | 10 | halangan hantu (nomor 3 di atas) |
+
+Klaim lama "38-44 tick bertahan di seluruh sapuan, jadi ini geometri bukan
+tuning" **tetap benar untuk 22 tick** — itu memang perubahan rancangan. **Tidak
+benar untuk 10 tick sisanya**, yang akan hilang kalau `koreksi_muka` diperbaiki.
+
+Tidak menurunkan keselamatan — jarak bodi vision 2,10 m versus 1,42 m milik GT —
+karena sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal
+bukan lagi kehilangan arah.
 
 ### 6. Skrip rekam lama masih playback dan hardcode
 `main.py --perception vision --rekam` sudah merekam **hasil kendali sungguhan**
