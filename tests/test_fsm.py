@@ -151,6 +151,77 @@ def test_tidak_kembali_selagi_bergerak_menjauhi_lajur_asal():
     assert jalan(fsm, 1.0, Y_SALIP, sudah, t0=1.0) == P.LANE_CHANGE_RETURN
 
 
+def test_tidak_kembali_saat_halangan_hilang_dari_pandangan():
+    """REGRESI bagian 26.1. Daftar kosong BUKAN bukti sudah terlewat.
+
+    Rig satu kamera depan kehilangan target tepat saat ego berdampingan. Versi
+    lama membaca `len(...) == 0` sebagai "aman" dan memutuskan kembali pada
+    -3,17 m, padahal syaratnya 8 m.
+    """
+    fsm = P.BehaviorFSM()
+    fsm.state = P.OVERTAKING
+    # terlihat terakhir +4,2 m di depan, laju relatif -6,4 m/s (13,4 vs 7,0)
+    fsm.update(0.0, Y_SALIP, V_EGO, [depan(4.2, V_EGO - 6.4)])
+    assert jalan(fsm, 1.0, Y_SALIP, [], t0=0.05) == P.OVERTAKING
+
+
+def test_kembali_setelah_ekstrapolasi_melewati_pass_margin():
+    """Lanjutan: begitu perhitungan mati menyimpulkan sudah unggul 8 m, kembali.
+
+    (4,2 + 8,0) / 6,4 = 1,91 s sejak terakhir terlihat, ditambah FSM_DWELL.
+    """
+    fsm = P.BehaviorFSM()
+    fsm.state = P.OVERTAKING
+    fsm.update(0.0, Y_SALIP, V_EGO, [depan(4.2, V_EGO - 6.4)])
+    assert jalan(fsm, 1.8, Y_SALIP, [], t0=0.05) == P.OVERTAKING
+    assert jalan(fsm, 0.6, Y_SALIP, [], t0=1.85) == P.LANE_CHANGE_RETURN
+
+
+def test_daftar_kosong_sejak_awal_tetap_boleh_kembali():
+    """Tidak pernah ada apa pun di lajur asal -> tidak ada yang perlu dilewati.
+    Perilaku lama dipertahankan; yang berubah hanya kasus PERNAH terlihat."""
+    fsm = P.BehaviorFSM()
+    fsm.state = P.OVERTAKING
+    assert jalan(fsm, 1.0, Y_SALIP, []) == P.LANE_CHANGE_RETURN
+
+
+def test_ground_truth_tidak_berubah_perilakunya():
+    """Selama halangan selalu terlihat, gerbang baru identik dengan yang lama:
+    `max(x) <= -PASS_MARGIN` sama dengan `tidak ada x > -PASS_MARGIN`. Itulah
+    sebabnya seluruh angka jalur ground truth tidak perlu diukur ulang."""
+    for dx, harap in ((-2.0, P.OVERTAKING), (+2.0, P.LANE_CHANGE_RETURN)):
+        fsm = P.BehaviorFSM()
+        fsm.state = P.OVERTAKING
+        obs = [depan(-(config.PASS_MARGIN + dx)), depan(-(config.PASS_MARGIN + 20.0))]
+        assert jalan(fsm, 1.0, Y_SALIP, obs) == harap, dx
+
+
+def test_laju_dibekukan_selagi_target_masih_di_depan():
+    """Taksiran laju memburuk begitu ego sejajar (kotak terpotong tepi citra).
+    Yang dipakai ekstrapolasi harus laju saat target masih di depan, bukan laju
+    buruk yang terukur terakhir -- kalau tidak, kembali tertunda 3 detik."""
+    fsm = P.BehaviorFSM()
+    fsm.state = P.OVERTAKING
+    fsm.update(0.00, Y_SALIP, V_EGO, [depan(4.2, V_EGO - 6.4)])   # di depan: laju benar
+    fsm.update(0.05, Y_SALIP, V_EGO, [depan(-1.0, V_EGO - 3.2)])  # sejajar: laju buruk
+    assert abs(fsm._lewat[2] - (V_EGO - 6.4)) < 1e-9, fsm._lewat
+    # dengan laju benar, (1,0 + 8,0) / 6,4 = 1,41 s; laju buruk butuh 2,81 s
+    assert jalan(fsm, 1.2, Y_SALIP, [], t0=0.10) == P.OVERTAKING
+    assert jalan(fsm, 0.6, Y_SALIP, [], t0=1.30) == P.LANE_CHANGE_RETURN
+
+
+def test_ekstrapolasi_tidak_terbawa_ke_salip_berikutnya():
+    """`_lewat` harus bersih setelah kembali ke lajur asal, kalau tidak salip
+    kedua memulai dengan tebakan basi dari salip pertama."""
+    fsm = P.BehaviorFSM()
+    fsm.state = P.OVERTAKING
+    fsm.update(0.0, Y_SALIP, V_EGO, [depan(4.2, V_EGO - 6.4)])
+    fsm.state = P.LANE_CHANGE_RETURN
+    jalan(fsm, 0.5, 0.0, [])
+    assert fsm.state == P.LANE_KEEPING
+    assert fsm._lewat is None
+
+
 def test_selesai_saat_kembali_ke_tengah_lajur():
     fsm = P.BehaviorFSM()
     fsm.state = P.LANE_CHANGE_RETURN

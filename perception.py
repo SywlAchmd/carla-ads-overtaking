@@ -54,27 +54,41 @@ class GroundTruthPerception:
 F_PIKSEL = config.KAMERA_LEBAR / (2.0 * math.tan(math.radians(config.KAMERA_FOV) / 2.0))
 
 
-def koreksi_muka(kotak):
+def koreksi_muka(theta):
     """Geseran dari permukaan yang TERLIHAT ke pusat bodi -> (dx memanjang, dy melintang).
+
+    `theta` = sudut garis pandang ke target, radian, 0 = tepat di depan.
 
     Depth membaca permukaan terdekat yang terlihat (bagian 18.4), dan permukaan
     itu berganti selama manuver: saat target di depan yang terlihat muka
     BELAKANG, saat berdampingan yang terlihat SISI. Menambahkan setengah panjang
     di sumbu memanjang tanpa syarat -- seperti versi pertama -- melaporkan target
-    sampai +3,82 m terlalu jauh ke depan begitu ego berdampingan, yaitu seolah
-    kendaraan itu tepat di depan ego (bagian 19.6).
+    sampai +3,82 m terlalu jauh ke depan begitu ego berdampingan (bagian 19.6).
 
-    Pembedanya rasio lebar/tinggi kotak: terukur 1,04 tampak belakang dan 2,48
-    tampak samping untuk Nissan Patrol -- terpisah 2,4x. Di antaranya dicampur
-    linier, karena sudut pandang serong memang memperlihatkan keduanya sekaligus.
+    Versi kedua membedakannya dari rasio lebar/tinggi kotak. Itu GAGAL justru saat
+    berdampingan: kotak terpotong tepi citra, rasionya menyusut, dan koreksi
+    melintang praktis tidak diterapkan -- galat -1,06 m ~ LAIN_LEBAR/2 = 0,966 m
+    tepat ke arah ego, yang membuat MPC menghindari halangan yang tidak pernah ada
+    (bagian 26.2).
 
-    ponytail: satu jenis kendaraan, dimensi dianggap tetap (sudah di batasan
-    masalah). Kalau skenario nanti memuat kendaraan beragam, rasio ini harus
-    datang dari kelas deteksi, bukan dari konstanta.
+    Versi ketiga memakai geometri, bukan penampakan. Pada sudut pandang `theta`
+    lebar siluet target adalah PANJANG*sin(theta) dari sisi ditambah
+    LEBAR*cos(theta) dari buritan; porsi sisi itulah bobot campurannya. Sudutnya
+    datang dari kalibrasi kamera, yang tidak pernah terpotong tepi citra.
+
+    ponytail: `theta` diukur di frame ego, bukan frame jalan, jadi sudut hadap ego
+    terhadap jalan (sampai 10,8 deg) ikut terhitung. Galatnya <= 0,08 m melintang
+    -- satu orde di bawah 1,06 m yang diperbaiki. Membenarkannya menuntut
+    perception mengetahui yaw ego terhadap jalan, yaitu ketergantungan pada
+    localization yang belum layak dibayar.
+
+    ponytail: satu jenis kendaraan, dimensi dianggap tetap, dan lawan dianggap
+    sehadap jalan (sudah di batasan masalah). Kalau skenario nanti memuat
+    kendaraan beragam, dimensi ini harus datang dari kelas deteksi.
     """
-    ar = (kotak[2] - kotak[0]) / max(kotak[3] - kotak[1], 1.0)
-    f = float(np.clip((ar - config.AR_BELAKANG) / (config.AR_SAMPING - config.AR_BELAKANG),
-                      0.0, 1.0))
+    sisi = config.LAIN_PANJANG * abs(math.sin(theta))
+    belakang = config.LAIN_LEBAR * abs(math.cos(theta))
+    f = sisi / max(sisi + belakang, 1e-9)
     return (1.0 - f) * config.LAIN_PANJANG / 2.0, f * config.LAIN_LEBAR / 2.0
 
 
@@ -104,8 +118,10 @@ class VisionPerception:
             if not 0.5 < d < JANGKAUAN:
                 continue
             pakai.append(b)
-            dx, dy = koreksi_muka(b)
             y = -d * (u - config.KAMERA_LEBAR / 2.0) / F_PIKSEL
+            # Sudut pandang dihitung ke pusat kotak, bukan ke pusat bodi -- selisihnya
+            # orde kedua pada jarak kerja dan hilang di derau kuantisasi kotak.
+            dx, dy = koreksi_muka(math.atan2(y, d))
             # koreksi melintang menjauhi ego: pusat bodi ada di BALIK sisi yang terlihat
             z.append([d + self.rig.x + dx, y + math.copysign(dy, y)])
             # derau melintang tumbuh dengan jarak: kuantisasi kotak x d/f

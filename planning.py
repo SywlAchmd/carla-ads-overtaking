@@ -245,6 +245,7 @@ class BehaviorFSM:
         self.state = LANE_KEEPING
         self._calon = None            # (state tujuan, waktu permintaan pertama)
         self.abort_terakhir = None    # untuk logging bagian 11.5
+        self._lewat = None            # (t, x, v_lain) lajur asal terakhir TERLIHAT
         self.v_goal = config.V_REF    # kecepatan acuan untuk planner, lihat _v_ikut
 
     @property
@@ -312,19 +313,50 @@ class BehaviorFSM:
             # _terdepan tidak bisa dipakai di sini: dia hanya melihat x > 0,
             # sehingga kendaraan yang baru terlewati 1 m sudah dianggap hilang.
             asal = _di_lajur(obstacles, 0.0)
-            belum_lewat = asal[asal[:, 0] > -config.PASS_MARGIN]
+            # Daftar kosong AMBIGU: bisa "sudah terlewat PASS_MARGIN", bisa "tidak
+            # terlihat". Rig satu kamera depan kehilangan target tepat saat ego
+            # berdampingan, dan versi lama memperlakukan keduanya sama -- vision
+            # memutuskan kembali pada -3,17 m setelah 1,10 s tanpa satu pun
+            # pengukuran, sementara GT memutuskan pada -10,40 m (bagian 26.1).
+            # Karena itu yang terakhir terlihat diteruskan dengan kecepatan
+            # relatifnya sampai jelas terlewat; tebakan yang DINYATAKAN, bukan
+            # kekosongan yang disalahartikan sebagai aman.
+            if len(asal):
+                j = int(np.argmax(asal[:, 0]))        # yang paling depan, paling mengikat
+                # Posisi selalu disegarkan, LAJU hanya selagi target masih di depan.
+                # Begitu ego sejajar, kotak deteksi terpotong tepi citra dan taksiran
+                # laju Kalman memburuk: terukur -3,2 m/s padahal sesungguhnya -6,4,
+                # yang menunda kembali 3 detik tanpa alasan. Saat masih di depan
+                # target terlihat utuh dan lajunya terukur benar.
+                # obs[:, 2] kecepatan ABSOLUT (localization.halangan_ego_ke_jalan).
+                v_lain = (float(asal[j, 2]) if asal[j, 0] > 0.0 or self._lewat is None
+                          else self._lewat[2])
+                self._lewat = (t, float(asal[j, 0]), v_lain)
+                lewat = asal[j, 0] <= -config.PASS_MARGIN
+            elif self._lewat is not None:
+                t0, x0, v_lain = self._lewat
+                # v_ego sekarang, bukan yang dulu: laju ego diketahui persis tiap tick.
+                lewat = x0 + (v_lain - v_ego) * (t - t0) <= -config.PASS_MARGIN
+            else:
+                lewat = True                          # tidak pernah ada yang dilewati
+            # ponytail: kalau kecepatan relatifnya tidak negatif, ekstrapolasi tidak akan
+            # pernah menyimpulkan "lewat" dan ego bertahan di lajur salip. Itu memang
+            # perilaku yang benar -- target yang tidak tertinggal belum boleh dipotong --
+            # tapi berarti tidak ada jalan keluar otomatis. Kamera belakang yang
+            # menyelesaikannya, bukan batas waktu.
             # Jangan mulai kembali selagi masih bergerak menjauhi lajur asal: quintic
             # kembali berangkat dengan laju itu dan kebablasan keluar. Di S3 kelima
             # run gagal mulai kembali pada 0,91-1,89 m/s menjauh; semua yang lolos
             # sudah bergerak ke arah lajur asal.
             menjauh = self.side_sign * dd > config.DD_KEMBALI
-            if len(belum_lewat) == 0 and not menjauh:
+            if lewat and not menjauh:
                 self._minta(LANE_CHANGE_RETURN, t)
             else:
                 self._calon = None
 
         elif self.state == LANE_CHANGE_RETURN:
             if abs(d) < config.LATERAL_SELESAI:
+                self._lewat = None            # jangan terpakai ulang di salip berikutnya
                 self._minta(LANE_KEEPING, t)
             else:
                 self._calon = None

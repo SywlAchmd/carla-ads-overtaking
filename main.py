@@ -243,6 +243,9 @@ def main():
     ap.add_argument('--perception', default='gt', choices=('gt', 'vision'))
     ap.add_argument('--rekam', action='store_true',
                     help='video kamera + deteksi + kandidat planner (butuh --perception vision)')
+    ap.add_argument('--akhiran', default='',
+                    help='akhiran nama berkas keluaran, mis. _sesudah -- supaya rekaman '
+                         'dan log pembanding tidak saling menimpa')
     args = ap.parse_args()
     kendaraan = config.SKENARIO[args.skenario]
 
@@ -279,8 +282,9 @@ def main():
                     if rig:
                         rig.destroy()
 
-    path = os.path.join(config.OUT_DIR,
-                        f'run_{args.skenario.lower()}_mpc_{args.perception}.npz')
+    path = os.path.join(
+        config.OUT_DIR,
+        f'run_{args.skenario.lower()}_mpc_{args.perception}{args.akhiran}.npz')
     np.savez(path, log=log, fsm_state=states, kolom=KOLOM, posisi_kendaraan=posisi,
              dim_kendaraan=np.array(dims), dim_ego=np.array([params['length'], params['width']]))
     k = {nama: i for i, nama in enumerate(KOLOM)}     # indeks lewat nama, bukan angka
@@ -314,7 +318,7 @@ def main():
     print()
     print(evaluation.ringkas_penilaian(berhasil, kategori, rincian))
     if perekam is not None:
-        perekam.simpan(f'vision_{args.skenario.lower()}.mp4')
+        perekam.simpan(f'vision_{args.skenario.lower()}{args.akhiran}.mp4')
     print(f'\nlog: {path}')
 
 

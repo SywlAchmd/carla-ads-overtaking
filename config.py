@@ -214,8 +214,9 @@ LAIN_TINGGI = 1.855                 # m, bounding box CARLA terukur 16 Sep 2026
 # Depth membaca permukaan yang TERLIHAT (bagian 18.4), dan permukaan itu berbeda
 # saat target di depan (muka belakang) dan saat berdampingan (sisi). Rasio
 # lebar/tinggi kotak deteksi membedakannya; keduanya terpisah 2,4x.
-AR_BELAKANG = LAIN_LEBAR / LAIN_TINGGI                               # 1,04
-AR_SAMPING = LAIN_PANJANG / LAIN_TINGGI                              # 2,48
+# AR_BELAKANG/AR_SAMPING (1,04 dan 2,48) dihapus 17 Sep 2026: `koreksi_muka` tidak
+# lagi menebak sudut pandang dari rasio kotak, melainkan menghitungnya dari garis
+# pandang. Alasannya di WRITING_SUMMARY.md bagian 26.2.
 ELLIPSE_P = 4
 _SETENGAH_PANJANG = (EGO_PANJANG + LAIN_PANJANG) / 2 + JARAK_AMAN     # 5,81 m
 _SETENGAH_LEBAR = (EGO_LEBAR + LAIN_LEBAR) / 2 + JARAK_AMAN          # 2,91 m
