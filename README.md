@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 91 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 98 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -49,11 +49,13 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python main.py` | skenario S1 lengkap, loop tertutup, vonis berhasil/gagal |
 | `python main.py --skenario S3 --detik 25` | lajur tujuan terisi: mengikuti, lalu menyalip ulang |
 | `python main.py --perception vision --rekam` | S1 dengan YOLOPX + depth, plus video overlay |
+| `python main.py --perception vision --rekam --akhiran _sesudah` | sama, tapi keluarannya tidak menimpa berkas pembanding |
 | `python check_estimation.py` | ketelitian jarak & kecepatan vision vs ground truth |
 | `python tuning.py --sweep Q_PSI 300,450,600` | harness tuning step response |
 | `python tune_vision.py --sweep K_DEV 10,20,40` | sapuan parameter di skenario penuh + vision |
 | `python experiment.py --perception vision --ulang 10` | Tahap 9: success rate + sebaran metrik |
 | `python metrics.py --layer --eksperimen` | metrik per layer/fase dari log (tidak butuh server) |
+| `python metrics.py --layer --eksperimen --akhiran _sebelum` | metrik yang sama SEBELUM perbaikan bagian 27 |
 | `python validate_model.py` | validasi bicycle model terhadap plant |
 | `python validate_model.py --steer` | verifikasi konversi kemudi |
 | `python validate_model.py --scan` | cari spawn point ruas lurus |
@@ -108,7 +110,18 @@ Hasil terakhir (MPC + GT perception, 16 Sep 2026), identik bit-per-bit antar-run
 | S1 | **BERHASIL** | 1,42 m | 0,015 m | 11,6 s | flying overtaking |
 | S3 | **BERHASIL** | 1,47 m | 0,018 m | 19,0 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
 
-Angka di atas setelah perbaikan jangkar halangan 1,433 m (16 Sep). Sebelumnya
+Hasil jalur vision (MPC + YOLOPX, S1, 10 run, 17 Sep 2026) setelah perbaikan
+`WRITING_SUMMARY.md` bagian 27:
+
+| Metrik | Vision | GT (acuan) |
+|---|---|---|
+| Vonis | **10/10 BERHASIL** | 5/5 |
+| Jarak min antar bodi | 1,644 ± 0,009 m | 1,423 m |
+| Durasi manuver | 13,03 ± 0,05 s | 11,65 s |
+| Galat prediksi @ 0,5 s, RMS | 0,0361 m | 0,0204 m |
+| XTE ke lajur terdekat, RMS | 0,575 m | 0,535 m |
+
+Angka GT di atas setelah perbaikan jangkar halangan 1,433 m (16 Sep). Sebelumnya
 1,43 / 1,51 m: zona aman dulu lebih konservatif daripada rancangannya.
 
 Deviasi turun 0,161 -> 0,011 m setelah syarat awal percepatan lateral planner
@@ -137,29 +150,19 @@ atau nyatakan eksplisit bahwa angka pelatihan tidak sah dan bersandar sepenuhnya
 pada pengukuran terhadap simulator (bagian 18.2-18.4 dan 19.2), yang memang
 bersih karena diukur di lingkungan uji, bukan di data latih.
 
-### 3. Dua cacat jalur vision — dicatat, belum diperbaiki
-Keduanya berakar pada satu sebab: rig satu kamera depan (fov 90°) kehilangan
-target tepat saat ego berdampingan. Uraian lengkap `WRITING_SUMMARY.md` bagian
-26, ringkas di `NOTES.md` entri 17 September 2026.
+### 3. Kamera belakang — sisa dari dua cacat yang sudah diperbaiki
+Dua cacat jalur vision ditemukan dan **diperbaiki** 17 September 2026
+(`WRITING_SUMMARY.md` bagian 26 mendiagnosis, bagian 27 memperbaiki dan mengukur
+ulang 10 run). Yang tersisa bermuara ke satu hal: rig hanya punya kamera depan.
 
-- **FSM memutuskan kembali ke lajur tanpa bukti.** Gerbang kembali menguji
-  `len(belum_lewat) == 0`, dan daftar kosong itu ambigu antara "sudah terlewat
-  8 m" dan "tidak melihat apa pun". Vision memutuskan kembali pada jarak
-  **-3,17 m** setelah **1,10 detik tanpa satu pun pengukuran**; ground truth
-  pada -10,40 m dengan target terlihat. `PASS_MARGIN = 8 m` tidak pernah
-  terpenuhi oleh bukti. Tidak menabrak, tetapi keselamatannya datang dari durasi
-  manuver (3,6 s), bukan dari gerbangnya.
-- **MPC menghindari halangan yang tidak pernah ada.** Saat kotak deteksi beralih
-  dari tampak belakang ke tampak samping, `perception.koreksi_muka` gagal
-  mengenali peralihannya dan koreksi melintang praktis tidak diterapkan
-  (galat -1,06 m ≈ `LAIN_LEBAR/2` = 0,966 m). Zona aman yang **dilihat** MPC
-  turun ke `g` = 0,921 (melanggar) sementara `g` sesungguhnya tidak pernah di
-  bawah 1,169. Inilah penyebab "membanting lalu balik lagi" saat melambung.
+| Sisa | Sesudah perbaikan | Acuan GT |
+|---|---|---|
+| tick tanpa kandidat planner | 33,8 (dari 39,2) | 4,0 |
+| `g` zona aman yang DILIHAT MPC | 0,931 (sesungguhnya 1,070) | 1,022 |
+| jarak saat memutuskan kembali | -18,0 m (konservatif, buta 3,3 s) | -10,4 m |
 
-Tiga pilihan: (A) tulis sebagai batasan, (B) dead reckoning eksplisit ~10 baris,
-(C) **kamera belakang** — perbaikan sebenarnya, menutup keduanya sekaligus.
 Ongkos kamera belakang 14,4 ms per tick; anggaran masih cukup
-(17,9 + 14,4 + 14,4 = 46,7 dari 50 ms). S3 dengan vision juga menunggu (C) ini:
+(19,4 + 14,4 = 33,8 dari 50 ms). **S3 dengan vision juga menunggu ini**:
 kendaraan lajur tujuan mulai 10 m di belakang ego dan tidak pernah terlihat,
 sehingga gerbang `D_SAFE_BELAKANG` selalu lolos bukan karena aman melainkan
 karena tidak terlihat.
@@ -171,23 +174,23 @@ diambil dari log run loop tertutup — bukan sapuan yang dirancang. Padahal di
 situlah `perception.koreksi_muka` bekerja paling keras, dan asumsi "ego dan
 target sehadap" melemah saat yaw ego mencapai 10,8°.
 
-### 5. 38 tick tanpa kandidat planner (vision) versus 4 (ground truth)
-Terurai jadi **tiga sebab berbeda** (`WRITING_SUMMARY.md` bagian 26.3), bukan
-satu seperti dicatat sebelumnya:
+### 5. 33,8 tick tanpa kandidat planner (vision) versus 4 (ground truth)
+Terurai jadi tiga sebab berbeda (`WRITING_SUMMARY.md` bagian 26.3). Sepuluh tick
+"halangan hantu" **sudah hilang** setelah perbaikan bagian 27, persis seperti
+diramalkan; 39,2 turun jadi 33,8. Sisanya:
 
-| Selang | Tick | Sebab |
+| Sebab | Tick | Status |
 |---|---|---|
-| 5,00-5,25 s | 6 | jepitan awal pindah lajur — ada juga di GT |
-| 6,40-7,45 s | 22 | asimetri planner-MPC (bagian 19.9); galat perception dapat diabaikan, selisih `g` hanya 0,02 |
-| 8,00-8,45 s | 10 | halangan hantu (nomor 3 di atas) |
+| jepitan awal pindah lajur — ada juga di GT | ~6 | wajar |
+| asimetri planner-MPC (bagian 19.9): planner menolak keras di sepanjang horizon, MPC menerima lunak | ~22 | **perubahan rancangan**, bukan tuning |
+| halangan hantu dari galat estimasi melintang | 10 → **0** | selesai |
 
 Klaim lama "38-44 tick bertahan di seluruh sapuan, jadi ini geometri bukan
-tuning" **tetap benar untuk 22 tick** — itu memang perubahan rancangan. **Tidak
-benar untuk 10 tick sisanya**, yang akan hilang kalau `koreksi_muka` diperbaiki.
+tuning" benar untuk kelompok kedua, dan terbukti salah untuk kelompok ketiga.
 
-Tidak menurunkan keselamatan — jarak bodi vision 2,10 m versus 1,42 m milik GT —
-karena sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal
-bukan lagi kehilangan arah.
+Tidak menurunkan keselamatan: jarak bodi 1,644 m terhadap syarat 1,0 m, karena
+sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal bukan lagi
+kehilangan arah.
 
 ### 6. Skrip rekam lama masih playback dan hardcode
 `main.py --perception vision --rekam` sudah merekam **hasil kendali sungguhan**
@@ -218,8 +221,9 @@ memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
   dari 50 ms. Harus ditulis apa adanya, bukan dilaporkan sebagai "17,9 dari 50".
 - `Q[v]` dan `R[a]` sengaja tidak dituning; `ThrottlePI` sudah menangani
   kecepatan (`TUNING_MPC.md` 6.4).
-- Ego melebar sampai −4,71 m saat menyalip dengan vision (tepi lajur −5,25 m).
-  Di dalam lajur, tapi marginnya 0,54 m.
+- Ego melebar sampai −4,28 m saat menyalip dengan vision (tepi lajur −5,25 m);
+  marginnya 0,97 m. Sebelum perbaikan bagian 27 angkanya −4,71 m dengan margin
+  0,54 m — lambungan berlebih itu buah dari halangan hantu, bukan rancangan.
 
 ---
 

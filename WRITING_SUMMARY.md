@@ -1353,6 +1353,13 @@ menuntut perubahan rancangan, bukan bobot.
 
 ## 21. Tahap 9 — eksperimen penuh S1 (matriks bagian 11.4)
 
+> **Angka kolom vision di bagian ini diukur SEBELUM perbaikan bagian 27.**
+> Dipertahankan sebagai riwayat, bukan sebagai hasil. Yang berlaku untuk
+> skripsi ada di **bagian 27**. Kolom ground truth tetap berlaku: jalur itu
+> tidak tersentuh perbaikan, dan lima run ulang menghasilkan log yang identik
+> bit-per-bit.
+
+
 16 September 2026, `experiment.py`. Server CARLA **direstart tepat sebelum
 pengukuran** -- README mencatat waktu solve 26-31 ms saat senggang versus 70 ms
 setelah server berjalan berjam-jam, jadi tanpa restart seluruh klaim real-time
@@ -1558,6 +1565,13 @@ mobil boleh berisik.
 
 ## 23. Hasil Tahap 9 lengkap, per layer dan per fase (S1)
 
+> **Angka kolom vision di bagian ini diukur SEBELUM perbaikan bagian 27.**
+> Dipertahankan sebagai riwayat, bukan sebagai hasil. Yang berlaku untuk
+> skripsi ada di **bagian 27**. Kolom ground truth tetap berlaku: jalur itu
+> tidak tersentuh perbaikan, dan lima run ulang menghasilkan log yang identik
+> bit-per-bit.
+
+
 16 September 2026, `experiment.py` + `metrics.py --layer --eksperimen`.
 GT 5 ulangan (log identik bit-per-bit), vision 10 ulangan. Server direstart
 sebelum pengukuran. Nilai ditulis rata-rata ± sd lintas ulangan; tanpa ± berarti
@@ -1711,6 +1725,13 @@ belakang ego). Itu keterbatasan yang dinyatakan, bukan gambar yang tertinggal.
 
 ## 25. Metrik galat: XTE, IAE, dan galat prediksi (S1)
 
+> **Angka kolom vision di bagian ini diukur SEBELUM perbaikan bagian 27.**
+> Dipertahankan sebagai riwayat, bukan sebagai hasil. Yang berlaku untuk
+> skripsi ada di **bagian 27**. Kolom ground truth tetap berlaku: jalur itu
+> tidak tersentuh perbaikan, dan lima run ulang menghasilkan log yang identik
+> bit-per-bit.
+
+
 17 September 2026. Menjawab janji proposal soal XTE dan IAE, dengan definisi
 yang diperbaiki di bagian 22.5. GT 5 ulangan, vision 10 ulangan.
 
@@ -1790,6 +1811,12 @@ bukan karena pengendalinya lebih baik — jangan diklaim terbalik.
 ---
 
 ## 26. Dua cacat jalur vision, ditemukan 17 September 2026
+
+> **KEDUANYA SUDAH DIPERBAIKI** pada hari yang sama -- lihat **bagian 27** untuk
+> perbaikannya dan hasil ulangnya. Bagian ini sengaja dipertahankan utuh sebagai
+> diagnosisnya: bagaimana kedua cacat ditemukan, dan bukti apa yang menunjukkan
+> sebabnya. Itu bahan bab pembahasan, bukan sekadar catatan yang sudah basi.
+
 
 Keduanya muncul dari satu sebab fisik yang sama: **rig satu kamera depan
 (fov 90°) kehilangan target tepat saat ego berdampingan dengannya.** Yang
@@ -1945,4 +1972,201 @@ pada rasio kotak saja — misalnya memakai sudut pandang geometris ke pusat kota
 yang diketahui pasti dari kalibrasi kamera, sebagai pembobot kedua. Belum
 dikerjakan.
 
-**Status: dicatat, belum diperbaiki.** Keputusan ada pada penulis.
+**Status: sudah diperbaiki, lihat bagian 27.** Pilihan yang diambil bukan A
+melainkan B untuk kedua cacat: dihitung, bukan ditebak (26.2) dan
+diekstrapolasi, bukan dikosongkan (26.1). Opsi C (kamera belakang) tetap
+terbuka dan akan menutup sisa yang dicatat di bagian 27.7.
+
+---
+
+## 27. Perbaikan kedua cacat bagian 26, dan hasil ulang (17 September 2026)
+
+**Bagian 26 mendiagnosis, bagian ini memperbaiki.** Keduanya dikerjakan, lalu
+seluruh jalur vision diukur ulang: 10 run Tahap 9 plus satu run rekaman video.
+Jalur ground truth diukur ulang juga (5 run) dan hasilnya **identik bit-per-bit**
+dengan sebelumnya -- yang memang seharusnya, dan menjadi bukti bahwa kedua
+perbaikan hanya menyentuh jalur vision.
+
+Berkas: `out/experiment_s1_vision_sebelum.npz` versus
+`out/experiment_s1_vision.npz`; video `out/vision_s1_sebelum.mp4` versus
+`out/vision_s1_sesudah.mp4`. Bandingkan sendiri dengan
+`python metrics.py --layer --eksperimen [--akhiran _sebelum]`.
+
+### 27.1 Perbaikan 1 -- sudut pandang dihitung, bukan ditebak
+
+`perception.koreksi_muka` dulu menebak sudut pandang dari **rasio lebar/tinggi
+kotak deteksi**. Rasio itu runtuh justru saat ego berdampingan, karena kotaknya
+terpotong tepi citra.
+
+Sudut pandangnya sendiri **sudah diketahui pasti** dari kalibrasi kamera: pada
+titik `(d, y)` hasil balik-proyeksi, `theta = atan2(y, d)`. Pada sudut itu lebar
+siluet target adalah `PANJANG*sin(theta)` dari sisi ditambah
+`LEBAR*cos(theta)` dari buritan, dan **porsi sisi itulah bobot campurannya**:
+
+```python
+sisi = config.LAIN_PANJANG * abs(math.sin(theta))
+belakang = config.LAIN_LEBAR * abs(math.cos(theta))
+f = sisi / max(sisi + belakang, 1e-9)
+return (1.0 - f) * config.LAIN_PANJANG / 2.0, f * config.LAIN_LEBAR / 2.0
+```
+
+Enam baris. Batas-batasnya benar dengan sendirinya: `theta = 0` memberi koreksi
+memanjang penuh, `theta = 90 deg` memberi koreksi melintang penuh, dan
+`f` terkurung di [0, 1] tanpa perlu dijepit.
+
+Kalibrasi kamera tidak pernah terpotong tepi citra. Itulah seluruh alasan
+perbaikan ini bekerja.
+
+Hasilnya, galat estimasi saat berdampingan (10 run, seluruh tick terdeteksi
+dengan |dx| < 8 m):
+
+| | Sebelum | Sesudah | Perbaikan |
+|---|---|---|---|
+| galat memanjang, bias | +1,134 m | **+0,011 m** | 103x |
+| galat memanjang, RMS | 1,681 m | **1,044 m** | 1,6x |
+| galat memanjang, maks | 3,290 m | **1,830 m** | 1,8x |
+| galat melintang, bias | -0,828 m | **-0,203 m** | 4,1x |
+| galat melintang, RMS | 0,934 m | **0,214 m** | 4,4x |
+| galat melintang, maks | 1,344 m | **0,326 m** | 4,1x |
+
+Bias memanjang praktis lenyap. Itu angka yang paling layak dikutip: estimasi
+yang dulu sistematis meleset satu meter ke depan kini tidak bias sama sekali.
+
+### 27.2 Perbaikan 2 -- daftar kosong bukan lagi bukti
+
+`planning.BehaviorFSM` dulu membaca `len(belum_lewat) == 0` sebagai "sudah
+terlewat". Sekarang yang terakhir terlihat diteruskan dengan kecepatan
+relatifnya sampai ekstrapolasi menyimpulkan sudah unggul `PASS_MARGIN`.
+
+Satu detail menentukan, dan baru ketahuan setelah percobaan pertama: **laju
+hanya dibekukan selagi target masih di depan.** Percobaan pertama memakai laju
+yang terukur terakhir, yaitu laju saat berdampingan -- terukur -3,2 m/s padahal
+sesungguhnya -6,4 m/s, karena kotaknya terpotong. Akibatnya kembali tertunda
+sampai -21,5 m. Saat masih di depan, target terlihat utuh dan lajunya benar.
+
+| | Sebelum | Sesudah | GT (acuan) |
+|---|---|---|---|
+| jarak saat memutuskan kembali | **-2,73 ± 0,39 m** | **-18,02 ± 0,40 m** | -10,40 m |
+| buta sebelum memutuskan | 0,80 ± 0,05 s | 3,28 ± 0,05 s | 0,05 s |
+
+Sekarang keputusannya **melewati** syarat 8 m, bukan melanggarnya. Tetapi
+lewatnya jauh: -18,0 m versus -10,4 m milik GT. Penyebabnya ekstrapolasi
+berangkat dari posisi terakhir yang **sudah melayang** (karena itu melebih-lebih)
+lalu memakai laju yang konservatif. **Biasnya sengaja ke arah menunggu** --
+untuk sensor yang buta, terlalu lama di lajur salip adalah kesalahan yang jauh
+lebih murah daripada memotong terlalu cepat.
+
+Ongkosnya nyata dan harus ditulis: manuver memanjang dari 10,43 s menjadi
+13,03 s, dan ITAE ikut naik karena metrik itu menimbang galat akhir dengan waktu.
+
+### 27.3 Hasil Tahap 9 -- ini angka yang berlaku untuk skripsi
+
+10 run vision, 5 run GT. **10/10 dan 5/5 berhasil** di ketiga kondisi; tidak ada
+tabrakan, tidak ada kegagalan solver.
+
+| Metrik | Vision SEBELUM | **Vision SESUDAH** | GT |
+|---|---|---|---|
+| Jarak min antar bodi (syarat > 1,0 m) | 2,106 ± 0,004 m | **1,644 ± 0,009 m** | 1,423 m |
+| Durasi manuver (syarat <= 20 s) | 10,43 ± 0,03 s | **13,03 ± 0,05 s** | 11,65 s |
+| Lambungan lateral (tepi lajur -5,25 m) | -4,692 ± 0,030 m | **-4,280 ± 0,008 m** | -3,892 m |
+| Perlambatan terdalam | -0,594 ± 0,147 m/s² | **-2,103 ± 0,124 m/s²** | -0,145 m/s² |
+| Tick tanpa kandidat planner | 39,2 ± 1,0 | **33,8 ± 0,6** | 4,0 |
+| Deviasi lajur saat LANE_KEEPING | 0,018 m | **0,017 m** | 0,015 m |
+
+Perhatikan dua baris yang **memburuk**, dan keduanya punya penjelasan:
+
+- **Jarak min turun 2,106 -> 1,644 m.** Itu bukan penurunan keselamatan
+  melainkan lenyapnya lambungan berlebih: jarak 2,1 m dulu diperoleh karena ego
+  menghindari hantu, bukan karena rancangan. Angka baru mendekati 1,423 m milik
+  GT dari arah yang aman, dan tetap 64% di atas syarat 1,0 m.
+- **Perlambatan dalam dari -0,59 menjadi -2,10 m/s².** Muncul hanya 8 tick
+  (0,4 detik, t = 8,25-8,60 s) saat peralihan sudut pandang. Sebabnya justru
+  estimasi yang kini benar: dulu target tampak +1,13 m lebih jauh ke depan
+  sehingga celah memanjang tampak longgar dan MPC memilih menghindar ke samping;
+  kini celahnya terlihat apa adanya, dan MPC memakai derajat kebebasan
+  memanjang -- **mengerem alih-alih membanting setir**. Untuk penumpang itu
+  pertukaran yang lebih baik, dan -2,10 m/s² masih di bawah ambang kenyamanan
+  yang lazim dikutip (3 m/s²).
+
+### 27.4 Metrik per layer
+
+| Metrik | Vision SEBELUM | **Vision SESUDAH** | GT |
+|---|---|---|---|
+| **Galat prediksi @ 0,5 s, RMS** | 0,0754 ± 0,0008 m | **0,0361 ± 0,0001 m** | 0,0204 m |
+| Galat prediksi @ 2,0 s, RMS | 0,3513 ± 0,0022 m | **0,3136 ± 0,0010 m** | 0,2873 m |
+| Slack zona aman maks (0 = patuh) | 0,6445 ± 0,0254 | **0,2525 ± 0,0005** | 0,00016 |
+| Slack batas lateral maks | 0,2067 ± 0,0900 | **0,0328 ± 0,0006** | 0,00100 |
+| Galat lacak lateral RMS | 0,0238 ± 0,0036 m | **0,0101 ± 0,0001 m** | 0,0017 m |
+| Sudut hadap maks | 8,63° | **7,25°** | 6,47° |
+| Jerk lateral RMS | 5,653 ± 0,051 m/s³ | **4,688 ± 0,039 m/s³** | 1,331 m/s³ |
+| Jitter kemudi total | 0,503 ± 0,010 | **0,461 ± 0,001** | 0,272 |
+| Percepatan lateral maks | 3,207 m/s² | **3,033 m/s²** | 1,285 m/s² |
+| Replan tanpa kandidat | 9,80% | **8,45%** | 1,00% |
+| Kandidat lolos per replan (dari 9) | 7,577 | 7,579 | 8,010 |
+
+**Galat prediksi 0,5 detik turun separuh: 0,0754 -> 0,0361 m.** Dulu vision 3,7
+kali lebih buruk daripada GT; sekarang 1,8 kali. Itu ukuran paling langsung dari
+"seberapa besar derau perception merusak pengendali", dan separuhnya ternyata
+bukan derau melainkan **bias yang bisa dihilangkan**.
+
+Slack zona aman turun 2,6 kali dan slack batas lateral 6,3 kali. Artinya MPC
+kini jauh lebih jarang terpaksa melanggar batasnya sendiri -- persis yang
+diharapkan bila halangan hantu hilang.
+
+### 27.5 XTE dan IAE -- perbarui bagian 25 dengan angka ini
+
+| Metrik | Vision SEBELUM | **Vision SESUDAH** | GT |
+|---|---|---|---|
+| XTE ke lajur terdekat, RMS | 0,5817 ± 0,0065 m | **0,5752 ± 0,0011 m** | 0,5351 m |
+| XTE ke lajur terdekat, maks | 1,725 m | **1,748 m** | 1,733 m |
+| IAE lateral | 6,576 ± 0,096 m·s | **7,026 ± 0,022 m·s** | 5,890 m·s |
+| ISE lateral | 6,768 ± 0,152 m²·s | **6,617 ± 0,024 m²·s** | 5,726 m²·s |
+| ITAE lateral | 34,88 ± 0,62 m·s² | **46,20 ± 0,22 m·s²** | 35,37 m·s² |
+| IAE kecepatan | 3,879 ± 0,185 m | **4,300 ± 0,148 m** | 4,556 m |
+| IAE lateral saat LANE_KEEPING | 0,1988 ± 0,0129 m·s | **0,1372 ± 0,0002 m·s** | 0,1432 m·s |
+
+Dua catatan supaya tidak salah klaim:
+
+- **ITAE naik 34,88 -> 46,20 m·s².** Itu **bukan** pengendalian yang memburuk.
+  ITAE menimbang galat dengan waktu, dan manuvernya kini 2,6 detik lebih lama
+  karena gerbang kembali menunggu bukti. Bandingkan ISE, yang tidak menimbang
+  waktu: justru **turun** 6,768 -> 6,617 m²·s. Dua metrik bergerak berlawanan
+  dari data yang sama, dan yang membedakan hanya bobot waktu.
+- **IAE lateral saat LANE_KEEPING turun 0,1988 -> 0,1372 m·s**, kini **lebih
+  baik daripada GT** (0,1432). Ekor setelah kembali ke lajur lebih tenang karena
+  ego masuk dari jarak jauh, bukan memotong mepet.
+
+Angka IAE kecepatan naik 3,879 -> 4,300 m karena manuvernya lebih panjang; lihat
+peringatan bagian 25.4 yang berlaku sama.
+
+### 27.6 Yang TIDAK berubah, dan kenapa itu penting
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Ground truth, seluruh metrik | 1,423 m / 11,65 s / 4 tick | **identik bit-per-bit** |
+| Waktu solve rata-rata | 19,35 ms | 19,41 ms |
+| Kandidat lolos per replan | 7,577 | 7,579 |
+| Uji otomatis | 91 lolos | **98 lolos** (7 uji regresi baru) |
+
+Gerbang baru identik dengan gerbang lama selama halangan selalu terlihat:
+`max(x) <= -PASS_MARGIN` adalah syarat yang sama dengan "tidak ada `x` di atas
+`-PASS_MARGIN`". Itu bukan kebetulan melainkan rancangan, dikunci oleh uji
+`test_ground_truth_tidak_berubah_perilakunya`, dan terbukti di data: lima run GT
+menghasilkan log yang sama persis seperti sebelum perbaikan. **Karena itu
+seluruh angka jalur ground truth di bagian 23 dan 25 tetap berlaku.**
+
+### 27.7 Yang masih tersisa
+
+- **33,8 tick tanpa kandidat** (dari 39,2). Sepuluh tick "halangan hantu" hilang
+  seperti diramalkan bagian 26.3; sisanya adalah asimetri planner-MPC, yang
+  memang perubahan rancangan dan bukan cacat perception.
+- **`g` yang dilihat masih turun ke 0,931** sementara yang sesungguhnya 1,070.
+  Selisihnya menyempit dari 0,253 menjadi 0,139, tetapi belum nol -- sisa galat
+  memanjang RMS 1,044 m saat berdampingan masih ada. Menutupnya butuh kamera
+  belakang, bukan tuning.
+- **Kembali pada -18,0 m versus -10,4 m milik GT.** Konservatif karena buta;
+  ongkosnya 2,6 detik lebih lama di lajur salip. Kamera belakang akan
+  menyelesaikannya sekaligus.
+
+Ketiganya bermuara pada satu hal yang sama, dan sudah tercatat sebagai pekerjaan
+belum selesai nomor 3: **rig satu kamera depan**.

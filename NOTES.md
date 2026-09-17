@@ -2685,3 +2685,103 @@ benar. Empat kali sebelumnya saya melewatkan langkah itu.
 
 **Status: dicatat, belum diperbaiki.** Tiga pilihan penanganan ada di
 `WRITING_SUMMARY.md` bagian 26.4; keputusan ada pada penulis.
+
+---
+
+## Kedua Cacat Diperbaiki, dan Satu Percobaan yang Gagal Dulu — 17 September 2026
+
+Lanjutan langsung dari entri sebelumnya. Diagnosis ada di situ; ini pengerjaannya.
+Angka lengkap: `WRITING_SUMMARY.md` bagian 27.
+
+### Perbaikan 1 — hitung sudutnya, jangan ditebak
+
+`koreksi_muka` menebak sudut pandang dari rasio lebar/tinggi kotak. Rasio itu
+runtuh persis saat berdampingan karena kotaknya terpotong tepi citra.
+
+Yang membuat perbaikannya kecil: **sudut itu sebenarnya sudah diketahui.**
+Balik-proyeksi menghasilkan `(d, y)`, jadi `theta = atan2(y, d)`. Lebar siluet
+pada sudut itu adalah `PANJANG*sin(theta)` dari sisi ditambah
+`LEBAR*cos(theta)` dari buritan, dan porsi sisi itulah bobot campurannya. Enam
+baris, dan batas-batasnya benar dengan sendirinya — tidak perlu dijepit.
+
+Kalibrasi kamera tidak pernah terpotong tepi citra. Itu seluruh alasannya
+bekerja.
+
+Hasil (10 run, tick berdampingan): bias memanjang **+1,134 → +0,011 m**,
+melintang **-0,828 → -0,203 m**, maks melintang **1,344 → 0,326 m**.
+
+Bias memanjang praktis lenyap. Yang dulu dianggap "derau perception" ternyata
+sebagian besar **bias yang bisa dihitung keluar**.
+
+### Perbaikan 2 — dan percobaan pertama yang meleset
+
+Gerbang kembali tidak lagi membaca daftar kosong sebagai bukti. Yang terakhir
+terlihat diteruskan dengan kecepatan relatifnya sampai ekstrapolasi menyimpulkan
+sudah unggul 8 m.
+
+**Percobaan pertama gagal, dan cara gagalnya instruktif.** Saya bekukan
+kecepatan yang terukur *terakhir* — yaitu kecepatan saat berdampingan, ketika
+kotak sudah terpotong. Terukur -3,2 m/s padahal sesungguhnya -6,4. Ekstrapolasi
+jadi setengah kecepatan, dan ego baru kembali pada **-21,5 m**, tiga detik
+terlambat.
+
+Perbaikannya satu syarat: **bekukan laju hanya selagi target masih di depan**,
+di mana kotaknya utuh dan lajunya benar. Posisi tetap disegarkan tiap tick.
+
+Kembali pada **-2,73 → -18,02 m** (GT: -10,40 m). Sekarang melewati syarat 8 m,
+bukan melanggarnya.
+
+Pelajarannya: cacat yang sama (kotak terpotong saat berdampingan) merusak DUA
+besaran — posisi dan kecepatan. Saya memperbaiki yang pertama lalu memakai yang
+kedua tanpa berpikir, dan langsung tersandung lagi. Sumber galat yang sama
+biasanya punya lebih dari satu korban.
+
+### Hasil yang memburuk, dan kenapa itu bukan kemunduran
+
+Dua baris turun, keduanya punya sebab yang sama-sama masuk akal.
+
+**Jarak min 2,106 → 1,644 m.** Bukan penurunan keselamatan. Jarak 2,1 m dulu
+diperoleh karena ego menghindari hantu — buah dari cacat, bukan dari rancangan.
+Angka baru mendekati 1,423 m milik GT dari arah yang aman, masih 64% di atas
+syarat 1,0 m.
+
+**Perlambatan -0,59 → -2,10 m/s².** Hanya 8 tick, saat peralihan sudut pandang.
+Sebabnya estimasi yang kini benar: dulu target tampak +1,13 m lebih jauh ke
+depan, celah memanjang tampak longgar, MPC memilih menghindar ke samping. Kini
+celahnya terlihat apa adanya dan MPC **mengerem alih-alih membanting setir**.
+Untuk penumpang itu pertukaran yang lebih baik.
+
+**ITAE 34,88 → 46,20 m·s².** Ini yang paling mudah disalahbaca. ITAE menimbang
+galat dengan waktu, dan manuvernya 2,6 detik lebih lama. ISE, yang tidak
+menimbang waktu, justru **turun** (6,768 → 6,617). Dua metrik bergerak
+berlawanan dari data yang sama. Kalau ada satu contoh kenapa metrik harus
+dipahami sebelum dikutip, ini contohnya.
+
+### Yang membaik paling meyakinkan
+
+**Galat prediksi 0,5 detik: 0,0754 → 0,0361 m.** Dulu vision 3,7 kali lebih
+buruk daripada GT, sekarang 1,8 kali. Separuh penurunan kinerja yang selama ini
+saya sebut "derau perception" ternyata bias yang bisa dihilangkan.
+
+Slack zona aman turun 2,6 kali (0,6445 → 0,2525), slack batas lateral 6,3 kali
+(0,2067 → 0,0328). MPC jauh lebih jarang terpaksa melanggar batasnya sendiri —
+persis yang diharapkan kalau halangan hantu memang hilang.
+
+### Bukti bahwa perbaikannya terkurung di jalur vision
+
+Lima run ground truth diukur ulang: **identik bit-per-bit** dengan sebelumnya.
+Gerbang baru memang sengaja dirancang setara dengan yang lama selama halangan
+terlihat (`max(x) <= -PASS_MARGIN` sama dengan "tidak ada `x` di atas
+`-PASS_MARGIN`"), dan itu dikunci uji `test_ground_truth_tidak_berubah_perilakunya`.
+
+Artinya seluruh angka ground truth di bagian 23 dan 25 tetap berlaku tanpa
+diukur ulang. Uji naik 91 → 98.
+
+### Yang tersisa, semuanya bermuara ke satu hal
+
+33,8 tick tanpa kandidat (dari 39,2 — sepuluh tick hantu hilang seperti
+diramalkan); `g` yang dilihat masih 0,931 versus 1,070 sesungguhnya; kembali
+pada -18,0 m versus -10,4 m milik GT.
+
+Ketiganya sisa dari rig **satu kamera depan**. Bukan tuning, bukan bobot.
+Pekerjaan belum selesai nomor 3.

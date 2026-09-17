@@ -9,6 +9,7 @@ LANE_KEEPING sesudahnya -- dua hal yang sangat berbeda meski namanya sama.
     python metrics.py                       # per fase, dari log run tunggal
     python metrics.py --eksperimen          # per fase, seluruh ulangan Tahap 9
     python metrics.py --layer --eksperimen  # dikelompokkan per layer arsitektur
+    python metrics.py --eksperimen --akhiran _sebelum   # hasil sebelum perbaikan bagian 27
 """
 import argparse
 
@@ -204,12 +205,16 @@ def main_():
                     help='pakai seluruh ulangan Tahap 9, bukan run tunggal')
     ap.add_argument('--layer', action='store_true',
                     help='kelompokkan per layer arsitektur, bukan per fase')
+    ap.add_argument('--akhiran', default='',
+                    help='akhiran nama berkas, mis. _sebelum -- untuk membandingkan '
+                         'hasil sebelum dan sesudah perbaikan (bagian 27)')
     args = ap.parse_args()
 
     if args.layer:
         for mode in ('gt', 'vision'):
-            pola = (f'{config.OUT_DIR}/experiment_s1_{mode}.npz' if args.eksperimen
-                    else f'{config.OUT_DIR}/run_s1_mpc_{mode}.npz')
+            pola = (f'{config.OUT_DIR}/experiment_s1_{mode}{args.akhiran}.npz'
+                    if args.eksperimen
+                    else f'{config.OUT_DIR}/run_s1_mpc_{mode}{args.akhiran}.npz')
             try:
                 d = np.load(pola, allow_pickle=True)
             except FileNotFoundError:
@@ -228,8 +233,9 @@ def main_():
                     print(f'    {nama:<40}{v.mean():>12.4g}{tail}')
         return
     for mode in ('gt', 'vision'):
-        pola = (f'{config.OUT_DIR}/experiment_s1_{mode}.npz' if args.eksperimen
-                else f'{config.OUT_DIR}/run_s1_mpc_{mode}.npz')
+        pola = (f'{config.OUT_DIR}/experiment_s1_{mode}{args.akhiran}.npz'
+                if args.eksperimen
+                else f'{config.OUT_DIR}/run_s1_mpc_{mode}{args.akhiran}.npz')
         try:
             d = np.load(pola, allow_pickle=True)
         except FileNotFoundError:

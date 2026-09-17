@@ -27,6 +27,10 @@ out/*
 !out/run_s1_mpc_vision.npz
 !out/run_s3_mpc_gt.npz
 
+# Log jalur vision SEBELUM perbaikan bagian 27 (125 KB). Tanpa ini cerita
+# sebelum/sesudah di WRITING_SUMMARY.md hanya bisa dibaca, tidak bisa diperiksa.
+!out/run_s1_mpc_vision_sebelum.npz
+
 # Yang diabaikan: *.mp4 (~18 MB, bisa dibangkitkan ulang dengan record_*.py)
 # dan *.npz log run tunggal (bisa dibangkitkan ulang dengan main.py).
 
