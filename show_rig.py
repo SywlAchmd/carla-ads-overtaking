@@ -94,8 +94,14 @@ def foto():
                     (KAM_X + panjang, 0, config.KAMERA_Z),
                     (KAM_X, -panjang, config.KAMERA_Z),
                     (KAM_X, 0, config.KAMERA_Z + panjang)]))
-                sumbu_belakang = _piksel(cam, K, _dunia(
-                    ego, [(RODA_BELAKANG_X, -TRACK_BELAKANG / 2, RODA_R)]))[0]
+                # State MPC ada di TENGAH sumbu belakang (y = 0), bukan di roda.
+                # Versi pertama menaruhnya di pusat roda kiri supaya kelihatan,
+                # dan itu menyesatkan: titiknya bergeser 0,83 m ke samping.
+                axle = _piksel(cam, K, _dunia(ego, [
+                    (RODA_BELAKANG_X, -TRACK_BELAKANG / 2, RODA_R),
+                    (RODA_BELAKANG_X, 0.0, RODA_R),
+                    (RODA_BELAKANG_X, TRACK_BELAKANG / 2, RODA_R)]))
+                sumbu_belakang = axle[1]
             finally:
                 cam.stop(); cam.destroy()
 
@@ -109,8 +115,9 @@ def foto():
                 uv_s, xytext=(uv_s[0] - 430, uv_s[1] - 175), color=AKSEN, fontsize=12,
                 arrowprops=dict(arrowstyle='->', color=AKSEN, lw=1.6))
     # Ditaruh jauh ke kiri-bawah: di dekat markernya, teks ini jatuh di atas bodi.
-    ax.plot(*sumbu_belakang, marker='o', ms=8, mfc='none', mec=GARIS, mew=2.0)
-    ax.annotate('rear axle\nMPC state origin, planner reference', sumbu_belakang,
+    ax.plot(axle[:, 0], axle[:, 1], ls='--', lw=1.6, color=GARIS, zorder=4)
+    ax.plot(*sumbu_belakang, marker='o', ms=9, mfc='white', mec=GARIS, mew=2.0, zorder=5)
+    ax.annotate('centre of the rear axle\nMPC state origin, planner reference', sumbu_belakang,
                 xytext=(sumbu_belakang[0] + 150, sumbu_belakang[1] + 210),
                 color=GARIS, fontsize=11,
                 arrowprops=dict(arrowstyle='->', color=GARIS, lw=1.5))
@@ -179,6 +186,80 @@ def tampak_atas():
     print(f'Top view: {config.OUT_DIR}/sensor_rig_topdown.png')
 
 
+def tampak_atas_foto():
+    """Tampak atas dari render CARLA, bukan skema. FOV sempit dari ketinggian
+    supaya mendekati ortografik: 20 derajat dari 22 m memberi parallax ~7 %
+    antara atap dan permukaan jalan."""
+    lebar, tinggi, fov, h = 1500, 1100, 20.0, 22.0
+    with simulation.carla_world() as world:
+        with simulation.ego_vehicle(world) as ego:
+            bp = world.get_blueprint_library().find('sensor.camera.rgb')
+            bp.set_attribute('image_size_x', str(lebar))
+            bp.set_attribute('image_size_y', str(tinggi))
+            bp.set_attribute('fov', str(fov))
+            cam = world.spawn_actor(
+                bp, carla.Transform(carla.Location(x=0, y=0, z=h),
+                                    carla.Rotation(pitch=-90, yaw=-90)), attach_to=ego)
+            q = queue.Queue()
+            cam.listen(q.put)
+            try:
+                for _ in range(12):
+                    simulation.tick(world)
+                    citra = q.get(timeout=5.0)
+                rgb = np.frombuffer(citra.raw_data, dtype=np.uint8).reshape(
+                    tinggi, lebar, 4)[:, :, :3][:, :, ::-1].copy()
+                f = lebar / (2.0 * math.tan(math.radians(fov) / 2.0))
+                K = np.array([[f, 0, lebar / 2], [0, f, tinggi / 2], [0, 0, 1.0]])
+                titik = _piksel(cam, K, _dunia(ego, [
+                    (RODA_BELAKANG_X, 0, RODA_R),                   # 0 tengah sumbu belakang
+                    (KAM_X, 0, config.KAMERA_Z),                    # 1 sensor
+                    (RODA_DEPAN_X, 0, RODA_R),                      # 2 tengah sumbu depan
+                    (RODA_BELAKANG_X, -TRACK_BELAKANG / 2, RODA_R),  # 3 roda belakang kiri
+                    (RODA_BELAKANG_X, TRACK_BELAKANG / 2, RODA_R),   # 4 roda belakang kanan
+                    (config.EGO_PANJANG / 2, 0, 0),                 # 5 ujung depan
+                    (-config.EGO_PANJANG / 2, 0, 0)]))              # 6 ujung belakang
+            finally:
+                cam.stop(); cam.destroy()
+
+    fig, ax = plt.subplots(figsize=(11, 8))
+    ax.imshow(rgb); ax.axis('off')
+    (p_ax, p_sen, p_dep, p_kiri, p_kanan, p_depan, p_blk) = titik
+
+    ax.plot([p_kiri[0], p_kanan[0]], [p_kiri[1], p_kanan[1]], ls='--', lw=1.6, color=GARIS)
+    ax.plot(*p_ax, marker='o', ms=10, mfc='white', mec=GARIS, mew=2.2, zorder=5)
+    # Di bawah marker, label ini jatuh di atas bodi dan di antara garis dimensi;
+    # ditaruh di atas, berseberangan dengan label kamera.
+    ax.annotate('centre of the rear axle\nMPC state origin', p_ax,
+                xytext=(p_ax[0] - 60, p_ax[1] - 215), ha='center', color=GARIS, fontsize=11,
+                arrowprops=dict(arrowstyle='->', color=GARIS, lw=1.5))
+    ax.plot(*p_sen, marker='s', ms=11, mfc=AKSEN, mec='white', mew=1.4, zorder=5)
+    ax.annotate('RGB + depth camera\n1.65 m above the road', p_sen,
+                xytext=(p_sen[0] + 40, p_sen[1] - 215), ha='center', color=AKSEN, fontsize=11,
+                arrowprops=dict(arrowstyle='->', color=AKSEN, lw=1.5))
+
+    def ukur(a, b, dy, teks, warna=GARIS):
+        ya = (a[1] + b[1]) / 2 + dy
+        ax.annotate('', (a[0], ya), (b[0], ya),
+                    arrowprops=dict(arrowstyle='<->', color=warna, lw=1.3))
+        for px in (a[0], b[0]):
+            ax.plot([px, px], [(a[1] + b[1]) / 2, ya], ls=':', lw=.9, color=warna)
+        ax.text((a[0] + b[0]) / 2, ya - 12, teks, ha='center', fontsize=10, color=warna)
+
+    ukur(p_ax, p_sen, 300, '1.68 m')
+    ukur(p_ax, p_dep, 370, '3.044 m  (wheelbase)')
+    ukur(p_blk, p_depan, 440, '5.008 m')
+    ax.annotate('', (p_depan[0] + 95, p_ax[1]), (p_depan[0] + 25, p_ax[1]),
+                arrowprops=dict(arrowstyle='->', color='0.35', lw=1.6))
+    ax.text(p_depan[0] + 60, p_ax[1] - 18, 'forward', ha='center', fontsize=10, color='0.35')
+    ax.set_title('Top view rendered in CARLA - one forward camera pair, '
+                 'no LiDAR, no IMU/GNSS', fontsize=12, pad=10)
+    fig.tight_layout()
+    fig.savefig(f'{config.OUT_DIR}/sensor_rig_topdown_render.png', dpi=140, bbox_inches='tight')
+    plt.close(fig)
+    print(f'Top render: {config.OUT_DIR}/sensor_rig_topdown_render.png')
+
+
 if __name__ == '__main__':
     tampak_atas()
     foto()
+    tampak_atas_foto()

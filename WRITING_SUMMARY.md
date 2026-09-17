@@ -1656,6 +1656,7 @@ Seluruhnya di `out/`, dibangkitkan ulang dari log tanpa menjalankan simulasi
 | `detection_15m_lane1.png` | Target di lajur menyalip | `python check_detection.py --lajur 1` |
 | `sensor_rig_photo.png` | **Foto ego di CARLA** dengan sensor dan sumbunya ditimpakan, ala KITTI Gambar 2a | `python show_rig.py` |
 | `sensor_rig_topdown.png` | **Skema berdimensi tampak atas**, ala KITTI Gambar 2b | `python show_rig.py` |
+| `sensor_rig_topdown_render.png` | Tampak atas **hasil render CARLA**, berdimensi | `python show_rig.py` |
 | `sensor_rig.png` | Penempatan kamera: tampak samping + bidang pandang | `python plot_concepts.py` |
 | `localization_frames.png` | Tiga titik acuan + rantai konversi frame | `python plot_concepts.py` |
 | `scenario_s1.png` | Susunan S1 + tabel parameter kedua kendaraan | `python plot_concepts.py` |
