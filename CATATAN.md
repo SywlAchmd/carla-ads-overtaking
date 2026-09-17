@@ -2184,3 +2184,332 @@ Dengan `best.pth` keluaran lajur rapi mengikuti marka, dan area jalan bersih.
 Dengan BDD, lajur pecah 7-8 komponen dan bahu kanan ikut dicat. Perlu dikonfirmasi
 ke anotasi: area jalan versi fine-tuned tidak mencakup lajur yang sedang ditempati
 ego.
+
+---
+
+## Tahap 8 Langkah 3 — VisionPerception, dan Jangkar Halangan 1,433 m
+
+16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.
+
+### Depth CARLA: PLANAR, bukan radial
+
+Diuji terhadap permukaan jalan, yang profil kedalamannya analitik: `Z = h·f/dv`
+tetap sepanjang satu baris citra kalau planar, naik ke tepi kalau radial.
+Terukur rasio tepi/tengah **1,000x** di empat baris, sedangkan radial
+memprediksi 1,28x. RMS terhadap model planar 0,045 m di baris yang seluruhnya
+aspal. Tidak butuh kendaraan target dan tidak bergantung isi adegan.
+
+Ini tidak bisa dibedakan oleh `cek_deteksi.py`: targetnya hampir di tengah
+citra, dan di sana kedua tafsiran berselisih 1 cm. Selisihnya baru muncul di
+lajur sebelah pada jarak dekat -- 0,64 m di 10 m, 1,10 m di 5 m -- yaitu
+satu-satunya tempat keputusan S3 diambil. Salah tebak tidak akan pernah
+ketahuan di kalibrasi.
+
+Planar juga yang kebetulan paling cocok: muka belakang kendaraan adalah bidang
+tegak lurus sumbu jalan, dan depth planar mengukur ke bidang tegak lurus sumbu
+optik. Saat sehadap keduanya berimpit, jadi koreksi muka -> pusat (bagian 18.4)
+menjadi penambahan satu konstanta di satu sumbu, dan seluruh piksel pada muka
+yang sama memberi angka identik. Dengan radial, petak piksel yang sama menyebar
+1,10 m di lajur sebelah 5 m. Asumsinya: ego dan target sehadap -- melemah saat
+yaw ego mencapai 13,6 derajat waktu pindah lajur, dan itu masuk batasan masalah.
+
+### `tracking.py` dan `VisionPerception`
+
+Asosiasi dua tahap ala ByteTrack (deteksi lemah hanya MENAHAN track, tidak
+melahirkan) + Kalman constant-velocity, state frame ego relatif ego. Kompensasi
+gerak ego: suku translasi saling meniadakan, jadi hanya rotasi dan perubahan
+laju ego yang masuk -- modul ini tidak perlu tahu posisi ego sama sekali.
+
+Validasi `cek_estimasi.py` terhadap ground truth simulator, geometri S1 dengan
+kecepatan dipaksa tetap, jarak menyapu 55 -> 9 m:
+
+| | bias | RMS | maks |
+|---|---|---|---|
+| x memanjang | -0,011 m | **0,046 m** | 0,205 m |
+| y melintang | +0,017 m | 0,019 m | 0,030 m |
+| vx | -0,007 m/s | **0,020 m/s** | 0,173 m/s |
+
+Deteksi pertama di 45,6 m -- mereproduksi batas 40-50 m bagian 18.2 secara
+independen. Kecepatan konvergen ke galat < 0,1 m/s dalam 0,60 s (12 frame).
+
+### TEMUAN: acuan kecepatan ground truth ikut berderau
+
+Tabel pertama menunjukkan bias kecepatan +0,28 m/s yang menetap di semua jarak.
+Terlalu rapi untuk derau. Ternyata itu milik acuannya:
+
+| sumber kecepatan relatif | rata-rata | sd |
+|---|---|---|
+| `get_velocity()` simulator | -6,394 | **0,283** |
+| pergeseran posisi GT / dt | -6,396 | 0,018 |
+| VisionPerception | -6,402 | **0,006** |
+
+`get_velocity()` berderau 0,28 m/s per tick ketika kecepatan aktor dipaksa tiap
+tick. Diukur terhadap pergeseran posisi, RMS vision jatuh 0,589 -> 0,020 m/s --
+dan keluaran KF-nya lebih halus daripada pembacaan kecepatan simulator sendiri.
+Acuannya sudah diganti di `cek_estimasi.py`. Pola yang sama dengan bagian 15:
+angka menyesatkan karena alat ukurnya, bukan karena yang diukur.
+
+### TEMUAN: halangan dijangkar di sumbu belakang, bukan pusat bodi
+
+Terukur `ego.bounding_box.location.x = -0,005 m`: titik asal aktor = pusat bodi.
+Jadi `GroundTruthPerception` melaporkan relatif pusat bodi ego, sementara
+`halangan_ego_ke_jalan` menambahkan `ego.x` yang sumbu belakang. Halangan di
+frame jalan meleset **1,433 m terlalu dekat**.
+
+Arahnya konservatif -- zona aman efektif 7,71 + 1,43 = 9,14 m ke depan -- jadi
+ia tidak pernah muncul sebagai kegagalan, dan `ELLIPSE_A` yang diturunkan
+hati-hati di bagian 14.3 bukan yang benar-benar berlaku. Ini bias titik acuan
+yang KETIGA di proyek ini, setelah bias XTE Tahap 1 dan kotak penilai jarak.
+
+**Satu perbaikan membenarkan kedua pemakainya**, karena masing-masing sudah
+menuliskan acuannya sendiri: zona planner & MPC menggeser ego ke pusat bodi lalu
+mengurangkan halangan (jadi pusat-ke-pusat), sementara `main.py` mengurangkan
+`ego.x` untuk FSM (jadi sumbu belakang -> pusat, persis yang didokumentasikan
+`planning._v_ikut`). `main.py` tidak perlu disentuh. Dikunci
+`tests/test_localization.py`.
+
+### Hasil setelah perbaikan
+
+| | S1 lama | S1 baru | S3 lama | S3 baru |
+|---|---|---|---|---|
+| vonis | BERHASIL | BERHASIL | BERHASIL | BERHASIL |
+| jarak min antar bodi | 1,43 m | **1,44 m** | 1,51 m | **1,47 m** |
+| deviasi lajur | 0,011 m | 0,009 m | 0,012 m | 0,011 m |
+| durasi manuver | 11,7 s | 11,6 s | 19,2 s | 18,9 s |
+
+S3 turun 1,51 -> 1,47 m seperti diduga: zona aman tidak lagi kelebihan 1,43 m,
+jadi ego boleh mendekat sampai batas rancangannya. Keduanya masih jauh di atas
+syarat 1,0 m. S1 mulai memilih offset 4,0 m di sebagian tick (dulu hanya 3,5).
+
+**Empat tick tanpa kandidat di S1 SUDAH ADA sebelum perbaikan** -- diperiksa
+dengan menjalankan ulang kode lama lewat `git stash`, bukan diasumsikan. Bukan
+regresi, tapi tetap butir terbuka.
+
+---
+
+## Tahap 8 Langkah 4 — Loop Tertutup Vision dan Video Overlay
+
+16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.6-19.7.
+
+`main.py` dapat flag `--perception vision|gt` dan `--rekam`. Mode gt sengaja
+tidak memasang rig kamera sama sekali, supaya hasilnya tetap identik dengan run
+sebelumnya tanpa beban render tambahan.
+
+Urutan di main loop digeser sedikit: `a_filt` dihitung SEBELUM perception, karena
+vision butuh kinematika ego (laju, percepatan, yaw rate) untuk kompensasi gerak
+di langkah prediksi Kalman. Nilainya tidak berubah, hanya dipindah.
+
+**S1 vision BERHASIL**, tapi angkanya menipu: jarak bodi 1,79 m (GT 1,44 m)
+dicapai dengan keluar lajur tujuan sejauh −5,46 m selama 23 tick, rem −4,43 m/s²,
+dan 42 tick tanpa kandidat planner. Kriteria 11.2 meloloskannya karena kriteria
+itu hanya memeriksa kembali ke lajur asal, bukan menjaga lajur selama menyalip.
+
+Dugaan utama: koreksi muka -> pusat gugur saat ego berdampingan, karena kamera
+melihat sisi kendaraan, bukan muka belakangnya. Terlihat di video t=8,50 s
+(target terbaca 31 km/jam padahal 25). Belum diukur -- `cek_estimasi.py` perlu
+diperluas ke lajur sebelah sudut besar.
+
+### ffmpeg tidak ada di mesin ini
+
+`gambar.Perekam.simpan` semula memanggil ffmpeg seperti `record_path.capture`,
+dan gagal di akhir run 20 detik. Diganti `cv2.VideoWriter`: OpenCV sudah jadi
+dependensi perception, sedangkan ffmpeg dependensi sistem yang ternyata belum
+terpasang. Frame-nya selamat karena `rmtree` berada setelah encode, jadi run-nya
+tidak perlu diulang. `record_path.py` dan `record_maneuver.py` masih memakai
+ffmpeg dan karena itu masih belum bisa dijalankan di mesin ini.
+
+---
+
+## Tahap 8 Langkah 5 — Kenapa Kandidat Habis, dan Batas yang Tidak Dibagi
+
+16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.8-19.10.
+
+Dua perbaikan dikerjakan. **Koreksi permukaan sadar sudut pandang berhasil**
+(galat berdampingan bias +1,31 -> +0,39 m, galat melintang saat target di depan
+RMS 0,37 -> 0,07 m). **Acuan cadangan menahan `y` berjalan tidak berhasil** --
+laju lateral puncak tetap 4,10 m/s. Sasarannya keliru: yang mendorong banting
+setir bukan acuan planner, melainkan constraint elips MPC dengan slack rho=1000.
+
+### TEMUAN: planner dan MPC tidak berbagi ruang kelayakan
+
+Planner memutar ulang dari log (bisa, karena `planning.py` murni numerik).
+Penolak kandidat: elips 377, percepatan lateral 73, kelengkungan 0.
+
+Uji pemisah: lintasan ego yang sama, halangan ditukar antara estimasi vision dan
+ground truth. **86 tick nol kandidat pada keduanya -- identik.** Perception bukan
+penyebabnya begitu ayunan dimulai.
+
+Yang membedakan keadaan ego: laju lateral puncak 1,61 m/s (GT) vs 4,10 (vision),
+sudut hadap 6,7 vs 17,1 derajat. Planner membatasi kandidat pada MAX_LATERAL_ACCEL
+3,0 m/s^2; MPC tidak punya batas percepatan lateral sama sekali. MPC membawa mobil
+ke keadaan yang planner tidak bisa lanjutkan, lalu lupnya menutup sendiri.
+
+Perbaikan 15.3 ternyata baru separuh: `ddy0` sudah dari rencana, `dy0` masih ukur.
+
+### Run vision tidak terulang
+
+Dua run kode identik: simpangan lateral -5,58 vs -4,55 m (selisih 1,03 m), nol
+kandidat 50 vs 52, durasi 11,5 vs 10,9 s. Jarak bodi stabil (1,30 vs 1,31 m).
+Bagian 11.4 tidak boleh memakai satu run per konfigurasi untuk vision.
+
+---
+
+## Tahap 8 Langkah 6 — Ruang Kelayakan Dibagi, dan Akar yang Tersisa
+
+16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.11-19.13.
+
+Batas percepatan lateral ditambahkan ke MPC memakai konstanta yang sama dengan
+planner, dan `dy0` planner diambil dari rencana. Keduanya bekerja: percepatan
+lateral tersaturasi tepat 3,00 m/s^2, laju lateral puncak 4,10 -> 2,95 m/s, yaw
+17,1 -> 12,3 derajat, penolak a_lat 73 -> 32, solver tetap 0 gagal dari 400.
+Disapu offline, planner memang masih memberi 9 kandidat sampai dy0 = 3,0 m/s.
+
+**Tapi loop tertutupnya tidak membaik**: tick nol kandidat tetap 50, dan
+penolaknya kini hampir seluruhnya elips (410 dari 450). Uji tukar halangan: 49
+(vision) vs 42 (GT) -- perception tinggal seperlima masalah.
+
+**Ongkosnya nyata**: jarak bodi minimum 1,79 -> 1,30 -> 1,13 m terhadap syarat
+1,0 m. MAX_LATERAL_ACCEL itu batas KENYAMANAN; memberlakukannya keras di MPC
+berarti kenyamanan mengalahkan pelebaran jarak saat berpapasan. Harus dinyatakan
+sebagai keputusan, bukan didiamkan.
+
+### TEMUAN: planner tidak punya komitmen, FSM punya
+
+Rencana muncul/hilang 10 kali (GT 2 kali). Kepingan rencana saat manuver: 2, 11,
+2, 2, 1, 53 replan -- lima yang pertama jauh lebih pendek daripada MANEUVER_TIMES
+3,0-4,0 s yang direncanakannya sendiri. Inilah "beberapa kali mau menyalip" yang
+terlihat di video. FSM diberi FSM_DWELL dan histeresis dengan alasan yang ditulis
+eksplisit; planner tidak pernah diberi keduanya.
+
+### TEMUAN: pemicu tidak diturunkan dari zona aman
+
+Zona aman menuntut celah > 7,6 m selama ego di tengah penyeberangan. Celah
+menyusut 6,4 m/s dan penyeberangan makan 3,6-4,0 s = 23-26 m, berangkat dari
+26-27 m. Marginal secara rancangan. TTC_TRIGGER = 5,0 s diturunkan dari waktu
+dwell FSM, bukan dari geometri elips -- dua syarat berbeda yang tidak pernah
+dicocokkan. Pola yang sama dengan bagian 15.4.
+
+---
+
+## Tahap 8 Langkah 7 — Komitmen Planner dan Batas Lateral yang Lunak
+
+16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.13-19.14.
+
+### KOREKSI: klaim "pemicu terlalu lambat" di langkah 6 keliru
+
+Sapuan terhadap planner yang sebenarnya membantahnya: celah saat pemicu 15,0 m
+pada dv terkecil (DV_TRIGGER 3,0) versus celah minimum 13,5 m -- cukup, margin
++1,5 m, dan makin longgar pada dv besar. TTC_TRIGGER tidak diubah; yang
+ditambahkan uji yang mengunci kecocokan dua turunan terpisah itu.
+
+Yang sebenarnya mengikat: celah minimum MENGECIL seiring ego menyeberang (19,0 m
+di y=0 menjadi 10,5 m di y=-3,0), dan mengecil lagi kalau ego sedang bergerak
+lateral. Menyeberang itu balapan. **Berhenti di tengah adalah tindakan terburuk**
+-- persis yang dilakukan acuan cadangan, dan itu yang membuat rencana berkedip
+berakibat fatal.
+
+### Hasil
+
+Vision S1: jarak bodi 1,13 -> 2,12 m, rem -5,80 -> -2,71 m/s2, tick nol kandidat
+50 -> 38, kedipan rencana 10 -> 6 kali, kepingan [2,11,2,2,1,53] -> [2,11,5,55],
+laju lateral 4,10 -> 2,58 m/s, yaw 17,1 -> 10,8 derajat, durasi 11,9 -> 10,5 s.
+
+**Run vision menjadi terulang**: dua run kode identik memberi 2,12 m / 38 tick /
+10,5 s, simpangan lateral -5,38 vs -5,39 m. Sebaran runtuh dari 1,03 m ke 0,01 m.
+Render kamera tetap tidak deterministik, tapi tidak lagi diperbesar lup tak stabil.
+
+GT tanpa regresi: S1 1,42 m (dari 1,44), S3 1,47 m (sama), tick nol kandidat 4
+dan 0 seperti sebelumnya. Ongkos: solve 12,3 -> 16,9 ms rata-rata karena N slack
+tambahan; deviasi lajur GT 0,009 -> 0,015 m.
+
+Masih terbuka: ego tetap melebar ke -5,38 m (tepi lajur -5,25 m), dan 38 tick nol
+kandidat masih jauh di atas 4 tick milik GT.
+
+---
+
+## Tahap 8 Langkah 8 — Tuning Ulang di Atas Vision
+
+16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 20.
+
+`tuning_vision.py` menyapu parameter di SKENARIO PENUH dengan vision -- sah
+karena run vision sudah terulang setelah bagian 19.14. Yang disapu justru yang
+tidak bisa disentuh step response: ambang FSM dan bobot pemilihan kandidat.
+
+Jebakan: durasi run 15 detik memberi vonis PALSU `lane_departure` di semua
+konfigurasi, karena manuver selesai ~15 s dan run terpotong sebelum LULUS_TAHAN
+2,0 s. Disamakan dengan main.py (20 s).
+
+**Hanya satu pasangan berubah**: Q_y 20 -> 150, Q_psi 450 -> 3400. K_DEV,
+FSM_DWELL, dan PASS_MARGIN semuanya sudah optimal pada nilai sekarang.
+
+### TEMUAN: redaman ditentukan rasio Q_psi/Q_y
+
+Sapuan skenario dan step response berlawanan: Q_y=150 memperbaiki skenario
+(lambungan -5,39 -> -4,75 m) tapi merusak step response (overshoot 7,4 -> 28,9%,
+chatter 50x). Sebabnya Q_psi=450 dulu dipilih sebagai titik redaman kritis PADA
+Q_y=20. Rasionya 22,5; 22,5 x 150 = 3375, dan sapuan step response independen
+memilih 3400. Di situ step response kembali ke kualitas semula (overshoot 7,5%,
+settling 1,60 s, chatter 0,0003 mrad -- lebih baik dari 0,0008 semula). Di 6000
+chatter meledak 0,1929 mrad.
+
+Bobot yang bersama-sama menentukan satu sifat fisik tidak boleh disapu satu per
+satu: sapuan 1-D pada Q_y selalu tampak buruk, dan sapuan 1-D pada Q_psi tidak
+akan pernah menemukan 3400.
+
+### FSM_DWELL tidak perlu dinaikkan
+
+Dugaan "vision lebih berisik jadi butuh dwell lebih panjang" terbantah: 0,5 dan
+0,8 s jauh lebih buruk (nol kandidat 38 -> 44 -> 68, rem tersaturasi -6,00).
+Peredamannya sudah ada di tempat yang lebih tepat -- TRACK_N_INIT 3 frame dan
+melayang 5 frame di `tracking.Pelacak`.
+
+### Hasil
+
+Vision S1: jarak bodi 2,10 m, durasi 10,4 s, rem -0,95 m/s2, lambungan -4,71 m
+(di DALAM lajur; tepi -5,25 m), 0 solver gagal. GT tidak bergeser sama sekali:
+S1 1,42 m / 11,6 s / 4 tick nol, S3 1,47 m / 19,0 s / 0 tick nol.
+
+Masih terbuka: 40 tick nol kandidat vs 4 milik GT, dan angka itu bertahan
+38-44 di SELURUH sapuan -- bukan soal tuning, melainkan geometri zona aman.
+
+### Label video
+
+"mutlak" -> "absolute" atas permintaan penulis.
+
+---
+
+## Tahap 9 — Eksperimen Penuh S1
+
+16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 21.
+
+Server CARLA direstart tepat sebelum pengukuran (README: 26-31 ms senggang vs
+70 ms setelah berjam-jam). `eksperimen.py` mengulang satu konfigurasi N kali dan
+melaporkan success rate berikut sebaran tiap metrik.
+
+**GT 5/5, vision 10/10, seluruhnya BERHASIL. Solver gagal 0 dari 6.000 solve.**
+
+GT: jarak bodi 1,423 m sd 0,000 -- log identik bit-per-bit di kelima ulangan,
+jadi determinisme selamat melewati seluruh perubahan Tahap 8.
+Vision: jarak bodi 2,105 m sd 0,004, durasi 10,43 s sd 0,02, simpangan lateral
+-4,694 m sd 0,026. Bandingkan sebelum lup distabilkan: dua run berselisih 1,03 m.
+
+### Jebakan alat ukur yang keempat
+
+Uji determinisme mula-mula melaporkan TIDAK padahal semua metrik kendali identik
+sampai digit terakhir. Dua sebab: `solve_ms` itu jam dinding, dan `np.array_equal`
+memberi False untuk NaN (kolom x_est/y_est berisi NaN saat tidak ada deteksi).
+Dibuktikan dengan membandingkan kolom per kolom, bukan dengan menduga. Setelah
+kolom waktu dikecualikan dan equal_nan dipakai: identik.
+
+### Anggaran tick
+
+Inferensi 14,4 + solve 17,9 = 32,3 ms rata-rata dari 50 ms. Terburuk 14,4 + 34,5
+= 48,9 ms -- praktis menyentuh anggaran. Harus ditulis apa adanya. Solve naik dari
+12,3 ms sebelum Tahap 8 karena N slack batas percepatan lateral; kelonggaran itu
+memang dibeli. Mesin tidak benar-benar senggang (load ~3).
+
+### Tick nol kandidat 39,4 vs 4,0
+
+Sistematis (sd 0,9), sudah ditelusuri: geometri zona aman, bukan tuning maupun
+perception. TIDAK menurunkan keselamatan -- jarak bodi vision justru lebih besar.
+Sejak planner berkomitmen, replan gagal bukan lagi kehilangan arah.

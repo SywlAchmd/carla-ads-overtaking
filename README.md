@@ -16,7 +16,8 @@ Dokumen pendamping:
 ## Setup
 
 ```bash
-# 1. dependensi sistem
+# 1. dependensi sistem (hanya untuk record_path.py & record_maneuver.py;
+#    gambar.py memakai cv2, tidak butuh ffmpeg)
 sudo apt install ffmpeg
 
 # 2. dependensi Python (3.10)
@@ -32,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 66 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 91 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -47,7 +48,12 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 |---|---|
 | `python main.py` | skenario S1 lengkap, loop tertutup, vonis berhasil/gagal |
 | `python main.py --skenario S3 --detik 25` | lajur tujuan terisi: mengikuti, lalu menyalip ulang |
+| `python main.py --perception vision --rekam` | S1 dengan YOLOPX + depth, plus video overlay |
+| `python cek_estimasi.py` | ketelitian jarak & kecepatan vision vs ground truth |
 | `python tuning.py --sweep Q_PSI 300,450,600` | harness tuning step response |
+| `python tuning_vision.py --sweep K_DEV 10,20,40` | sapuan parameter di skenario penuh + vision |
+| `python eksperimen.py --perception vision --ulang 10` | Tahap 9: success rate + sebaran metrik |
+| `python metrik_fase.py --layer --eksperimen` | metrik per layer/fase dari log (tidak butuh server) |
 | `python validate_model.py` | validasi bicycle model terhadap plant |
 | `python validate_model.py --steer` | verifikasi konversi kemudi |
 | `python validate_model.py --scan` | cari spawn point ruas lurus |
@@ -61,8 +67,10 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 
 ```
 localization.py  ground truth CARLA -> frame right-handed, titik sumbu belakang
-perception.py    GroundTruthPerception -> halangan dalam FRAME EGO
+perception.py    GroundTruth + VisionPerception -> halangan dalam FRAME EGO
+gambar.py        overlay video: deteksi, kandidat planner, HUD  [butuh cv2]
 planning.py      quintic/quartic, local planner, BehaviorFSM      [tanpa carla]
+tracking.py      asosiasi dua tahap + Kalman filter halangan        [tanpa carla]
 control.py       MPC CasADi + IPOPT, ThrottlePI, konversi kemudi  [tanpa carla]
 evaluation.py    sensor tabrakan + kriteria keberhasilan 11.2
 simulation.py    koneksi, mode sinkron, spawn, reference path
@@ -86,15 +94,18 @@ rencana kerja). Ditegakkan oleh `tests/test_arsitektur.py`.
 | 5 | MPC + tuning bobot | selesai |
 | 6 | Integrasi end-to-end | selesai: S1 dan S3 BERHASIL, deterministik |
 | 7 | Baseline Pure Pursuit/Stanley | **dibatalkan** (keputusan penulis) |
-| 8 | Perception lengkap (YOLOPX) | belum |
-| 9 | Eksperimen penuh | belum |
+| 8 | Perception lengkap (YOLOPX) | S1 selesai: BERHASIL, terulang, sudah dituning ulang |
+| 9 | Eksperimen penuh | S1 selesai: GT 5/5, vision 10/10 (100%); S2-S5 belum |
 
-Hasil terakhir (MPC + GT perception, 12 Sep 2026), identik bit-per-bit antar-run:
+Hasil terakhir (MPC + GT perception, 16 Sep 2026), identik bit-per-bit antar-run:
 
 | Skenario | Vonis | Jarak min antar bodi | Deviasi lajur | Durasi manuver | Catatan |
 |---|---|---|---|---|---|
-| S1 | **BERHASIL** | 1,43 m | 0,011 m | 11,7 s | flying overtaking |
-| S3 | **BERHASIL** | 1,51 m | 0,012 m | 19,2 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
+| S1 | **BERHASIL** | 1,42 m | 0,015 m | 11,6 s | flying overtaking |
+| S3 | **BERHASIL** | 1,47 m | 0,018 m | 19,0 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
+
+Angka di atas setelah perbaikan jangkar halangan 1,433 m (16 Sep). Sebelumnya
+1,43 / 1,51 m: zona aman dulu lebih konservatif daripada rancangannya.
 
 Deviasi turun 0,161 -> 0,011 m setelah syarat awal percepatan lateral planner
 diambil dari rencana, bukan hasil ukur (`TUNING_MPC.md` 13.5). S3 wajib
@@ -127,13 +138,17 @@ Selain itu, `record_maneuver.py` baris ~181 menuliskan langsung offset sumbu bel
 mengerem mendadak) butuh profil kecepatan terjadwal.
 
 ### 3. Tahap 8 — `VisionPerception`
-YOLOPX + ByteTrack + depth camera + Kalman filter, bagian 10 rencana kerja.
-Belum dimulai. Termasuk **perbaikan data leakage** YOLOPX (split per-frame;
-akurasi 96–98% sekarang tidak valid).
+`perception.VisionPerception` + `tracking.py` sudah ada dan tervalidasi terhadap
+ground truth simulator (`cek_estimasi.py`): jarak RMS 0,046 m, kecepatan RMS
+0,020 m/s, jangkauan deteksi sampai 45,6 m. **Belum disambungkan ke `main.py`.**
 
-Antarmukanya sudah siap: keluarkan `ndarray (M, 4) = [x, y, vx, vy]` dalam
-**frame ego**, posisi dan kecepatan **relatif** terhadap ego — sama persis
-dengan `GroundTruthPerception`. Tidak perlu tahu soal frame jalan.
+Sisa pekerjaannya:
+- flag `--perception vision|gt` di `main.py`, lalu S1 loop tertutup;
+- validasi di **lajur sebelah pada sudut besar** — belum diuji sama sekali;
+- kamera belakang: tanpa itu S3 tidak bisa dijalankan dengan vision, karena
+  kendaraan lajur tujuan mulai di belakang ego dan `D_SAFE_BELAKANG` selalu
+  lolos bukan karena aman melainkan karena tidak terlihat;
+- **perbaikan data leakage** YOLOPX (split per-frame; akurasi 96–98% tidak valid).
 
 ### 4. Tuning ulang setelah Tahap 8
 Bagian 10.6: deteksi vision lebih berisik, bobot MPC dan parameter FSM **wajib**

@@ -14,8 +14,13 @@ out/*
 # Data validasi model Tahap 1 (kecil).
 !out/*.csv
 
+# Data mentah eksperimen Tahap 9 (1,7 MB): 15 run, ~1 jam komputasi. TIDAK bisa
+# dibangkitkan ulang dengan murah, dan bagian 11.6 menuntut data mentah disimpan
+# supaya metrik bab 4 bisa didefinisikan ulang tanpa mengulang eksperimen.
+!out/eksperimen_*.npz
+
 # Yang diabaikan: *.mp4 (~18 MB, bisa dibangkitkan ulang dengan record_*.py)
-# dan *.npz (log run, bisa dibangkitkan ulang dengan main.py).
+# dan *.npz log run tunggal (bisa dibangkitkan ulang dengan main.py).
 
 # Weight model (ratusan MB) tidak masuk repo; lihat config.YOLOPX_WEIGHT.
 *.pth
