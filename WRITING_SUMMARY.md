@@ -1654,6 +1654,13 @@ Seluruhnya di `out/`, dibangkitkan ulang dari log tanpa menjalankan simulasi
 | `detection_30m_lane0.png` | Deteksi + segmentasi, model fine-tuned | `python check_detection.py` |
 | `detection_30m_lane0_bdd.png` | Pembanding: weight BDD100K asli | `python check_detection.py --weight ...` |
 | `detection_15m_lane1.png` | Target di lajur menyalip | `python check_detection.py --lajur 1` |
+| `sensor_rig_photo.png` | **Foto ego di CARLA** dengan sensor dan sumbunya ditimpakan, ala KITTI Gambar 2a | `python show_rig.py` |
+| `sensor_rig_topdown.png` | **Skema berdimensi tampak atas**, ala KITTI Gambar 2b | `python show_rig.py` |
+| `sensor_rig.png` | Penempatan kamera: tampak samping + bidang pandang | `python plot_concepts.py` |
+| `localization_frames.png` | Tiga titik acuan + rantai konversi frame | `python plot_concepts.py` |
+| `scenario_s1.png` | Susunan S1 + tabel parameter kedua kendaraan | `python plot_concepts.py` |
+| `pipeline.png` | Rantai end-to-end berikut laju tiap blok | `python plot_concepts.py` |
+| `mpc_concept.png` | Receding horizon, dengan batang waktu horizon | `python plot_concepts.py` |
 | `sensor_rgb.png`, `sensor_depth.png` | Contoh keluaran rig kamera | `python check_sensors.py` |
 | `model_validation.png` | Validasi bicycle model (Tahap 1) | `python validate_model.py` |
 | `planner_candidates.png` | 9 kandidat lintasan planner | `python show_lanes.py` |

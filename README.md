@@ -63,6 +63,8 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python plot_compare.py` | grafik pembanding GT vs vision (tidak butuh server) |
 | `python record_path.py` | video lintasan acuan global planner (butuh ffmpeg) |
 | `python check_sensors.py` | pasang rig kamera, verifikasi penempatan, simpan contoh frame |
+| `python show_rig.py` | konfigurasi sensor ala KITTI: foto ego + skema berdimensi |
+| `python plot_concepts.py` | gambar konsep: rig, frame, skenario, pipeline, MPC (tanpa server) |
 | `python check_detection.py --lajur 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
 
 ## Arsitektur
