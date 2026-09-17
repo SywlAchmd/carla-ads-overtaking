@@ -57,9 +57,15 @@ def metrik(log, states, kolom):
         # perlu mencatat rencana pada lookahead tetap, lalu membandingkannya
         # dengan posisi sebenarnya setelah selang itu. Belum ada di log.
         lacak = np.abs(log[m, k['y']] - log[m, k['y_ref']])
+        # XTE ke tengah lajur TERDEKAT -- acuan geometris yang tidak menempel
+        # ke ego, jadi sah di seluruh fase (bagian 22.5).
+        pusat = np.array([0.0, config.SIDE_SIGN * config.LANE_WIDTH,
+                          config.SIDE_SIGN * 2 * config.LANE_WIDTH])
+        xte_lajur = np.abs(log[m, k['y']][:, None] - pusat[None, :]).min(axis=1)
         out[nama] = dict(
             n=int(m.sum()),
             lacak_rata=float(lacak.mean()), lacak_maks=float(lacak.max()),
+            xte_lajur_rata=float(xte_lajur.mean()), xte_lajur_maks=float(xte_lajur.max()),
             xte_rata=float(xte.mean()), xte_maks=float(xte.max()),
             yaw_maks=float(np.degrees(np.abs(log[m, k['yaw']])).max()),
             v_err=float(np.abs(log[m, k['v']] - log[m, k['v_goal']]).mean()),
@@ -83,7 +89,8 @@ def gabung(per_run):
 def cetak(judul, h):
     print(f'\n{judul}')
     print(f'{"fase":<24}{"tick":>6}{"lacak rata":>14}{"lacak maks":>16}'
-          f'{"ke tujuan":>15}{"yaw maks":>13}{"v err":>14}{"a_lat maks":>13}{"jitter":>15}')
+          f'{"XTE lajur":>13}{"XTE maks":>13}{"yaw maks":>13}{"v err":>14}'
+          f'{"a_lat maks":>13}{"jitter":>15}')
     for nama in URUT:
         if nama not in h:
             continue
@@ -91,7 +98,8 @@ def cetak(judul, h):
         sd = lambda kk, fmt: (f'{fmt.format(v[kk][0])}' if v[kk][1] < 5e-6
                               else f'{fmt.format(v[kk][0])}±{fmt.format(v[kk][1])}')
         print(f'{nama:<24}{v["n"][0]:>5.0f} {sd("lacak_rata", "{:.5f}"):>14}'
-              f'{sd("lacak_maks", "{:.5f}"):>16}{sd("xte_rata", "{:.3f}"):>15}'
+              f'{sd("lacak_maks", "{:.5f}"):>16}{sd("xte_lajur_rata", "{:.3f}"):>13}'
+              f'{sd("xte_lajur_maks", "{:.3f}"):>13}'
               f'{sd("yaw_maks", "{:.2f}"):>13}{sd("v_err", "{:.3f}"):>14}'
               f'{sd("a_lat_maks", "{:.2f}"):>13}{sd("jitter", "{:.3f}"):>15}')
 
@@ -105,6 +113,7 @@ def per_layer(log, states, kolom):
     dan itu eksperimen terpisah yang tidak ikut di run skenario.
     """
     import planning
+    import config as _c
     k = {n: i for i, n in enumerate(kolom)}
     ada = lambda n: n in k
     y, yaw, v = log[:, k['y']], log[:, k['yaw']], log[:, k['v']]
@@ -124,10 +133,41 @@ def per_layer(log, states, kolom):
 
     dt = float(log[1, k['t']] - log[0, k['t']])
     lk = states == 'LANE_KEEPING'
-    out = {'Controller (MPC)_IAE': {
+    t = log[:, k['t']]
+
+    # XTE terhadap TENGAH LAJUR TERDEKAT. Geometri lajur tidak ikut bergerak
+    # bersama ego, jadi tidak ada masalah anchoring seperti pada y_ref
+    # (bagian 22.5). Terbaca sepanjang run: galat sungguhan saat menjaga lajur,
+    # dan memuncak di setengah lebar lajur saat menyeberang -- memang begitu.
+    pusat = np.array([0.0, config.SIDE_SIGN * config.LANE_WIDTH,
+                      config.SIDE_SIGN * 2 * config.LANE_WIDTH])
+    xte_lajur = np.abs(log[:, k['y']][:, None] - pusat[None, :]).min(axis=1)
+
+    # ITAE memakai waktu sejak MANUVER dimulai, bukan sejak run mulai: galat
+    # yang lambat hilang setelah manuver itu yang ingin dihukum.
+    man = np.flatnonzero(states != 'LANE_KEEPING')
+    t0 = t[man[0]] if len(man) else t[0]
+    tw = np.clip(t - t0, 0.0, None)
+
+    # Galat pelacakan yang SAH: rencana pada lookahead tetap versus posisi yang
+    # benar-benar terjadi setelah selang itu.
+    pred = {}
+    for nama, kol, detik in (('0,5 s', 'y_plan_05', 0.5), ('2,0 s', 'y_plan_20', 2.0)):
+        if kol not in k:
+            continue
+        geser = int(round(detik / dt))
+        e = np.abs(log[:-geser, k[kol]] - log[geser:, k['y']])
+        pred['galat prediksi @ %s, RMS [m]' % nama] = float(np.sqrt((e ** 2).mean()))
+        pred['galat prediksi @ %s, maks [m]' % nama] = float(e.max())
+
+    out = {'Controller (MPC)_prediksi': pred, 'Controller (MPC)_IAE': {
         'IAE kecepatan |v - v_goal| [m]': float(np.abs(v - log[:, k['v_goal']]).sum() * dt),
         'IAE lateral saat LANE_KEEPING [m.s]': float(np.abs(log[lk, k['dev_lajur']]).sum() * dt),
-        'IAE lateral seluruh run [m.s]': float(np.abs(log[:, k['dev_lajur']]).sum() * dt),
+        'IAE lateral ke lajur terdekat [m.s]': float(xte_lajur.sum() * dt),
+        'ISE lateral ke lajur terdekat [m2.s]': float((xte_lajur ** 2).sum() * dt),
+        'ITAE lateral ke lajur terdekat [m.s2]': float((tw * xte_lajur).sum() * dt),
+        'XTE ke lajur terdekat, RMS [m]': float(np.sqrt((xte_lajur ** 2).mean())),
+        'XTE ke lajur terdekat, maks [m]': float(xte_lajur.max()),
     }, 'Planner': {
         'kandidat lolos per replan (dari 9)': nl.mean(),
         'replan tanpa kandidat [%]': 100.0 * (nl == 0).mean(),
@@ -209,9 +249,8 @@ def main_():
             cetak(f'MPC + {mode}, satu run', h)
     print('\nlacak = |y - acuan planner|. BUKAN galat pelacakan: acuannya di-anchor ulang')
     print('  di posisi ego tiap replan, jadi yang terukur hanya lookahead 50 ms.')
-    print('ke tujuan = |y ego - tengah lajur tujuan FSM|; saat pindah lajur ia mengukur '
-          'profil manuver,\n  bukan galat, dan maksimumnya selalu tepat LANE_WIDTH. '
-          'Dilaporkan hanya sebagai konteks.')
+    print('XTE lajur = |y - tengah lajur TERDEKAT|, acuan geometris yang tidak menempel ke ego.')
+    print('  Maksimumnya ~setengah lebar lajur saat menyeberang -- itu memang seharusnya.')
     print('yaw = sudut hadap terhadap jalan, derajat.')
     print('v err = |v - v_goal| rata-rata, m/s. a_lat = percepatan lateral '
           f'diperintahkan, batas kenyamanan {config.MAX_LATERAL_ACCEL} m/s2.')

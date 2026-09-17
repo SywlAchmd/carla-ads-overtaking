@@ -30,7 +30,7 @@ import simulation
 KOLOM = ['t', 'x', 'y', 'yaw', 'v', 'y_ref', 'y_goal', 'dev_lajur', 'a_cmd',
          'delta_cmd', 'steer', 'throttle', 'brake', 'solve_ms', 'solver_ok',
          'n_layak', 'offset', 'x_tgt', 'y_tgt', 'v_goal', 'x_est', 'y_est',
-         'iterasi', 't_plan', 'eps', 'eps_lat']
+         'iterasi', 't_plan', 'eps', 'eps_lat', 'y_plan_05', 'y_plan_20']
 
 
 def to_carla(cmd):
@@ -179,6 +179,12 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
 
         xref = (xref_tahan(ego, fsm.v_goal) if traj is None
                 else xref_dari(traj, t - t_traj))
+        # Acuan pada LOOKAHEAD TETAP, untuk galat pelacakan yang sah. |y - y_ref|
+        # tidak bisa dipakai: planner me-anchor rencananya di posisi ego tiap
+        # replan, jadi galatnya nol karena konstruksi (bagian 22.5). Yang ini
+        # dibandingkan dengan posisi SEBENARNYA 0,5 dan 2,0 detik kemudian.
+        y_plan_05 = float(xref[1, int(0.5 / config.MPC_DT)])
+        y_plan_20 = float(xref[1, config.MPC_N])
         cmd = mpc.compute(ego.as_vector(), xref, a_filt, obs)  # 20 Hz
         kirim = [carla.command.ApplyVehicleControl(ego_actor.id, to_carla(cmd))]
         a_cmd_prev = cmd.accel_cmd
@@ -222,7 +228,8 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
                         cmd.throttle, cmd.brake, cmd.solve_time_ms,
                         float(cmd.solver_ok), float(n_layak), offset_pilih, tx, ty,
                         fsm.v_goal, x_est, y_est,
-                        float(mpc.last_iter), t_plan, mpc.last_eps, mpc.last_eps_lat])
+                        float(mpc.last_iter), t_plan, mpc.last_eps, mpc.last_eps_lat,
+                        y_plan_05, y_plan_20])
             states.append(fsm.state)
             posisi.append(pos)
 

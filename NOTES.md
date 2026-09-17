@@ -2517,3 +2517,79 @@ memang dibeli. Mesin tidak benar-benar senggang (load ~3).
 Sistematis (sd 0,9), sudah ditelusuri: geometri zona aman, bukan tuning maupun
 perception. TIDAK menurunkan keselamatan -- jarak bodi vision justru lebih besar.
 Sejak planner berkomitmen, replan gagal bukan lagi kehilangan arah.
+
+---
+
+## Metrik Galat: XTE dan IAE Didefinisikan Ulang
+
+17 September 2026. Angka di `WRITING_SUMMARY.md` bagian 22.5 dan 25.
+
+Penulis menanyakan XTE dan IAE yang dijanjikan proposal. IAE ternyata **tidak
+pernah ada** di proyek ini, dan XTE yang sempat saya laporkan **keliru**.
+
+### Kenapa XTE naif tidak bisa dipakai
+
+XTE mengandaikan ada satu lintasan acuan TETAP. Arsitektur ini tidak punya:
+planner membangkitkan lintasan baru tiap 100 ms, selalu berangkat dari posisi
+ego saat itu. Terukur pada log S1:
+
+| | \|y - y_ref\| rata-rata | maksimum |
+|---|---|---|
+| Tick replan (10 Hz) | **1,8e-08 m** | 2,1e-06 m |
+| Tick antara dua replan | 1,6e-03 m | 6,6e-03 m |
+
+Nol pada tick replan itu DEFINISI, bukan prestasi. Ini persis jebakan nomor 1 di
+`TUNING_MPC.md` bagian 9 -- yang sudah tercatat, lalu saya langgar sendiri
+dengan melaporkan "galat lacak lateral RMS 0,0017 m" sebagai galat pengendali.
+
+**Bukan kesalahan memilih metrik di proposal.** XTE dan IAE adalah metrik
+path-following, dan receding horizon memang bukan path-following. Yang perlu
+diperbaiki definisinya, bukan janjinya.
+
+### Definisi yang dipakai sekarang
+
+1. **XTE ke tengah lajur TERDEKAT.** Geometri lajur tidak ikut bergerak bersama
+   ego. Sah di seluruh fase, dan terbaca: galat sungguhan saat menjaga lajur,
+   memuncak di ~setengah lebar lajur saat menyeberang. Terukur maksimum 1,733 m
+   terhadap lebar lajur 3,50 m -- 1,75 m persis, bukti bahwa definisinya benar.
+2. **IAE, ISE, ITAE** dihitung di atas XTE itu. ITAE memakai waktu sejak manuver
+   dimulai, bukan sejak run mulai: yang ingin dihukum adalah galat yang lambat
+   hilang SETELAH manuver.
+3. **Galat prediksi pada lookahead TETAP** untuk MPC: rencana untuk t + 0,5 s
+   dan t + 2,0 s dicatat, lalu dibandingkan dengan posisi yang benar-benar
+   terjadi setelah selang itu. Dua kolom log baru (`y_plan_05`, `y_plan_20`),
+   dan eksperimen dijalankan ulang. Yang 2,0 s menyambung langsung ke validasi
+   bicycle model Tahap 1 (0,309 m @ 2 s): keduanya menjawab "seberapa jauh ke
+   depan sistem ini boleh dipercaya".
+
+IAE saja lemah -- ia tidak membedakan galat besar sekejap dari galat kecil
+berkepanjangan. Karena itu ISE (menghukum galat besar) dan ITAE (menghukum galat
+yang lambat hilang) ikut dilaporkan; ongkosnya nol, integral dan log yang sama.
+
+**Yang lama tidak dihapus.** Angka 0,0017 m sempat dilaporkan, jadi ia dicoret
+dan dijelaskan di bagian 22.5, bukan dihilangkan diam-diam.
+
+### TEMUAN: pada horizon penuh, yang membatasi adalah MODEL
+
+Eksperimen dijalankan ulang (GT 5/5, vision 10/10, keduanya 100%). Galat
+prediksi 2 detik ternyata bertemu dengan angka Tahap 1:
+
+| | Nilai |
+|---|---|
+| Mismatch bicycle model @ 2 s (Tahap 1, LUP TERBUKA) | 0,309 m |
+| Galat prediksi MPC @ 2 s (Tahap 9, lup tertutup, GT) | 0,287 m |
+| Galat prediksi MPC @ 2 s (lup tertutup, vision) | 0,351 m |
+
+Praktis sama, padahal diukur dengan cara yang sepenuhnya berbeda -- satu tanpa
+pengendali sama sekali, satu di loop tertutup penuh dengan perception berisik.
+Artinya seluruh horizon 2 detik dibatasi ketidaksesuaian MODEL, bukan oleh
+pengendali maupun derau perception. Memperpanjang horizon tidak akan menolong
+selama modelnya tetap.
+
+Pada 0,5 detik barulah perbedaan pengendali terlihat: GT 0,0204 m versus vision
+0,0754 m, yaitu 3,7 kali lebih buruk. ITU penurunan kinerja akibat perception
+berisik yang sesungguhnya -- bukan 0,0017 versus 0,0270 m yang sempat saya
+laporkan dan ternyata artefak anchoring.
+
+Validasi model Tahap 1 yang tampak seperti pekerjaan persiapan ternyata memberi
+batas bawah kinerja pengendali di akhir penelitian.

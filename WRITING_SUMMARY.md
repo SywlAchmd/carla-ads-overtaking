@@ -1602,7 +1602,10 @@ keselamatan.
 | **IAE kecepatan** \|v − v_goal\| | **4,556 m** | **3,670 ± 0,070 m** |
 | **IAE lateral saat `LANE_KEEPING`** | **0,143 m·s** | **0,197 ± 0,013 m·s** |
 | IAE lateral seluruh run | 17,168 m·s | 18,744 ± 0,064 m·s |
-| ~~Galat lacak lateral RMS~~ | ~~0,0017 m~~ | ~~0,0270 m~~ | (tidak sah, bagian 22.5) |
+| **Galat prediksi @ 0,5 s, RMS** | **0,0204 m** | **0,0754 ± 0,0008 m** |
+| **Galat prediksi @ 2,0 s, RMS** | **0,287 m** | **0,351 ± 0,002 m** |
+| **XTE ke lajur terdekat, maks** | 1,733 m | 1,742 ± 0,003 m |
+| ~~Galat lacak lateral RMS~~ | ~~0,0017 m~~ | ~~0,0270 m~~ (tidak sah, bagian 22.5) |
 | Galat kecepatan RMS | 0,293 m/s | 0,252 ± 0,003 m/s |
 | Sudut hadap maksimum | 6,47° | 8,63 ± 0,01° |
 | Waktu solve rata-rata | 18,00 ± 0,34 ms | 18,07 ± 0,24 ms |
@@ -1702,3 +1705,84 @@ Seluruhnya di `out/`, dibangkitkan ulang dari log tanpa menjalankan simulasi
 **Yang belum ada gambarnya:** tidak ada visual untuk S3 + vision, karena S3 tidak
 bisa dijalankan dengan rig satu kamera depan (kendaraan lajur tujuan mulai di
 belakang ego). Itu keterbatasan yang dinyatakan, bukan gambar yang tertinggal.
+
+
+---
+
+## 25. Metrik galat: XTE, IAE, dan galat prediksi (S1)
+
+17 September 2026. Menjawab janji proposal soal XTE dan IAE, dengan definisi
+yang diperbaiki di bagian 22.5. GT 5 ulangan, vision 10 ulangan.
+
+### 25.1 XTE terhadap tengah lajur terdekat
+
+| Metrik | MPC + GT | MPC + vision |
+|---|---|---|
+| XTE RMS | 0,535 m | 0,585 ± 0,006 m |
+| **XTE maksimum** | **1,733 m** | **1,742 ± 0,003 m** |
+| IAE lateral | 5,890 m·s | 6,576 ± 0,096 m·s |
+| ISE lateral | 5,726 m²·s | 6,768 ± 0,152 m²·s |
+| ITAE lateral | 35,37 m·s² | 34,88 ± 0,621 m·s² |
+
+**XTE maksimum 1,733 m terhadap lebar lajur 3,50 m** — setengahnya 1,75 m. Itu
+bukan kebetulan melainkan bukti definisinya benar: nilai terbesar terjadi tepat
+saat ego berada di tengah antara dua lajur, dan secara geometris tidak mungkin
+lebih besar selama ego menyeberang tanpa melewatinya.
+
+Dipisah per fase, XTE saat `LANE_KEEPING` **sebelum** manuver = 0,000 m dan
+**sesudah** = 0,029 m. Itulah angka lane-keeping yang sah untuk dikutip.
+
+### 25.2 Galat prediksi pada lookahead tetap — metrik MPC yang sah
+
+Rencana untuk `t + 0,5 s` dan `t + 2,0 s` dicatat, lalu dibandingkan dengan
+posisi yang **benar-benar terjadi** setelah selang itu. Acuannya tidak menempel
+ke ego, jadi bebas dari masalah bagian 22.5.
+
+| | MPC + GT | MPC + vision |
+|---|---|---|
+| Galat prediksi @ 0,5 s, RMS | **0,0204 m** | **0,0754 ± 0,0008 m** |
+| Galat prediksi @ 0,5 s, maks | 0,059 m | 0,478 ± 0,014 m |
+| Galat prediksi @ 2,0 s, RMS | **0,287 m** | **0,351 ± 0,002 m** |
+| Galat prediksi @ 2,0 s, maks | 1,419 m | 1,615 ± 0,015 m |
+
+**Pada 0,5 detik, vision 3,7 kali lebih buruk daripada GT** (0,0754 versus
+0,0204 m). Inilah penurunan kinerja pengendali yang sesungguhnya akibat
+perception berisik — bukan angka 0,0017 versus 0,0270 m yang sempat dilaporkan
+dan ternyata artefak.
+
+### 25.3 TEMUAN: pada horizon penuh, yang membatasi adalah MODEL
+
+Bandingkan galat prediksi 2 detik dengan validasi bicycle model Tahap 1
+(bagian 5), yang diukur **lup terbuka, tanpa pengendali, tanpa gangguan**:
+
+| | Nilai |
+|---|---|
+| Mismatch bicycle model @ 2 s (Tahap 1, lup terbuka) | **0,309 m** |
+| Galat prediksi MPC @ 2 s (Tahap 9, lup tertutup, GT) | **0,287 m** |
+| Galat prediksi MPC @ 2 s (lup tertutup, vision) | 0,351 m |
+
+Ketiganya praktis sama. Artinya **seluruh horizon 2 detik dibatasi oleh
+ketidaksesuaian model, bukan oleh pengendali maupun oleh derau perception.**
+MPC melacak rencananya sampai 2 cm pada 0,5 detik; yang membuat prediksi 2 detik
+meleset 29 cm adalah kinematic bicycle yang memang tidak menangkap fisika CARLA
+sepenuhnya.
+
+Dua konsekuensi yang layak ditulis:
+
+1. **Memperpanjang horizon tidak akan menolong** selama modelnya tetap. Yang
+   membatasi bukan berapa jauh solver melihat, melainkan seberapa jauh modelnya
+   masih benar.
+2. **Angka Tahap 1 terpakai kembali di Tahap 9.** Validasi model yang tampak
+   seperti pekerjaan persiapan ternyata memberi batas bawah untuk kinerja
+   pengendali di akhir — dan keduanya diukur dengan cara yang sepenuhnya
+   berbeda, lalu bertemu di angka yang sama.
+
+### 25.4 IAE kecepatan
+
+| | MPC + GT | MPC + vision |
+|---|---|---|
+| IAE `\|v - v_goal\|` | 4,556 m | 3,879 ± 0,185 m |
+
+Setara galat kecepatan rata-rata 0,23 m/s (GT) dan 0,19 m/s (vision) sepanjang
+run 20 detik. Vision **lebih kecil** karena manuvernya selesai lebih cepat,
+bukan karena pengendalinya lebih baik — jangan diklaim terbalik.
