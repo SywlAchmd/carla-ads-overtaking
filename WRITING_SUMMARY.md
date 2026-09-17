@@ -1486,7 +1486,9 @@ daripada horizonnya.*
 
 | Metrik | Rumus | Keterangan |
 |---|---|---|
-| Galat lacak lateral RMS | `sqrt( (1/K) * sum_k (y_k - y_ref,k)^2 )` | `y_ref` = acuan lateral yang benar-benar dilacak MPC, bukan tengah lajur tujuan |
+| **IAE lateral** | `integral \|y - y_lajur\| dt` | dihitung saat `LANE_KEEPING`; tengah lajur TIDAK ikut bergerak bersama ego, jadi galatnya sah |
+| **IAE kecepatan** | `integral \|v - v_goal\| dt` | `v_goal` dari FSM, juga tidak menempel ke ego |
+| ~~Galat lacak lateral RMS~~ | `sqrt( (1/K) * sum_k (y_k - y_ref,k)^2 )` | **JANGAN dipakai sebagai galat pelacakan** -- lihat 22.5 |
 | Galat kecepatan RMS | `sqrt( (1/K) * sum_k (v_k - v_goal,k)^2 )` | |
 | Sudut hadap maksimum | `max |psi|` | terhadap arah jalan |
 | Waktu solve | rata-rata dan maksimum, ms | anggaran satu tick 50 ms |
@@ -1497,6 +1499,34 @@ daripada horizonnya.*
 | Percepatan lateral maksimum | `max \|v^2 tan(delta)/L\|` | terhadap `MAX_LATERAL_ACCEL` 3,0 m/s² |
 | Jitter kemudi | `sum_k |steer_k - steer_(k-1)|` | ukuran kehalusan kemudi |
 | Usaha kendali | `(1/K) * sum_k |a_cmd,k|` | |
+
+### 22.5 KOREKSI: `y_ref` tidak bisa dipakai mengukur galat pelacakan
+
+Draf sebelumnya melaporkan "galat lacak lateral RMS 0,0017 m" sebagai **galat
+pengendali**. Itu keliru, dan keliru dengan cara yang sudah tercatat sendiri di
+`TUNING_MPC.md` bagian 9 sebagai jebakan nomor 1: *"XTE terhadap acuan yang
+di-anchor di posisi ego -> acuan bergerak bersama mobil; metriknya mengukur
+konstruksi, bukan kinerja."*
+
+Terukur ulang pada log S1:
+
+| | \|y - y_ref\| rata-rata | maksimum |
+|---|---|---|
+| Tick replan (10 Hz) | **1,8 x 10^-8 m** | 2,1 x 10^-6 m |
+| Tick antara dua replan | 1,6 x 10^-3 m | 6,6 x 10^-3 m |
+
+Nol pada tick replan itu **definisi, bukan prestasi**: planner membangun rencana
+BERANGKAT dari posisi ego saat itu, jadi `y_ref` sama dengan `y` per konstruksi.
+Yang tersisa hanya galat lookahead 50 ms.
+
+**Yang sah dilaporkan** adalah galat terhadap acuan yang tidak menempel ke ego:
+tengah lajur saat `LANE_KEEPING`, dan `v_goal` untuk kecepatan. Keduanya sudah
+masuk tabel di atas sebagai IAE.
+
+**Yang belum bisa dihitung** adalah galat pelacakan lintasan yang sesungguhnya.
+Itu menuntut pencatatan rencana pada lookahead TETAP -- misalnya apa yang
+direncanakan untuk `t + 0,5 s` -- lalu dibandingkan dengan posisi sebenarnya
+setelah selang itu. Satu kolom log tambahan, dan eksperimen harus diulang.
 
 **Kenapa slack adalah metrik, bukan diagnostik internal:** constraint elips dan
 batas percepatan lateral keduanya LUNAK -- solver boleh melanggarnya dengan
@@ -1569,8 +1599,10 @@ keselamatan.
 
 | Metrik | MPC + GT | MPC + vision |
 |---|---|---|
-| Galat lacak lateral RMS | **0,0017 m** | **0,0270 ± 0,0004 m** |
-| Galat lacak lateral maksimum | 0,0066 m | 0,2905 ± 0,0059 m |
+| **IAE kecepatan** \|v − v_goal\| | **4,556 m** | **3,670 ± 0,070 m** |
+| **IAE lateral saat `LANE_KEEPING`** | **0,143 m·s** | **0,197 ± 0,013 m·s** |
+| IAE lateral seluruh run | 17,168 m·s | 18,744 ± 0,064 m·s |
+| ~~Galat lacak lateral RMS~~ | ~~0,0017 m~~ | ~~0,0270 m~~ | (tidak sah, bagian 22.5) |
 | Galat kecepatan RMS | 0,293 m/s | 0,252 ± 0,003 m/s |
 | Sudut hadap maksimum | 6,47° | 8,63 ± 0,01° |
 | Waktu solve rata-rata | 18,00 ± 0,34 ms | 18,07 ± 0,24 ms |

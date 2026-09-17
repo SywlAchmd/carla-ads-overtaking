@@ -43,11 +43,19 @@ def metrik(log, states, kolom):
         xte = np.abs(log[m, k['dev_lajur']])
         a_lat = log[m, k['v']] ** 2 * np.tan(log[m, k['delta_cmd']]) / L_SUMBU
         d = np.diff(log[m, k['steer']]) if m.sum() > 1 else np.array([0.0])
-        # Galat LACAK: ego terhadap acuan lateral yang benar-benar dilacak MPC.
-        # Ini yang mengukur kualitas pengendali. `xte` di bawah mengukur jarak ke
-        # TUJUAN, dan saat pindah lajur maksimumnya selalu tepat LANE_WIDTH --
-        # itu profil manuver, bukan galat. Bagian 15.5 lagi: metrik yang tampak
-        # wajar tetapi mengukur hal lain. Keduanya dilaporkan, diberi nama beda.
+        # HATI-HATI. `lacak` BUKAN galat pelacakan pengendali, meskipun tampak
+        # begitu. `y_ref` adalah rencana planner yang DI-ANCHOR ULANG di posisi
+        # ego tiap replan (10 Hz), jadi pada tick replan nilainya 1,8e-08 m --
+        # nol karena konstruksi, bukan karena pengendalinya bagus. Yang tersisa
+        # hanyalah galat lookahead 50 ms antar replan.
+        #
+        # Ini persis jebakan nomor 1 di TUNING_MPC.md bagian 9, dan sempat
+        # terlaporkan sebagai "galat pengendali 0,0017 m" pada draf bagian 23.
+        # Dipertahankan sebagai diagnostik kehalusan, dengan nama yang jujur.
+        #
+        # Galat pelacakan yang sah menuntut acuan yang TIDAK menempel ke ego --
+        # perlu mencatat rencana pada lookahead tetap, lalu membandingkannya
+        # dengan posisi sebenarnya setelah selang itu. Belum ada di log.
         lacak = np.abs(log[m, k['y']] - log[m, k['y_ref']])
         out[nama] = dict(
             n=int(m.sum()),
@@ -114,7 +122,13 @@ def per_layer(log, states, kolom):
     lacak = np.abs(y - log[:, k['y_ref']])
     nl = log[replan, k['n_layak']]
 
-    out = {'Planner': {
+    dt = float(log[1, k['t']] - log[0, k['t']])
+    lk = states == 'LANE_KEEPING'
+    out = {'Controller (MPC)_IAE': {
+        'IAE kecepatan |v - v_goal| [m]': float(np.abs(v - log[:, k['v_goal']]).sum() * dt),
+        'IAE lateral saat LANE_KEEPING [m.s]': float(np.abs(log[lk, k['dev_lajur']]).sum() * dt),
+        'IAE lateral seluruh run [m.s]': float(np.abs(log[:, k['dev_lajur']]).sum() * dt),
+    }, 'Planner': {
         'kandidat lolos per replan (dari 9)': nl.mean(),
         'replan tanpa kandidat [%]': 100.0 * (nl == 0).mean(),
         'durasi manuver direncanakan T [s]': (np.nanmean(log[:, k['t_plan']])
@@ -193,7 +207,8 @@ def main_():
             h = {n: {kk: (vv, 0.0) for kk, vv in v.items()}
                  for n, v in metrik(d['log'], d['fsm_state'], kolom).items()}
             cetak(f'MPC + {mode}, satu run', h)
-    print('\nlacak = |y ego - acuan lateral yang dilacak MPC| -- INI galat pengendali.')
+    print('\nlacak = |y - acuan planner|. BUKAN galat pelacakan: acuannya di-anchor ulang')
+    print('  di posisi ego tiap replan, jadi yang terukur hanya lookahead 50 ms.')
     print('ke tujuan = |y ego - tengah lajur tujuan FSM|; saat pindah lajur ia mengukur '
           'profil manuver,\n  bukan galat, dan maksimumnya selalu tepat LANE_WIDTH. '
           'Dilaporkan hanya sebagai konteks.')
