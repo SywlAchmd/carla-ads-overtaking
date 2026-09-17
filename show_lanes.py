@@ -49,7 +49,7 @@ def plot_topdown(lanes, path):
         jn = sd[is_jn]
         if len(jn):
             ax.plot(jn[:, 0], jn[:, 1], '.', ms=3, color='crimson',
-                    label='Area junction' if i == 0 else None)
+                    label='junction area' if i == 0 else None)
         ax.axhline(sd[:, 1].mean(), ls=':', lw=.6, color='gray')
 
     ax.plot(0, 0, 'k*', ms=18, label=f'Spawn {config.SPAWN_IDX}', zorder=5)
@@ -60,12 +60,12 @@ def plot_topdown(lanes, path):
     ax.text(153, -1.9, 'manuver menyalip\ny_target = SIDE_SIGN x LANE_WIDTH = -3,50 m',
             fontsize=9, color='tab:green', va='center')
 
-    ax.set_xlabel('s — jarak sepanjang jalan (m)')
-    ax.set_ylabel('d — lateral (m)')
-    ax.set_title(f'Lingkungan uji — Town04 spawn {config.SPAWN_IDX}, '
+    ax.set_xlabel('s - distance along the road (m)')
+    ax.set_ylabel('d - lateral offset (m)')
+    ax.set_title(f'Test environment - Town04 spawn {config.SPAWN_IDX}, '
                  f'{LENGTH:.0f} m, 4 lajur searah 3,50 m')
     ax.set_ylim(-13, 4); ax.grid(alpha=.3)
-    ax.legend(loc='lower left', fontsize=8, ncol=3)
+    ax.legend(loc='upper right', fontsize=8, ncol=3)
     fig.tight_layout(); fig.savefig(path, dpi=150)
     print(f'Tampak atas : {path}')
 
@@ -103,7 +103,7 @@ def plot_candidates(path):
         pilihan = tr is best
         ax.plot(tr.states[0], tr.states[1], lw=3 if pilihan else 1,
                 color='tab:green' if pilihan else '0.65', zorder=3 if pilihan else 1,
-                label=f'TERPILIH: offset {offset:.1f} m, T={T:.1f} s, J={cost:.1f}'
+                label=f'selected: offset {offset:.1f} m, T = {T:.1f} s, J = {cost:.1f}'
                       if pilihan else None)
         t = np.arange(tr.states.shape[1]) * tr.dt
         ddy = np.gradient(np.gradient(tr.states[1], tr.dt), tr.dt)
@@ -111,16 +111,20 @@ def plot_candidates(path):
                  color='tab:green' if pilihan else '0.65', zorder=3 if pilihan else 1)
 
     ax.plot(0, 0, 'k*', ms=15, zorder=5)
-    ax.set_xlabel('x — maju (m)'); ax.set_ylabel('y — lateral (m)')
-    ax.set_title(f'{len(feasible)} kandidat lolos kelayakan'); ax.legend(fontsize=9)
+    ax.set_xlabel('x - along the road (m)'); ax.set_ylabel('y - lateral (m)')
+    ax.set_title(f'{len(feasible)} of 9 candidates pass the feasibility filters')
+    ax.legend(loc='upper right', fontsize=8)
     ax.grid(alpha=.3)
 
     ax2.axhline(config.MAX_LATERAL_ACCEL, color='crimson', lw=2,
-                label=f'batas kenyamanan {config.MAX_LATERAL_ACCEL:.0f} m/s²')
-    ax2.set_xlabel('t (s)'); ax2.set_ylabel('|percepatan lateral| (m/s²)')
-    ax2.set_title('Semua kandidat di bawah batas'); ax2.legend(fontsize=9); ax2.grid(alpha=.3)
+                label=f'comfort limit {config.MAX_LATERAL_ACCEL:.0f} m/s2')
+    ax2.set_xlabel('t (s)'); ax2.set_ylabel('|lateral acceleration| (m/s2)')
+    ax2.set_title('Every candidate stays under the limit')
+    # Ruang di atas batas: tanpa ini legend kanan atas menimpa garis merahnya.
+    ax2.set_ylim(top=config.MAX_LATERAL_ACCEL * 1.28)
+    ax2.legend(loc='upper right', fontsize=8); ax2.grid(alpha=.3)
 
-    fig.suptitle('Local planner — quintic lateral + quartic longitudinal')
+    fig.suptitle('Local planner - quintic lateral + quartic longitudinal')
     fig.tight_layout(); fig.savefig(path, dpi=150)
     print(f'Kandidat    : {path}')
 
