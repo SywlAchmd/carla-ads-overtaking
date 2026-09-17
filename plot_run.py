@@ -2,7 +2,8 @@
 
 Dibaca dari log mentah supaya tidak perlu menjalankan ulang simulasi.
 
-    python plot_run.py                     # out/run_s1_mpc_gt.npz -> out/run_s1_mpc.png
+    python plot_run.py                        # GT  -> out/run_s1_mpc_gt.png
+    python plot_run.py --perception vision    # -> out/run_s1_mpc_vision.png
     python plot_run.py --skenario S3
 """
 import argparse
@@ -34,10 +35,11 @@ def latar_state(ax, t, st):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--skenario', default='S1', choices=list(config.SKENARIO))
+    ap.add_argument('--perception', default='gt', choices=('gt', 'vision'))
     args = ap.parse_args()
     sk = args.skenario.lower()
 
-    f = np.load(os.path.join(config.OUT_DIR, f'run_{sk}_mpc_gt.npz'))
+    f = np.load(os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.npz'))
     L, st, pos = f['log'], f['fsm_state'], f['posisi_kendaraan']
     k = {nama: i for i, nama in enumerate(f['kolom'])}
     t, y, yaw = L[:, 0], L[:, k['y']], L[:, k['yaw']]
@@ -80,9 +82,10 @@ def main():
 
     fig.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=w) for w in WARNA.values()],
                labels=list(WARNA), loc='upper center', ncol=5, fontsize=8, frameon=False)
-    fig.suptitle(f'Skenario {args.skenario} — MPC + ground truth perception', y=0.975)
+    nama_p = 'ground truth perception' if args.perception == 'gt' else 'vision perception (YOLOPX + depth)'
+    fig.suptitle(f'Skenario {args.skenario} — MPC + {nama_p}', y=0.975)
     fig.tight_layout(rect=(0, 0, 1, 0.945))
-    keluar = os.path.join(config.OUT_DIR, f'run_{sk}_mpc.png')
+    keluar = os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.png')
     fig.savefig(keluar, dpi=150)
     print(f'Grafik: {keluar}')
 

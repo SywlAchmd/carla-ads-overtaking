@@ -363,7 +363,7 @@ Beri label "lintasan hasil local planner". Video hasil kendali sudah bisa dibuat
 (Tahap 5 selesai), tapi `record_maneuver.py` belum diubah.
 
 **Grafik hasil kendali sudah diperbarui** dan cocok dengan angka bagian 14:
-`run_s1_mpc.png` dan `run_s3_mpc.png`, dibuat `plot_run.py` langsung dari log
+`run_s1_mpc_gt.png` dan `run_s3_mpc_gt.png`, dibuat `plot_run.py` langsung dari log
 (`out/run_s1_mpc_gt.npz`, `out/run_s3_mpc_gt.npz`) tanpa menjalankan simulasi
 ulang. Empat panel: simpangan lateral, kecepatan, jarak antar bodi ke tiap
 kendaraan, dan sudut kemudi + waktu solve; latar tiap panel diwarnai menurut
@@ -1600,3 +1600,30 @@ Jadi selisih GT versus vision **bukan** "pengendali lebih buruk", melainkan
 Dan angka `LANE_KEEPING (sebelum)` = 0,00000 m menutup catatan 15.5 secara
 kuantitatif: deviasi lajur yang selama ini dilaporkan sebagai ~0,015 m
 seluruhnya berasal dari ekor SESUDAH manuver, bukan dari kemampuan menjaga lajur.
+
+
+---
+
+## 24. Daftar gambar dan video untuk slide
+
+Seluruhnya di `out/`, dibangkitkan ulang dari log tanpa menjalankan simulasi
+(kecuali video, yang butuh server).
+
+| Berkas | Isi | Perintah |
+|---|---|---|
+| `banding_s1.png` | **GT versus vision berdampingan** — simpangan lateral, kecepatan, jarak antar bodi, kandidat planner. Gambar paling padat informasi untuk slide hasil | `python plot_banding.py` |
+| `run_s1_mpc_gt.png` | S1 ground truth, 4 panel, latar diwarnai state FSM | `python plot_run.py` |
+| `run_s1_mpc_vision.png` | S1 vision, format sama | `python plot_run.py --perception vision` |
+| `run_s3_mpc_gt.png` | S3 ground truth (mengikuti lalu menyalip ulang) | `python plot_run.py --skenario S3` |
+| `vision_s1.mp4` | Video kamera dengan kotak deteksi berisi jarak dan kecepatan, kandidat planner, dan yang dieksekusi | `python main.py --perception vision --rekam` |
+| `deteksi_30m_lajur0.png` | Deteksi + segmentasi, model fine-tuned | `python cek_deteksi.py` |
+| `deteksi_30m_lajur0_bdd.png` | Pembanding: weight BDD100K asli | `python cek_deteksi.py --weight ...` |
+| `deteksi_15m_lajur1.png` | Target di lajur menyalip | `python cek_deteksi.py --lajur 1` |
+| `sensor_rgb.png`, `sensor_depth.png` | Contoh keluaran rig kamera | `python cek_sensor.py` |
+| `model_validation.png` | Validasi bicycle model (Tahap 1) | `python validate_model.py` |
+| `planner_candidates.png` | 9 kandidat lintasan planner | `python show_lanes.py` |
+| `ambang_ttc.png`, `kenapa_450_derajat.png`, `mpc_konsep.png` | Gambar konsep untuk bab 2-3 | — |
+
+**Yang belum ada gambarnya:** tidak ada visual untuk S3 + vision, karena S3 tidak
+bisa dijalankan dengan rig satu kamera depan (kendaraan lajur tujuan mulai di
+belakang ego). Itu keterbatasan yang dinyatakan, bukan gambar yang tertinggal.

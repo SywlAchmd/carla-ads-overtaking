@@ -1285,7 +1285,7 @@ tanpa tabrakan. **MPC benar-benar mengemudikan mobil.**
 | Simpangan lateral | 0,00 -> -3,59 -> 0,00 m |
 | Urutan state | `LANE_KEEPING -> CHECK_OVERTAKE -> LANE_CHANGE_OVERTAKE -> OVERTAKING -> LANE_CHANGE_RETURN -> LANE_KEEPING` |
 
-Gambar: `out/run_s1_mpc.png` (empat panel: lateral, kecepatan, kemudi, waktu
+Gambar: `out/run_s1_mpc_gt.png` (empat panel: lateral, kecepatan, kemudi, waktu
 solve; latar berwarna menandai state FSM). Log mentah: `out/run_s1_mpc_gt.npz`.
 
 ---
@@ -2097,7 +2097,7 @@ lajur selebar 3,5 m dan justru melumpuhkan manuver.
 **`plot_run.py`** dibuat untuk grafik bab 4: empat panel (simpangan lateral,
 kecepatan, jarak antar bodi tiap kendaraan, kemudi + waktu solve) dengan latar
 diwarnai menurut state FSM, dibaca langsung dari log tanpa menjalankan simulasi
-ulang. `out/run_s1_mpc.png` dan `out/run_s3_mpc.png` sudah dibangkitkan ulang.
+ulang. `out/run_s1_mpc_gt.png` dan `out/run_s3_mpc_gt.png` sudah dibangkitkan ulang.
 
 ---
 
