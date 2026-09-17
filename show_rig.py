@@ -109,18 +109,22 @@ def foto():
     ax.imshow(rgb); ax.axis('off')
     for (ux, uy), warna, nama in zip(ujung, (AKSEN, HIJAU, BIRU), ('x', 'y', 'z')):
         ax.annotate('', (ux, uy), uv_s, arrowprops=dict(arrowstyle='->', color=warna, lw=2.2))
-        ax.text(ux, uy - 12, nama, color=warna, fontsize=13, fontweight='bold', ha='center')
+        ax.text(ux, uy - 12, nama, color=warna, fontsize=13, fontweight='bold', ha='center',
+                zorder=8,
+                bbox=dict(boxstyle='square,pad=0.15', fc='white', ec='none', alpha=.85))
     ax.plot(*uv_s, marker='o', ms=9, mfc='none', mec=AKSEN, mew=2.4)
     ax.annotate('RGB camera + depth camera\nco-located, 1.65 m above the road',
-                uv_s, xytext=(uv_s[0] - 430, uv_s[1] - 175), color=AKSEN, fontsize=12,
-                arrowprops=dict(arrowstyle='->', color=AKSEN, lw=1.6))
+                uv_s, xytext=(uv_s[0] - 500, uv_s[1] - 235), color=AKSEN, fontsize=12,
+                arrowprops=dict(arrowstyle='->', color=AKSEN, lw=1.6),
+                bbox=dict(boxstyle='round,pad=0.42', fc='white', ec=AKSEN, lw=1.0, alpha=.92))
     # Ditaruh jauh ke kiri-bawah: di dekat markernya, teks ini jatuh di atas bodi.
     ax.plot(axle[:, 0], axle[:, 1], ls='--', lw=1.6, color=GARIS, zorder=4)
     ax.plot(*sumbu_belakang, marker='o', ms=9, mfc='white', mec=GARIS, mew=2.0, zorder=5)
     ax.annotate('centre of the rear axle\nMPC state origin, planner reference', sumbu_belakang,
                 xytext=(sumbu_belakang[0] + 150, sumbu_belakang[1] + 210),
                 color=GARIS, fontsize=11,
-                arrowprops=dict(arrowstyle='->', color=GARIS, lw=1.5))
+                arrowprops=dict(arrowstyle='->', color=GARIS, lw=1.5),
+                bbox=dict(boxstyle='round,pad=0.42', fc='white', ec=GARIS, lw=1.0, alpha=.92))
     ax.text(0.5, -0.035, 'Axes are the right-handed frame used throughout: '
                          'x forward, y left, z up. CARLA\'s own frame is left-handed.',
             transform=ax.transAxes, ha='center', fontsize=9, color='0.4', style='italic')
@@ -231,11 +235,13 @@ def tampak_atas_foto():
     # ditaruh di atas, berseberangan dengan label kamera.
     ax.annotate('centre of the rear axle\nMPC state origin', p_ax,
                 xytext=(p_ax[0] - 60, p_ax[1] - 215), ha='center', color=GARIS, fontsize=11,
-                arrowprops=dict(arrowstyle='->', color=GARIS, lw=1.5))
+                arrowprops=dict(arrowstyle='->', color=GARIS, lw=1.5),
+                bbox=dict(boxstyle='round,pad=0.42', fc='white', ec=GARIS, lw=1.0, alpha=.92))
     ax.plot(*p_sen, marker='s', ms=11, mfc=AKSEN, mec='white', mew=1.4, zorder=5)
     ax.annotate('RGB + depth camera\n1.65 m above the road', p_sen,
                 xytext=(p_sen[0] + 40, p_sen[1] - 215), ha='center', color=AKSEN, fontsize=11,
-                arrowprops=dict(arrowstyle='->', color=AKSEN, lw=1.5))
+                arrowprops=dict(arrowstyle='->', color=AKSEN, lw=1.5),
+                bbox=dict(boxstyle='round,pad=0.42', fc='white', ec=AKSEN, lw=1.0, alpha=.92))
 
     def ukur(a, b, dy, teks, warna=GARIS):
         ya = (a[1] + b[1]) / 2 + dy
