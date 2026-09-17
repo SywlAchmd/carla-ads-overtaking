@@ -9,6 +9,7 @@ import carla
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.patches import Rectangle
 import numpy as np
 
 import config
@@ -110,7 +111,12 @@ def plot_candidates(path):
         ax2.plot(t, np.abs(ddy), lw=2.5 if pilihan else 1,
                  color='tab:green' if pilihan else '0.65', zorder=3 if pilihan else 1)
 
-    ax.plot(0, 0, 'k*', ms=15, zorder=5)
+    # Kotak kecil di titik awal, bukan bodi sesuai skala: sumbu x tertekan ~7x
+    # terhadap sumbu y, jadi bodi 5 m tergambar segemuk tembok dan justru
+    # mengalihkan perhatian dari berkas lintasannya.
+    ax.plot(0, 0, marker='s', ms=8, mfc='0.85', mec='0.3', mew=1.1, zorder=5)
+    ax.annotate('ego', (0, 0), xytext=(0, -11), textcoords='offset points',
+                ha='center', va='top', fontsize=8, color='0.3', zorder=6)
     ax.set_xlabel('x - along the road (m)'); ax.set_ylabel('y - lateral (m)')
     ax.set_title(f'{len(feasible)} of 9 candidates pass the feasibility filters')
     ax.legend(loc='upper right', fontsize=8)
