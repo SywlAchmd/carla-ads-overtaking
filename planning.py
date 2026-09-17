@@ -67,12 +67,21 @@ class Trajectory:
         grid = np.arange(self.states.shape[1]) * self.dt
         return np.array([np.interp(t, grid, row) for row in self.states])
 
+    def durasi(self):
+        """Lama rencana, detik."""
+        return (self.states.shape[1] - 1) * self.dt
+
     def lateral_at(self, t):
         """(y, y\', y\'\') eksak dari polinomial.
 
         Dipakai saat replan receding horizon: state lateral harus diteruskan
         persis, bukan hasil diferensiasi numerik dari sampel.
         """
+        # Dijepit ke durasi rencana: polinomial derajat lima MELEDAK di luar
+        # selangnya, dan sejak rencana dipertahankan saat replan gagal
+        # (bagian 19.14) `t` memang bisa melewatinya. `sample_at` sudah aman
+        # sendiri karena memakai np.interp.
+        t = min(max(float(t), 0.0), self.durasi())
         return (_val(self.cy, t), _val(_deriv(self.cy), t), _val(_deriv(self.cy, 2), t))
 
 

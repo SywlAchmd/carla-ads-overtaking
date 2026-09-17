@@ -123,6 +123,41 @@ def test_psi_dan_v_konsisten_dengan_lintasan():
     assert np.abs(np.hypot(dx, dy) - v).max() < 5e-2
 
 
+def test_ttc_trigger_cukup_untuk_zona_aman():
+    """Pemicu menyalip harus menyisakan celah yang masih bisa direncanakan.
+
+    `TTC_TRIGGER` diturunkan dari waktu dwell FSM (`config.py`), sedangkan zona
+    aman menuntut penyeberangan selesai selagi celah masih besar -- dua syarat
+    yang diturunkan terpisah. Bagian 15.4 sudah sekali kejadian: kriteria dan
+    constraint yang tidak saling diturunkan kebetulan cocok di kasus uji longgar.
+    Uji ini yang membuat kebetulan itu tidak lagi diandalkan.
+
+    Diperiksa pada dv terkecil yang masih memicu (`DV_TRIGGER`), yaitu kasus
+    terketat: celah saat pemicu = TTC_TRIGGER * dv mengecil bersama dv, sementara
+    celah minimum yang dibutuhkan tidak mengecil sebanding.
+    """
+    for dv in (config.DV_TRIGGER, 6.4):
+        v_target = config.V_REF - dv
+        obs_di = lambda gap: np.array([[gap, 0.0, v_target, 0.0]])
+        perlu = next(g for g in np.arange(4.0, 60.0, 0.5)
+                     if plan_lane_change(0.0, 0.0, 0.0, 0.0, config.V_REF, 0.0,
+                                           config.V_REF, obstacles=obs_di(g))[0] is not None)
+        tersedia = config.TTC_TRIGGER * dv
+        assert tersedia >= perlu, (
+            f'dv {dv}: pemicu memberi celah {tersedia:.1f} m, planner butuh {perlu:.1f} m')
+
+
+def test_rencana_tidak_meledak_di_luar_durasinya():
+    """Rencana dipertahankan saat replan gagal (bagian 19.14), jadi ia disampel
+    melewati durasinya. Polinomial quintic meledak di luar selang -- harus dijepit."""
+    traj, _ = plan_lane_change(0.0, 0.0, 0.0, 0.0, config.V_REF, 0.0, config.V_REF)
+    assert traj is not None
+    akhir = traj.lateral_at(traj.durasi())
+    for lewat in (0.1, 2.0, 30.0):
+        assert traj.lateral_at(traj.durasi() + lewat) == akhir
+        assert abs(traj.sample_at(traj.durasi() + lewat)[1] - akhir[0]) < 1e-6
+
+
 if __name__ == '__main__':
     for nama, fn in sorted(globals().items()):
         if nama.startswith('test_'):

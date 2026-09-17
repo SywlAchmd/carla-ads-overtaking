@@ -11,6 +11,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+import config
+
 
 @dataclass(frozen=True)
 class EgoState:
@@ -65,6 +67,13 @@ class PathFrame:
         """Titik frame right-handed -> frame jalan. Untuk pencatatan ground truth."""
         return self._xy(x_rh, y_rh)
 
+    def ke_rh(self, px, py):
+        """Kebalikan `titik`: frame jalan -> right-handed. Untuk menggambar
+        lintasan planner di atas citra kamera."""
+        px, py = np.asarray(px, dtype=float), np.asarray(py, dtype=float)
+        return (self.origin[0] + self._c * px - self._s * py,
+                self.origin[1] + self._s * px + self._c * py)
+
     def ego(self, state: EgoState) -> EgoState:
         x, y = self._xy(state.x, state.y)
         return EgoState(x, y, wrap(state.yaw - self.psi0), state.v,
@@ -89,10 +98,23 @@ def halangan_ego_ke_jalan(obs_rel, ego):
     if len(o) == 0:
         return np.empty((0, 4))
     c, s = math.cos(ego.yaw), math.sin(ego.yaw)
+    # Jangkar = PUSAT BODI ego, bukan sumbu belakang. Perception mengukur dari
+    # pusat bodi ego (terukur: bounding_box.location.x = -0,005 m terhadap titik
+    # asal aktor), sedangkan `ego.x` adalah sumbu belakang. Menambahkan sumbu
+    # belakang menaruh halangan 1,433 m terlalu dekat di frame jalan.
+    #
+    # Satu perbaikan di sini membenarkan KEDUA pemakainya, karena masing-masing
+    # sudah menuliskan acuannya sendiri: zona planner & MPC menggeser ego ke
+    # pusat bodi (`+ SUMBU_KE_PUSAT`) lalu mengurangkan posisi halangan, jadi
+    # keduanya kini pusat-ke-pusat; sementara main.py mengurangkan `ego.x` untuk
+    # FSM, jadi `depan[0]` kini sumbu belakang -> pusat bodi, persis yang
+    # didokumentasikan `planning._v_ikut`.
+    xc = ego.x + config.SUMBU_KE_PUSAT * c
+    yc = ego.y + config.SUMBU_KE_PUSAT * s
     x, y, vx, vy = o[:, 0], o[:, 1], o[:, 2], o[:, 3]
     return np.column_stack([
-        ego.x + c * x - s * y,
-        ego.y + s * x + c * y,
+        xc + c * x - s * y,
+        yc + s * x + c * y,
         c * vx - s * vy + ego.v * c,          # relatif -> absolut
         s * vx + c * vy + ego.v * s])
 

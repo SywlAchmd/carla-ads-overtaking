@@ -117,6 +117,8 @@ class MPCController:
         self.u_prev = np.zeros(2)
         self.last_status = None      # alasan gagal terakhir dari IPOPT
         self.last_iter = 0           # jumlah iterasi; tidak terpengaruh beban mesin
+        self.last_eps = 0.0          # slack zona aman terpakai (0 = tidak dilanggar)
+        self.last_eps_lat = 0.0      # slack batas percepatan lateral terpakai
 
         N, dt = self.N, self.dt
         Q = np.diag(b['Q'])
@@ -128,6 +130,7 @@ class MPCController:
         X = opti.variable(4, N + 1)
         U = opti.variable(2, N)
         eps = opti.variable(self.n_obs, N + 1)
+        eps_lat = opti.variable(N)          # slack batas percepatan lateral
 
         x0 = opti.parameter(4)
         xref = opti.parameter(4, N + 1)
@@ -159,6 +162,26 @@ class MPCController:
             # saja sudah membuat seluruh masalah Infeasible_Problem_Detected.
             if k > 0:
                 opti.subject_to(opti.bounded(0.0, X[3, k], config.V_MAX))
+            if k < N:
+                # Percepatan lateral dibatasi SAMA dengan planner (bagian 19.9).
+                # Tanpa ini planner dan MPC tidak berbagi ruang kelayakan: MPC
+                # boleh membawa kendaraan ke keadaan yang planner tidak akan
+                # pernah rencanakan (terukur laju lateral 4,10 m/s, yaw 17,1
+                # derajat), lalu setiap quintic yang berangkat dari situ
+                # melanggar batasnya sendiri dan kandidat habis terus-menerus.
+                # Dikenakan pada INPUT, bukan state: X[:,0] terkunci ke hasil
+                # ukur, dan membatasi masa lalu itu yang dulu memberi
+                # Infeasible_Problem_Detected.
+                # LUNAK, bukan keras. MAX_LATERAL_ACCEL adalah batas KENYAMANAN;
+                # sebagai constraint keras ia mengalahkan pelebaran jarak saat
+                # berpapasan dan menurunkan jarak bodi 1,30 -> 1,13 m terhadap
+                # syarat 1,0 m (bagian 19.12). Bobot slack-nya 20x di bawah `rho`
+                # zona aman: keselamatan menang, kenyamanan mengalah.
+                a_lat = X[3, k] ** 2 * ca.tan(U[1, k]) / self.L
+                opti.subject_to(a_lat <= config.MAX_LATERAL_ACCEL + eps_lat[k])
+                opti.subject_to(a_lat >= -config.MAX_LATERAL_ACCEL - eps_lat[k])
+                opti.subject_to(eps_lat[k] >= 0)
+                biaya += config.MPC_RHO_LAT * eps_lat[k] ** 2
             for j in range(self.n_obs):
                 xj = obs[0, j] + obs[2, j] * (k * dt)
                 yj = obs[1, j] + obs[3, j] * (k * dt)
@@ -178,7 +201,7 @@ class MPCController:
                      'warm_start_init_point': 'yes', 'tol': config.MPC_TOL,
                      'acceptable_tol': config.MPC_TOL * 100, 'acceptable_iter': 5})
 
-        self.opti, self.X, self.U, self.eps = opti, X, U, eps
+        self.opti, self.X, self.U, self.eps, self.eps_lat = opti, X, U, eps, eps_lat
         self.p = dict(x0=x0, xref=xref, uprev=uprev, obs=obs)
 
     def _obstacle_matrix(self, obstacles, x_ego):
@@ -217,6 +240,11 @@ class MPCController:
             a, delta, ok = float(u[0, 0]), float(u[1, 0]), True
             self.last_status = 'Solve_Succeeded'
             self.last_iter = int(opti.stats().get('iter_count', 0))
+            # Slack terpakai = seberapa jauh constraint DILANGGAR. Nol berarti
+            # zona aman dan batas kenyamanan dihormati penuh; ini metrik
+            # kepatuhan constraint untuk bab 4, bukan diagnostik internal.
+            self.last_eps = float(np.max(sol.value(self.eps)))
+            self.last_eps_lat = float(np.max(sol.value(self.eps_lat)))
         except RuntimeError:
             try:
                 self.last_status = opti.stats().get('return_status', '?')

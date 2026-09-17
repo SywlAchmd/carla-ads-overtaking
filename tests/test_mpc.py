@@ -8,7 +8,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import config                                                          # noqa: E402
-import control as C                                                    # noqa: E402
+import control as C                                                  # noqa: E402
+from planning import plan_lane_change                                 # noqa: E402
 from validate_model import bicycle_rk4                                 # noqa: E402
 
 PARAMS = json.load(open(os.path.join(config.OUT_DIR, 'vehicle_params.json')))
@@ -253,6 +254,55 @@ def test_command_lengkap():
     assert -1.0 <= cmd.steer <= 1.0 and 0.0 <= cmd.throttle <= 1.0
     assert 0.0 <= cmd.brake <= 1.0 and cmd.solve_time_ms > 0
     assert not (cmd.throttle > 0 and cmd.brake > 0), 'gas dan rem bersamaan'
+
+
+def test_percepatan_lateral_dijaga_di_sekitar_batas_planner():
+    """Ruang kelayakan MPC harus sedekat mungkin dengan planner (bagian 19.9).
+
+    Dirangsang dengan acuan dari PLANNER SUNGGUHAN, bukan tangga. Sejak acuan
+    cadangan menahan `y` berjalan (bagian 19.14), MPC tidak pernah lagi menerima
+    tangga; menguji dengan tangga berarti mengukur rangsangan yang tidak terjadi
+    -- tangga 3,5 m memberi 6,1 m/s^2, sementara loop tertutup terukur 1,29 (GT)
+    dan 3,34 (vision). Ini persis pola bagian 15.5: metrik yang mengukur hal lain.
+
+    Batasnya LUNAK (bagian 19.12): `MAX_LATERAL_ACCEL` itu batas kenyamanan, dan
+    sebagai constraint keras ia mengalahkan pelebaran jarak saat berpapasan.
+    """
+    traj, _ = plan_lane_change(0.0, 0.0, 0.0, 0.0, V, 0.0, V)
+    assert traj is not None, 'planner tidak memberi rencana untuk lajur kosong'
+    mpc = C.MPCController(PARAMS)
+    x = np.array([0.0, 0.0, 0.0, V])
+    terburuk = 0.0
+    for i in range(int(traj.durasi() / config.MPC_DT)):
+        t0 = i * config.MPC_DT
+        xref = np.column_stack([traj.sample_at(t0 + j * config.MPC_DT)
+                                for j in range(config.MPC_N + 1)])
+        a, delta, _, ok = mpc.solve(x, xref)
+        assert ok, f'solver gagal di langkah {i}'
+        terburuk = max(terburuk, abs(x[3] ** 2 * np.tan(delta) / PARAMS['L']))
+        s = bicycle_rk4(np.array([x[0], x[1], x[2]]), x[3], delta, PARAMS['L'],
+                        config.MPC_DT)
+        x = np.array([s[0], s[1], s[2], x[3] + a * config.MPC_DT])
+    assert terburuk <= config.MAX_LATERAL_ACCEL * 1.1, f'a_lat {terburuk:.2f} m/s2'
+
+
+def test_slack_lateral_benar_benar_mengikat():
+    """Batas lunak harus tetap MENGIKAT, bukan hiasan. Diberi tangga -- justru
+    kasus terburuk -- hasilnya wajib jauh di bawah kemampuan kemudi penuh."""
+    mpc = C.MPCController(PARAMS)
+    x = np.array([0.0, 0.0, 0.0, V])
+    terburuk = 0.0
+    for _ in range(20):
+        tt = np.arange(config.MPC_N + 1) * config.MPC_DT
+        xref = np.vstack([x[0] + V * tt, np.full_like(tt, -3.5),
+                          np.zeros_like(tt), np.full_like(tt, V)])
+        a, delta, _, ok = mpc.solve(x, xref)
+        assert ok
+        terburuk = max(terburuk, abs(x[3] ** 2 * np.tan(delta) / PARAMS['L']))
+        s = bicycle_rk4(np.array([x[0], x[1], x[2]]), x[3], delta, PARAMS['L'], DT)
+        x = np.array([s[0], s[1], s[2], x[3] + a * DT])
+    bebas = V ** 2 * np.tan(PARAMS['delta_max']) / PARAMS['L']
+    assert terburuk < bebas / 4.0, f'slack terlalu longgar: {terburuk:.2f} vs bebas {bebas:.1f}'
 
 
 if __name__ == '__main__':

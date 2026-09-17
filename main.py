@@ -18,26 +18,42 @@ import numpy as np
 import config
 import control
 import evaluation
+import gambar
 import localization
 import perception
 import planning
+import sensors
 import simulation
 
 # Urutan kolom log. Diindeks lewat NAMA, bukan angka -- menambah kolom di tengah
 # sudah dua kali menggeser indeks dan memberi angka yang salah tanpa error.
 KOLOM = ['t', 'x', 'y', 'yaw', 'v', 'y_ref', 'y_goal', 'dev_lajur', 'a_cmd',
          'delta_cmd', 'steer', 'throttle', 'brake', 'solve_ms', 'solver_ok',
-         'n_layak', 'offset', 'x_tgt', 'y_tgt', 'v_goal']
+         'n_layak', 'offset', 'x_tgt', 'y_tgt', 'v_goal', 'x_est', 'y_est',
+         'iterasi', 't_plan', 'eps', 'eps_lat']
 
 
 def to_carla(cmd):
     return carla.VehicleControl(throttle=cmd.throttle, brake=cmd.brake, steer=cmd.steer)
 
 
-def xref_tahan(ego, y_goal, v_des):
-    """Acuan cadangan saat planner tidak menghasilkan rencana: tahan lajur."""
+def xref_tahan(ego, v_des, y=None):
+    """Acuan garis lurus pada `y` (bawaan: posisi lateral ego SEKARANG).
+
+    Sebagai acuan cadangan saat planner gagal, `y` dibiarkan bawaan -- tahan
+    posisi yang sedang berlaku.
+
+    Sempat memakai `y_goal` dan itu keliru: kehilangan kandidat di tengah manuver
+    lalu berarti "lompat ke lajur tujuan sekarang". Di run vision S1 acuannya
+    melompat 3,23 m sekaligus, MPC mengejarnya dengan delta -0,159 rad dan rem
+    -4,43 m/s^2, dan laju lateral yang terkumpul membawa ego 1,96 m melewati
+    tengah lajur tujuan. Menahan `ego.y` membuat kehilangan kandidat berarti
+    "lanjutkan lurus" -- planner replan 10 Hz akan mengambil alih begitu ada
+    kandidat lagi, mulai dari state saat itu.
+    """
+    y = ego.y if y is None else y
     t = np.arange(config.MPC_N + 1) * config.MPC_DT
-    return np.vstack([ego.x + v_des * t, np.full_like(t, y_goal),
+    return np.vstack([ego.x + v_des * t, np.full_like(t, y),
                       np.zeros_like(t), np.full_like(t, v_des)])
 
 
@@ -69,18 +85,24 @@ def siapkan_jalan(world):
     return ref, (s, x, y, ref[2], ref[3])
 
 
-def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan):
-    """`kendaraan` = [(jarak, lajur, kecepatan), ...]; yang pertama = target."""
+def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, rig=None,
+        net=None, perekam=None):
+    """`kendaraan` = [(jarak, lajur, kecepatan), ...]; yang pertama = target.
+
+    `rig` terisi -> perception berbasis vision; None -> ground truth.
+    """
     frame = localization.PathFrame(ref_rh)
     loc = localization.CarlaGTLocalization(ego_actor, params['rear_axle_offset_x'])
-    lihat = perception.GroundTruthPerception(world, ego_actor)
+    lihat = (perception.VisionPerception(net, rig) if rig
+             else perception.GroundTruthPerception(world, ego_actor))
     fsm = planning.BehaviorFSM()
     mpc = control.MPCController(params)
 
     dt = config.FIXED_DELTA_SECONDS
     traj, t_traj, v_prev = None, 0.0, None
     a_filt, a_cmd_prev = 0.0, 0.0
-    n_layak, offset_pilih = 0, 0.0
+    n_layak, offset_pilih, layak_akhir = 0, 0.0, []
+    t_plan = float('nan')
     log, states, posisi = [], [], []
     n_warm = int(config.WARMUP_DETIK / dt)
     aktor = []
@@ -103,41 +125,72 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan):
         t = k * dt
 
         ego = frame.ego(loc.update())                        # 20 Hz
-        # perception melaporkan frame ego; konversi ke frame jalan di sini
-        obs = localization.halangan_ego_ke_jalan(lihat.update(), ego)
         a_mentah = 0.0 if v_prev is None else (ego.v - v_prev) / dt
         v_prev = ego.v
         # potong lonjakan non-fisik lalu haluskan; mentahnya terlalu berderau
         # untuk dipakai langsung sebagai syarat batas maupun umpan balik PI
         a_mentah = float(np.clip(a_mentah, config.A_MIN, config.A_MAX))
         a_filt += config.A_FILTER_ALPHA * (a_mentah - a_filt)
+        # perception melaporkan frame ego; konversi ke frame jalan di sini.
+        # Vision perlu kinematika ego (laju, percepatan, yaw rate) untuk
+        # mengompensasi gerak ego di langkah prediksi Kalman -- bukan posisi ego.
+        # Antrean kamera WAJIB dikuras tiap tick, termasuk saat pemanasan.
+        citra = rig.ambil() if rig else None
+        obs = localization.halangan_ego_ke_jalan(
+            lihat.update(citra, dt, ego.v, a_filt, ego.yaw_rate) if rig
+            else lihat.update(), ego)
 
         if k % 2 == 0:                                       # 10 Hz
             obs_rel = obs.copy()
             if len(obs_rel):
                 obs_rel[:, 0] -= ego.x        # FSM memakai x relatif terhadap ego
-            dy = ego.v * math.sin(ego.yaw)
-            fsm.update(t, ego.y, ego.v, obs_rel, dy)
+            # Laju lateral awal planner dari RENCANA, sama alasannya dengan ddy
+            # di bawah (bagian 15.3 baru memperbaiki ddy0; dy0 masih hasil ukur
+            # dan lupnya tetap terbuka -- bagian 19.9). Hasil ukur dipakai hanya
+            # saat belum ada rencana sama sekali.
+            dy_ukur = ego.v * math.sin(ego.yaw)
+            dy = dy_ukur if traj is None else float(traj.lateral_at(t - t_traj)[1])
+            fsm.update(t, ego.y, ego.v, obs_rel, dy_ukur)
             # Percepatan awal lateral (y'') dan longitudinal (a0) dari RENCANA/
             # PERINTAH, bukan hasil ukur. Hasil ukur menutup lup planner-MPC: MPC
             # mengikuti kelengkungan awal rencana, percepatan itu terukur, lalu
             # jadi syarat awal rencana berikutnya. Di S3 satu tendangan kecil
             # tumbuh jadi simpangan 2,3 m keluar lajur (TUNING_MPC.md 13).
             ddy = 0.0 if traj is None else float(traj.lateral_at(t - t_traj)[2])
-            traj, layak = planning.plan_lane_change(ego.y, dy, ddy, ego.x, ego.v,
-                                                    a_cmd_prev, fsm.v_goal,
-                                                    obstacles=obs, y_goal=fsm.y_goal)
-            t_traj = t
+            traj_baru, layak = planning.plan_lane_change(ego.y, dy, ddy, ego.x, ego.v,
+                                                         a_cmd_prev, fsm.v_goal,
+                                                         obstacles=obs, y_goal=fsm.y_goal)
+            # KOMITMEN: replan yang gagal tidak membuang rencana yang sedang
+            # berjalan (bagian 19.14). Menyeberang itu balapan antara kemajuan
+            # lateral dan celah yang menutup, dan celah minimum yang dibutuhkan
+            # JUSTRU MENGECIL saat ego makin menyeberang (19.13) -- jadi berhenti
+            # di tengah adalah hal terburuk yang bisa dilakukan. Tanpa ini rencana
+            # berkedip 10 kali per run, lima kepingannya lebih pendek dari 0,3 s.
+            if traj_baru is not None:
+                traj, t_traj = traj_baru, t
+            elif traj is not None and t - t_traj > traj.durasi():
+                traj = None                      # kedaluwarsa, jangan dipegang selamanya
             # bagian 11.5: jumlah kandidat lolos & offset terpilih = diagnostik
             # apakah sampling offset/T cocok. Kalau sering nol, samplingnya salah.
             n_layak = len(layak)
             offset_pilih = layak[0][1] if layak else 0.0
+            layak_akhir = layak
+            t_plan = layak[0][2] if layak else float('nan')
 
-        xref = (xref_tahan(ego, fsm.y_goal, fsm.v_goal) if traj is None
+        xref = (xref_tahan(ego, fsm.v_goal) if traj is None
                 else xref_dari(traj, t - t_traj))
         cmd = mpc.compute(ego.as_vector(), xref, a_filt, obs)  # 20 Hz
         kirim = [carla.command.ApplyVehicleControl(ego_actor.id, to_carla(cmd))]
         a_cmd_prev = cmd.accel_cmd
+        if perekam is not None and k >= 0:
+            perekam.tambah(
+                sensors.rgb_array(citra['rgb']),
+                rig.sensor['rgb'].get_transform().get_inverse_matrix(),
+                lihat.pelacak.terlihat(), layak_akhir, traj,
+                [f't = {t:5.2f} s', f'{fsm.state}', f'{ego.v * 3.6:.1f} km/jam',
+                 f'kandidat lolos {n_layak}/9, offset {offset_pilih:.1f} m',
+                 f'solve {cmd.solve_time_ms:.0f} ms'],
+                ego.v)
         if not cmd.solver_ok:
             print(f'  solver gagal t={t:5.2f}s  state={fsm.state:<22} '
                   f'{mpc.last_status}  ({cmd.solve_time_ms:.0f} ms)')
@@ -156,11 +209,20 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan):
                 pos.append((*frame.titik(tf.location.x, -tf.location.y),
                             localization.wrap(-math.radians(tf.rotation.yaw) - frame.psi0)))
             tx, ty = pos[0][:2]
+            # Estimasi perception untuk target, DI SAMPING ground truth-nya: tanpa
+            # ini tidak ada cara membedakan "kandidat habis karena estimasi meleset"
+            # dari "kandidat habis karena geometrinya memang mepet".
+            if len(obs):
+                j = int(np.argmin(np.hypot(obs[:, 0] - tx, obs[:, 1] - ty)))
+                x_est, y_est = float(obs[j, 0]), float(obs[j, 1])
+            else:
+                x_est = y_est = float('nan')
             log.append([t, ego.x, ego.y, ego.yaw, ego.v, xref[1, 0], fsm.y_goal,
                         ego.y - fsm.y_goal, cmd.accel_cmd, cmd.delta_cmd, cmd.steer,
                         cmd.throttle, cmd.brake, cmd.solve_time_ms,
                         float(cmd.solver_ok), float(n_layak), offset_pilih, tx, ty,
-                        fsm.v_goal])
+                        fsm.v_goal, x_est, y_est,
+                        float(mpc.last_iter), t_plan, mpc.last_eps, mpc.last_eps_lat])
             states.append(fsm.state)
             posisi.append(pos)
 
@@ -171,6 +233,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--detik', type=float, default=20.0)
     ap.add_argument('--skenario', default='S1', choices=list(config.SKENARIO))
+    ap.add_argument('--perception', default='gt', choices=('gt', 'vision'))
+    ap.add_argument('--rekam', action='store_true',
+                    help='video kamera + deteksi + kandidat planner (butuh --perception vision)')
     args = ap.parse_args()
     kendaraan = config.SKENARIO[args.skenario]
 
@@ -182,17 +247,33 @@ def main():
             # bagian 11.1: ego mulai di v0
             simulation.tick(world, [simulation.kecepatan(ego, config.EGO_V0)])
             aktor = []
+            # Rig kamera hanya dipasang di mode vision: mode gt harus tetap
+            # identik dengan run sebelumnya, tanpa beban render tambahan.
+            rig = net = perekam = None
+            if args.perception == 'vision':
+                import yolopx
+                net = yolopx.YOLOPX()
+                rig = sensors.RigKamera(world, ego, params)
+                print(f'vision: YOLOPX epoch {net.epoch}, {net.device}')
+                if args.rekam:
+                    perekam = gambar.Perekam(localization.PathFrame(ref), ref5)
+            elif args.rekam:
+                ap.error('--rekam butuh --perception vision')
             with evaluation.pantau_tabrakan(world, ego) as monitor:
                 try:
                     log, states, aktor, posisi = run(world, ego, monitor, params, ref,
-                                                     ref5, args.detik, kendaraan)
+                                                     ref5, args.detik, kendaraan, rig,
+                                                     net, perekam)
                     dims = [(2 * a.bounding_box.extent.x, 2 * a.bounding_box.extent.y)
                             for a in aktor]
                 finally:
                     for a in aktor:
                         a.destroy()
+                    if rig:
+                        rig.destroy()
 
-    path = os.path.join(config.OUT_DIR, f'run_{args.skenario.lower()}_mpc_gt.npz')
+    path = os.path.join(config.OUT_DIR,
+                        f'run_{args.skenario.lower()}_mpc_{args.perception}.npz')
     np.savez(path, log=log, fsm_state=states, kolom=KOLOM, posisi_kendaraan=posisi,
              dim_kendaraan=np.array(dims), dim_ego=np.array([params['length'], params['width']]))
     k = {nama: i for i, nama in enumerate(KOLOM)}     # indeks lewat nama, bukan angka
@@ -225,6 +306,8 @@ def main():
         yaw=log[:, k['yaw']], yaw_tgt=posisi[:, 0, 2])
     print()
     print(evaluation.ringkas_penilaian(berhasil, kategori, rincian))
+    if perekam is not None:
+        perekam.simpan(f'vision_{args.skenario.lower()}.mp4')
     print(f'\nlog: {path}')
 
 
