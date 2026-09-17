@@ -5,7 +5,11 @@ diselesaikan. Ditulis untuk dibaca ulang saat menyusun bab metodologi dan saat
 menyiapkan sidang.
 
 Lingkungan: CARLA 0.9.16, Ubuntu, Python 3.10. Kode di folder ini.
-Rencana kerja lengkap: `rencana_skripsi_mpc_overtaking.md`.
+Rencana kerja lengkap: `rencana_skripsi_mpc_overtaking.md` — **tidak ada di repo
+ini maupun di mesin pengembangan**; dicari 16 September 2026 dan tidak ditemukan.
+Seluruh rujukan "bagian X.Y" di bawah menunjuk dokumen itu. Bagian 11.3 (definisi
+skenario) karena itu tidak pernah bisa dicocokkan: definisi S1 dan S3 di
+`config.SKENARIO` adalah rekonstruksi, dan S2/S4/S5 tidak punya definisi sama sekali.
 
 ---
 

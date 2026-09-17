@@ -359,9 +359,19 @@ yang sama, dan langkah 1 sudah menunjukkan betapa peka keseimbangan itu.
 
 ---
 
-## 7. Bobot akhir
+## 7. Bobot akhir (Tahap 5)
 
-| Parameter | Bagian 7.3 | Akhir | Alasan |
+> **TERSALIP SEBAGIAN — 16 September 2026.** Tabel di bawah adalah bobot akhir
+> **Tahap 5**, dan seluruh hasil sebelum vision memakainya. Setelah Tahap 8,
+> `Q[Y]` 20 -> 150 dan `Q[psi]` 450 -> 3400 lewat sapuan SKENARIO PENUH, yang
+> baru menjadi sah setelah run vision terulang. `MPC_RHO_LAT` = 50 juga
+> ditambahkan. Lihat `WRITING_SUMMARY.md` bagian 20.
+>
+> Bagian ini sengaja TIDAK ditulis ulang: penurunan `Q[psi]` = 450 di bawah dan
+> di bagian 11.5 tetap sah pada `Q[Y]` = 20, dan justru penurunan itu yang
+> menjelaskan kenapa rasio `Q[psi]`/`Q[Y]` = 22,5 harus dijaga saat `Q[Y]` naik.
+
+| Parameter | Bagian 7.3 | Akhir Tahap 5 | Alasan |
 |---|---|---|---|
 | `Q[X]` | 1,0 | 1,0 | tidak disentuh |
 | `Q[Y]` | 20,0 | **20,0** | disapu dua kali, terbukti optimal |
@@ -651,6 +661,11 @@ saling memengaruhi secara terukur.
 
 ### 11.5 `Q_psi = 450` — tafsiran fisik dan analogi redaman kritis
 
+> Berlaku pada `Q_Y` = 20. Yang menentukan redaman adalah RASIO
+> `Q_psi`/`Q_Y` = 22,5, bukan 450 itu sendiri — dibuktikan di
+> `WRITING_SUMMARY.md` bagian 20.3, ketika `Q_Y` naik ke 150 dan sapuan
+> step response independen memilih 3400 (= 22,5 × 150).
+
 Galat arah `psi` menghasilkan galat lateral `v * tau * psi` setelah `tau` detik.
 Menyamakan biayanya, `Q_psi * psi² = Q_Y * (v * tau * psi)²`, memberi:
 
@@ -682,6 +697,11 @@ Kalau skenario lain berjalan di atas `V_REF`, `Q_psi = 550` (0,0%, settling
 1,10 s) adalah pilihan yang lebih bermargin.
 
 ### 11.6 `Q_Y = 20` dan `Rd_delta = 20` — nilai proposal dipertahankan dengan bukti
+
+> `Q_Y` = 20 tersalip di Tahap 8 (menjadi 150). Bukan karena penurunan di
+> bawah keliru, melainkan karena step response tidak bisa melihat apa yang
+> hanya muncul di skenario penuh: ego melebar keluar lajur tujuan saat
+> perception berisik. `Rd_delta` = 20 tidak berubah.
 
 Keduanya disapu dan optimum jatuh tepat di nilai proposal: `Q_Y` 14 lebih lambat
 (1,25 s), 28 memunculkan overshoot (2,9%); `Rd` 40 memunculkan overshoot 0,3%

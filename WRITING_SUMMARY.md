@@ -21,18 +21,22 @@ Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
 | 5 | MPC (CasADi + IPOPT) + tuning bobot | **selesai** |
 | 6 | Integrasi end-to-end (S1 dan S3) | **selesai** |
 | 7 | Baseline Pure Pursuit/Stanley | **DIBATALKAN** — lihat bagian 13 |
-| 8 | Perception lengkap (perbaikan leakage) | belum |
-| 9 | Eksperimen penuh | belum |
+| 8 | Perception lengkap (YOLOPX + depth + tracking) | **selesai untuk S1** |
+| 9 | Eksperimen penuh | **selesai untuk S1**; S2-S5 belum |
 
-Kode: 3.238 baris, 65 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
-Terakhir diperbarui 12 September 2026.
+Kode: 5.394 baris, 91 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+Terakhir diperbarui 17 September 2026.
 
 **Yang boleh ditulis sekarang:** seluruh bab 3 (metodologi), dan bab 4 untuk
-hasil kendali satu run per skenario S1 dan S3 (bagian 14), tuning bobot
-(`TUNING_MPC.md` bagian 10-11), serta temuan metodologis (bagian 15).
+skenario S1 secara penuh — success rate dari ulangan yang sah (bagian 21),
+metrik per layer dan per fase (bagian 23), perbandingan MPC+GT versus MPC+vision,
+tuning bobot (`TUNING_MPC.md` bagian 10-11 dan bagian 20 di sini), serta seluruh
+temuan metodologis (bagian 15, 19, 20).
 
-**Belum boleh ditulis:** success rate (butuh 10-20 ulangan per skenario,
-Tahap 9), skenario S2/S4/S5, dan apa pun tentang perception berbasis vision.
+**Belum boleh ditulis:** skenario S2/S4/S5 (definisinya tidak ada), hasil S3
+dengan vision (butuh kamera belakang), dan **angka pelatihan YOLOPX** di bagian
+18.1 — split-nya masih bocor. Yang sah dari perception adalah pengukuran
+terhadap simulator: bagian 18.2-18.4 dan 19.2.
 
 ---
 
@@ -410,16 +414,39 @@ Data mentah: `vehicle_params.json`, `model_validation.csv`,
   memutar kotak menurut sudut hadap masing-masing kendaraan, jadi angka jarak yang
   dilaporkan sudah eksak. Constraint tetap memakai sudut nol; itu pendekatan desain,
   dan kecukupannya ditunjukkan hasil ukur: saat kedua bodi berdampingan sudut hadap
-  ego hanya <= 5,1° dan jarak yang tercapai 1,43-1,51 m terhadap syarat 1,0 m.
+  ego hanya <= 5,1° dan jarak yang tercapai 1,42-1,47 m terhadap syarat 1,0 m.
   Nyatakan sebagai asumsi perancangan, bukan sebagai celah.
 - **Dimensi kendaraan lain dianggap tetap** (Nissan Patrol, yang terbesar di
   skenario); perception tidak mengukur dimensi. Masuk batasan masalah.
-- S1 menghasilkan 4 tick tanpa kandidat planner; sudah ada sebelum perbaikan
-  jangkar (diperiksa dengan menjalankan ulang kode lama), belum ditelusuri.
-- Skenario S2, S4, S5 belum ada. Definisi S3 dibuat tanpa naskah bagian 11.3
-  rencana kerja, jadi cocokkan dulu sebelum ditulis.
-- `D_SAFE_DEPAN`, `D_SAFE_BELAKANG`, `PASS_MARGIN` masih memakai nilai proposal
-  apa adanya, belum dituning.
+- Skenario S2, S4, S5 **tidak punya definisi di repo ini sama sekali**. Definisi
+  S1 dan S3 pun rekonstruksi, bukan salinan bagian 11.3 rencana kerja.
+- `D_SAFE_DEPAN` dan `D_SAFE_BELAKANG` belum dituning: keduanya tidak mengikat di
+  S1 (lajur tujuan kosong). `PASS_MARGIN` sudah disapu di Tahap 8 — 4/8/14 m
+  nyaris tak berbeda, jadi 8,0 dipertahankan (bagian 20.2).
+
+**Ditutup sejak draf sebelumnya:**
+
+- ~~4 tick tanpa kandidat planner di S1 belum ditelusuri~~ → sudah: geometri zona
+  aman, bukan tuning. Vision memberi 40 tick, dan angka itu bertahan 38-44 di
+  seluruh sapuan (bagian 19.13, 20.5).
+- ~~Tuning ulang setelah Tahap 8~~ → selesai, hanya `Q[y]`/`Q[psi]` yang berubah
+  (bagian 20).
+- ~~Klaim real-time belum diukur di mesin senggang~~ → diukur setelah server
+  direstart (bagian 21.3), meski mesinnya tidak benar-benar sepi (load ~3-5).
+
+**Terbuka sejak Tahap 8:**
+
+- **Data leakage YOLOPX** — angka pelatihan bagian 18.1 tidak sah. Keputusan
+  penulis: latih ulang dengan split per-sesi, atau nyatakan eksplisit dan
+  bersandar pada pengukuran terhadap simulator saja.
+- **Validasi perception saat berdampingan** belum terkendali; angkanya diambil
+  dari log loop tertutup, bukan sapuan terancang (bagian 19.8).
+- **S3 dengan vision** butuh kamera belakang (bagian 19.6).
+- **Sitasi ByteTrack** belum dibuka sumbernya, jadi sengaja belum masuk daftar
+  pustaka meski strateginya dipakai `tracking.py`. Terbit 2022 — tepat di batas
+  aturan empat tahun.
+- **Anggaran tick** kasus terburuk 48,9 ms dari 50 ms (bagian 21.3). Harus
+  ditulis apa adanya.
 
 
 ---
@@ -496,18 +523,26 @@ waktu solve di `TUNING_MPC.md` bagian 10).
 
 ### 14.2 Bobot dan gain final
 
-| Parameter | Proposal 7.3 | Final | Dasar |
-|---|---|---|---|
-| `Q` = (X, Y, psi, v) | (1; 20; 10; 2) | **(1; 20; 450; 2)** | `Q[psi]` = titik redaman kritis empiris |
-| `Qf` | 5·Q | 5·Q | tidak disentuh |
-| `R` = (a, delta) | (0,1; 1,0) | (0,1; 1,0) | tidak disentuh |
-| `Rd` = (a, delta) | (1,0; 20,0) | (1,0; 20,0) | disapu, terbukti optimal |
-| `rho` | 1000 | 1000 | tidak disentuh |
-| `kp` throttle | 0,08 | **0,14** | = 1/gain plant terukur |
-| `ki` throttle | 0,25 | 0,25 | tengah geometrik plateau |
+| Parameter | Proposal 7.3 | Setelah Tahap 5 | **Final (setelah Tahap 8)** | Dasar |
+|---|---|---|---|---|
+| `Q` = (X, Y, psi, v) | (1; 20; 10; 2) | (1; 20; 450; 2) | **(1; 150; 3400; 2)** | `Q[y]` dari sapuan skenario penuh; `Q[psi]` menjaga RASIO redaman (bagian 20.3) |
+| `Qf` | 5·Q | 5·Q | 5·Q | tidak disentuh |
+| `R` = (a, delta) | (0,1; 1,0) | (0,1; 1,0) | (0,1; 1,0) | tidak disentuh |
+| `Rd` = (a, delta) | (1,0; 20,0) | (1,0; 20,0) | (1,0; 20,0) | disapu, terbukti optimal |
+| `rho` (slack zona aman) | 1000 | 1000 | 1000 | tidak disentuh |
+| `rho_lat` (slack batas kenyamanan) | — | — | **50** | 20× di bawah `rho`: keselamatan menang, kenyamanan mengalah (bagian 19.12) |
+| `kp` throttle | 0,08 | **0,14** | 0,14 | = 1/gain plant terukur |
+| `ki` throttle | 0,25 | 0,25 | 0,25 | tengah geometrik plateau |
+
+**Kolom "Setelah Tahap 5" dipertahankan dengan sengaja.** Nilai itu yang dipakai
+seluruh hasil sebelum vision, dan `TUNING_MPC.md` bagian 7 dan 11 menurunkannya
+panjang lebar. Yang berubah di Tahap 8 hanya pasangan `Q[y]`/`Q[psi]`, dan
+alasannya bukan "nilai lama salah" melainkan bahwa **sapuan skenario penuh baru
+menjadi sah setelah run vision terulang** (bagian 20.1).
 
 Alasan tiap angka, deret sapuan, dan tafsiran fisiknya ada di `TUNING_MPC.md`
-bagian 11 — itu bahan langsung untuk sub-bab tuning di bab 3.
+bagian 11 (Tahap 5) dan bagian 20 di dokumen ini (Tahap 8) — keduanya bahan
+langsung untuk sub-bab tuning di bab 3.
 
 ### 14.3 Zona aman: constraint yang menyiratkan kriteria penilaian
 

@@ -118,55 +118,75 @@ menabrak guardrail.
 
 ## Pekerjaan yang Belum Selesai
 
-Diurutkan dari yang paling mendesak.
+Diurutkan dari yang paling mendesak. Terakhir diperbarui 17 September 2026.
 
-### 1. Video hasil kendali MPC
-`record_maneuver.py` masih **playback**: physics dimatikan, posisi ego ditempel
-ke lintasan planner. Ganti sumber gerakannya jadi `apply_control` dari MPC;
-bagian rekam (`record_path.capture`) dan overlay kandidat tidak perlu diubah.
+### 1. Skenario S2, S4, S5 tidak punya definisi
+Bukan "belum diimplementasikan" — **naskahnya tidak ada di repo ini sama sekali**.
+Yang tercatat hanya sifat S5 (kendaraan depan mengerem mendadak), yang butuh
+profil kecepatan terjadwal di `main.spawn_kendaraan`. Definisi S1 dan S3 di
+`config.SKENARIO` pun rekonstruksi, bukan salinan bagian 11.3 rencana kerja —
+cocokkan dulu sebelum ditulis di skripsi.
 
-### 2. Skenario S2, S4, S5 belum ada; skrip rekam masih hardcode
-`main.py` kini membaca `config.SKENARIO` (S1, S3 -- definisi S3 dibuat tanpa
-naskah bagian 11.3, cocokkan). Skrip rekam belum:
+### 2. Data leakage YOLOPX — masalah KEABSAHAN, bukan performa
+Split per-frame membuat frame berurutan dari sesi rekaman yang sama masuk train
+dan val sekaligus. Angka pelatihan (mAP50 0,991, `WRITING_SUMMARY.md` 18.1)
+**tidak boleh diklaim apa adanya**. Dua jalan: latih ulang dengan split per-sesi,
+atau nyatakan eksplisit bahwa angka pelatihan tidak sah dan bersandar sepenuhnya
+pada pengukuran terhadap simulator (bagian 18.2-18.4 dan 19.2), yang memang
+bersih karena diukur di lingkungan uji, bukan di data latih.
 
-| Berkas | Kecepatan ego | Kecepatan target | Jarak awal |
-|---|---|---|---|
-| `main.py` | `config.V_REF` = 13,4 m/s | `config.SKENARIO` | `config.SKENARIO` |
-| `record_maneuver.py` | **13,9 (hardcode)** | 7,0 (hardcode) | **50 m (hardcode)** |
-| `record_path.py` | **13,9 (hardcode)** | — | — |
+### 3. S3 dengan vision butuh kamera belakang
+Kendaraan lajur tujuan di S3 mulai **10 m di belakang ego**, dan rig satu kamera
+depan (fov 90°) baru melihatnya setelah ia melewati bumper ego. Gerbang
+`D_SAFE_BELAKANG` karena itu selalu lolos — bukan karena lajurnya aman,
+melainkan karena tidak terlihat. Ongkos kamera belakang 14,4 ms per tick;
+anggaran masih cukup (17,9 + 14,4 + 14,4 = 46,7 dari 50 ms).
 
-Selain itu, `record_maneuver.py` baris ~181 menuliskan langsung offset sumbu belakang
-`-1.4329...` alih-alih membaca `out/vehicle_params.json`. S5 (kendaraan depan
-mengerem mendadak) butuh profil kecepatan terjadwal.
+### 4. Validasi perception saat berdampingan belum terkendali
+`check_estimation.py` menyapu 55 → 9 m tetapi seluruhnya di lajur ego dengan ego
+berjalan lurus. Angka untuk kasus berdampingan (bias +0,39 m, maks +2,41 m)
+diambil dari log run loop tertutup — bukan sapuan yang dirancang. Padahal di
+situlah `perception.koreksi_muka` bekerja paling keras, dan asumsi "ego dan
+target sehadap" melemah saat yaw ego mencapai 10,8°.
 
-### 3. Tahap 8 — `VisionPerception`
-`perception.VisionPerception` + `tracking.py` sudah ada dan tervalidasi terhadap
-ground truth simulator (`check_estimation.py`): jarak RMS 0,046 m, kecepatan RMS
-0,020 m/s, jangkauan deteksi sampai 45,6 m. **Belum disambungkan ke `main.py`.**
+### 5. 40 tick tanpa kandidat planner (vision) versus 4 (ground truth)
+Bertahan 38-44 di **seluruh** sapuan parameter, jadi ini bukan soal tuning
+melainkan geometri zona aman (`WRITING_SUMMARY.md` 19.13). Tidak menurunkan
+keselamatan — jarak bodi vision justru 2,10 m versus 1,42 m milik GT — karena
+sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal bukan lagi
+kehilangan arah. Menyelesaikannya menuntut perubahan rancangan.
 
-Sisa pekerjaannya:
-- flag `--perception vision|gt` di `main.py`, lalu S1 loop tertutup;
-- validasi di **lajur sebelah pada sudut besar** — belum diuji sama sekali;
-- kamera belakang: tanpa itu S3 tidak bisa dijalankan dengan vision, karena
-  kendaraan lajur tujuan mulai di belakang ego dan `D_SAFE_BELAKANG` selalu
-  lolos bukan karena aman melainkan karena tidak terlihat;
-- **perbaikan data leakage** YOLOPX (split per-frame; akurasi 96–98% tidak valid).
+### 6. Skrip rekam lama masih playback dan hardcode
+`main.py --perception vision --rekam` sudah merekam **hasil kendali sungguhan**
+dengan overlay deteksi dan kandidat planner, jadi kebutuhan utamanya tertutupi.
+Yang tersisa: `record_maneuver.py` masih playback (physics mati, ego ditempel ke
+lintasan planner) dan hardcode 13,9 / 7,0 / 50 m, serta menuliskan offset sumbu
+belakang `-1.4329...` alih-alih membaca `out/vehicle_params.json`.
 
-### 4. Tuning ulang setelah Tahap 8
-Bagian 10.6: deteksi vision lebih berisik, bobot MPC dan parameter FSM **wajib**
-dituning ulang. Bobot sekarang dituning di atas ground truth. Harness-nya siap
-(`tuning.py`).
+**Keduanya juga tidak bisa dijalankan di mesin ini**: `record_path.py` dan
+`record_maneuver.py` memanggil ffmpeg, yang tidak terpasang. `overlay.py` sudah
+memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
 
-### 5. Tahap 9 — eksperimen penuh
-Matriks bagian 11.4 tinggal dua baris: MPC + GT dan MPC + vision. Masing-masing
-skenario diulang 10–20 kali.
+### 7. Sitasi
+- **ByteTrack** — strateginya dipakai `tracking.py`, tapi sumbernya belum
+  dibuka, jadi sengaja tidak ditulis sebagai entri pustaka. Terbit 2022, tepat
+  di batas aturan empat tahun.
+- **Flash & Hogan (1985)** — dasar quintic minimum-jerk, belum diverifikasi ke
+  sumber primer.
+- **Kebijakan aturan 4 tahun** untuk sumber asal konsep (Werling 2010,
+  Hayward 1972, Flash & Hogan 1985, KITTI 2013) belum diputuskan. Lihat
+  `WRITING_SUMMARY.md` bagian 16.
 
-### 6. Lain-lain
-- Sitasi Flash & Hogan (1985) belum diverifikasi ke sumber primer.
-- Klaim real-time: waktu solve **harus diukur di mesin senggang** — lihat
-  "Perlu diperhatikan".
+### 8. Lain-lain
+- Klaim real-time sudah diukur (`WRITING_SUMMARY.md` 21.3), tetapi mesin **tidak
+  benar-benar senggang** saat pengukuran (load ~3-5). Angka di mesin sepi
+  kemungkinan sedikit lebih baik, bukan lebih buruk.
+- Kasus terburuk anggaran tick praktis menyentuh batas: 14,4 + 34,5 = 48,9 ms
+  dari 50 ms. Harus ditulis apa adanya, bukan dilaporkan sebagai "17,9 dari 50".
 - `Q[v]` dan `R[a]` sengaja tidak dituning; `ThrottlePI` sudah menangani
-  kecepatan (lihat `TUNING_MPC.md` bagian 6.4).
+  kecepatan (`TUNING_MPC.md` 6.4).
+- Ego melebar sampai −4,71 m saat menyalip dengan vision (tepi lajur −5,25 m).
+  Di dalam lajur, tapi marginnya 0,54 m.
 
 ---
 
