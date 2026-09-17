@@ -2,7 +2,7 @@
 
 Dibaca dari log mentah; tidak perlu menjalankan ulang simulasi.
 
-    python plot_banding.py                  # S1 -> out/banding_s1.png
+    python plot_compare.py                  # S1 -> out/compare_s1.png
 """
 import argparse
 import os
@@ -49,20 +49,20 @@ def main():
     ax[0].axhline(config.SIDE_SIGN * config.LANE_WIDTH, color='0.5', lw=.8)
     for tepi in (0.5, -0.5, -1.5):
         ax[0].axhline(tepi * config.LANE_WIDTH, color='0.75', ls=':', lw=.8)
-    ax[0].set_ylabel('simpangan lateral (m)')
+    ax[0].set_ylabel('lateral deviation (m)')
 
-    ax[1].axhline(config.V_MAX * 3.6, color='crimson', ls=':', lw=1, label='batas 50 km/jam')
-    ax[1].set_ylabel('kecepatan (km/jam)')
+    ax[1].axhline(config.V_MAX * 3.6, color='crimson', ls=':', lw=1, label='limit 50 km/h')
+    ax[1].set_ylabel('speed (km/h)')
 
     ax[2].axhline(config.JARAK_AMAN, color='crimson', ls=':', lw=1.2,
-                  label=f'syarat lulus {config.JARAK_AMAN:.0f} m')
-    ax[2].set_ylabel('jarak antar bodi (m)')
+                  label=f'pass criterion {config.JARAK_AMAN:.0f} m')
+    ax[2].set_ylabel('body-to-body distance (m)')
     # Dipotong ke 12 m: yang perlu terbaca adalah daerah kritis dekat syarat
     # 1,0 m, bukan 68 m saat kedua kendaraan masih berjauhan.
     ax[2].set_ylim(0, 12)
 
-    ax[3].set_ylabel('kandidat planner lolos')
-    ax[3].set_xlabel('t (detik)')
+    ax[3].set_ylabel('feasible planner candidates')
+    ax[3].set_xlabel('t (s)')
     ax[3].set_ylim(-0.4, 9.6)
 
     for m, g in GAYA.items():
@@ -80,16 +80,16 @@ def main():
                        fontsize=9, fontweight='bold',
                        arrowprops=dict(arrowstyle='->', color=warna, lw=1))
         nol = int((x['n_layak'] == 0).sum())
-        ax[3].annotate(f'{nol} tick tanpa kandidat', (0.99, 0.30 + 0.16 * (m == 'gt')),
+        ax[3].annotate(f'{nol} ticks with no candidate', (0.99, 0.30 + 0.16 * (m == 'gt')),
                        xycoords='axes fraction', ha='right', color=warna, fontsize=9)
 
-    ax[0].legend(loc='lower right', fontsize=9)
+    ax[0].legend(loc='upper right', fontsize=9)
     for a in ax[1:3]:
-        a.legend(loc='lower right', fontsize=8)
-    fig.suptitle(f'Skenario {args.skenario} — pengaruh sumber perception terhadap hasil kendali',
+        a.legend(loc='upper right', fontsize=8)
+    fig.suptitle(f'Scenario {args.skenario} — effect of the perception source on control',
                  y=0.985)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    keluar = os.path.join(config.OUT_DIR, f'banding_{sk}.png')
+    keluar = os.path.join(config.OUT_DIR, f'compare_{sk}.png')
     fig.savefig(keluar, dpi=150)
     print(f'Grafik: {keluar}')
 

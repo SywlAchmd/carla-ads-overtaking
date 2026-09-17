@@ -4,8 +4,8 @@ Kendaraan target ditaruh pada beberapa jarak di depan ego, lalu tiap frame dinil
 apakah target terdeteksi, berapa positif palsu, dan seberapa tepat jarak yang
 dibaca dari depth camera. Angka pelatihan tidak dipakai -- split-nya masih bocor.
 
-    python cek_deteksi.py                      # sapuan jarak, lajur ego
-    python cek_deteksi.py --lajur 1            # target di lajur menyalip
+    python check_detection.py                      # sapuan jarak, lajur ego
+    python check_detection.py --lajur 1            # target di lajur menyalip
 """
 import argparse
 import json
@@ -149,7 +149,7 @@ def main_():
                         if gt is not None:
                             cv2.rectangle(gambar, (int(gt[0]), int(gt[1])), (int(gt[2]), int(gt[3])),
                                           (255, 255, 255), 1)
-                        jalur = f'{config.OUT_DIR}/deteksi_{jarak}m_lajur{args.lajur}{args.tag}.png'
+                        jalur = f'{config.OUT_DIR}/detection_{jarak}m_lane{args.lajur}{args.tag}.png'
                         cv2.imwrite(jalur, gambar)
                         print(f'       gambar -> {jalur}')
                     target.destroy()

@@ -456,7 +456,7 @@ memberi lima hasil berbeda sejak tick pertama; satu gagal `lane_departure`.
 Fisika CARLA sendiri terbukti deterministik (throttle tetap, 4 run, selisih 0).
 
 Perbaikan: semua perintah lewat `simulation.tick` (`apply_batch_sync`, kembali
-setelah perintah diterapkan). Ditegakkan `tests/test_arsitektur.py`.
+setelah perintah diterapkan). Ditegakkan `tests/test_architecture.py`.
 
 **Dampak pada bobot lateral: kesimpulan tidak berubah.** Overshoot bergeser
 0,5-1 poin persen, urutan dan titik optimum sama:

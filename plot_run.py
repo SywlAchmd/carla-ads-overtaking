@@ -55,35 +55,38 @@ def main():
     ax[0].axhline(config.SIDE_SIGN * config.LANE_WIDTH, color='0.5', lw=.8)
     for tepi in (0.5, -0.5, -1.5):
         ax[0].axhline(tepi * config.LANE_WIDTH, color='0.75', ls=':', lw=.8)
-    ax[0].plot(t, y, lw=2, label='ego (sumbu belakang)')
-    ax[0].plot(t, L[:, k['y_goal']], '--', lw=1.2, label='tengah lajur tujuan FSM')
-    ax[0].set_ylabel('simpangan lateral (m)'); ax[0].legend(loc='lower right', fontsize=8)
+    ax[0].plot(t, y, lw=2, label='ego (rear axle)')
+    ax[0].plot(t, L[:, k['y_goal']], '--', lw=1.2, label='FSM target lane centre')
+    ax[0].set_ylabel('lateral deviation (m)'); ax[0].legend(loc='upper right', fontsize=8)
 
-    ax[1].plot(t, L[:, k['v']] * 3.6, lw=2, label='kecepatan ego')
-    ax[1].plot(t, L[:, k['v_goal']] * 3.6, '--', lw=1.2, label='acuan planner')
-    ax[1].axhline(config.V_MAX * 3.6, color='crimson', ls=':', lw=1, label='batas 50 km/jam')
-    ax[1].set_ylabel('kecepatan (km/jam)'); ax[1].legend(loc='lower right', fontsize=8)
+    ax[1].plot(t, L[:, k['v']] * 3.6, lw=2, label='ego speed')
+    ax[1].plot(t, L[:, k['v_goal']] * 3.6, '--', lw=1.2, label='planner reference')
+    ax[1].axhline(config.V_MAX * 3.6, color='crimson', ls=':', lw=1, label='limit 50 km/h')
+    ax[1].set_ylabel('speed (km/h)'); ax[1].legend(loc='upper right', fontsize=8)
 
     for i in range(pos.shape[1]):
         d = evaluation.jarak_kotak(pos[:, i, 0] - xc, pos[:, i, 1] - yc,
                                    f['dim_ego'], f['dim_kendaraan'][i], yaw, pos[:, i, 2])
-        ax[2].plot(t, d, lw=2, label='target' if i == 0 else f'kendaraan {i + 1}')
+        ax[2].plot(t, d, lw=2, label='target' if i == 0 else f'vehicle {i + 1}')
     ax[2].axhline(config.JARAK_AMAN, color='crimson', ls=':', lw=1,
-                  label=f'syarat {config.JARAK_AMAN:.0f} m')
-    ax[2].set_ylabel('jarak antar bodi (m)'); ax[2].legend(loc='upper right', fontsize=8)
+                  label=f'requirement {config.JARAK_AMAN:.0f} m')
+    ax[2].set_ylabel('body-to-body distance (m)'); ax[2].legend(loc='upper right', fontsize=8)
 
-    ax[3].plot(t, L[:, k['delta_cmd']], lw=1.5, label='delta MPC (rad)')
+    ax[3].plot(t, L[:, k['delta_cmd']], lw=1.5, label='MPC steering delta (rad)')
     ax3b = ax[3].twinx()
-    ax3b.plot(t, L[:, k['solve_ms']], color='tab:orange', lw=.9, label='waktu solve (ms)')
+    ax3b.plot(t, L[:, k['solve_ms']], color='tab:orange', lw=.9, label='solve time (ms)')
     ax3b.axhline(config.FIXED_DELTA_SECONDS * 1e3, color='crimson', ls=':', lw=1)
-    ax3b.set_ylabel('waktu solve (ms), anggaran 50 ms')
-    ax[3].set_ylabel('sudut kemudi (rad)'); ax[3].set_xlabel('t (detik)')
-    ax[3].legend(loc='upper left', fontsize=8); ax3b.legend(loc='upper right', fontsize=8)
+    ax3b.set_ylabel('solve time (ms), budget 50 ms')
+    ax[3].set_ylabel('steering angle (rad)'); ax[3].set_xlabel('t (s)')
+    # Dua sumbu, SATU legend: keduanya di kanan atas akan saling menimpa.
+    g1, l1 = ax[3].get_legend_handles_labels()
+    g2, l2 = ax3b.get_legend_handles_labels()
+    ax3b.legend(g1 + g2, l1 + l2, loc='upper right', fontsize=8)
 
     fig.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=w) for w in WARNA.values()],
                labels=list(WARNA), loc='upper center', ncol=5, fontsize=8, frameon=False)
     nama_p = 'ground truth perception' if args.perception == 'gt' else 'vision perception (YOLOPX + depth)'
-    fig.suptitle(f'Skenario {args.skenario} — MPC + {nama_p}', y=0.975)
+    fig.suptitle(f'Scenario {args.skenario} — MPC + {nama_p}', y=0.975)
     fig.tight_layout(rect=(0, 0, 1, 0.945))
     keluar = os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.png')
     fig.savefig(keluar, dpi=150)

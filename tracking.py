@@ -1,7 +1,7 @@
 """Pelacakan antar frame dan penapisan Kalman (rencana kerja bagian 10.3).
 
 Murni numerik: tidak mengimpor carla, torch, maupun cv2 -- bisa diuji di terminal
-tanpa menyalakan simulator (aturan 2.4, ditegakkan `tests/test_arsitektur.py`).
+tanpa menyalakan simulator (aturan 2.4, ditegakkan `tests/test_architecture.py`).
 
 **Kenapa perlu.** Satu frame kamera hanya memberi POSISI. Kecepatan halangan --
 yang dipakai FSM untuk TTC dan MPC untuk memprediksi elips sepanjang horizon --

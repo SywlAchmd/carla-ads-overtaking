@@ -6,9 +6,9 @@ angka gabungan karena itu mengukur hal lain daripada yang disangka. Modul ini
 memisahkannya per fase FSM, dan memisahkan LANE_KEEPING sebelum manuver dari
 LANE_KEEPING sesudahnya -- dua hal yang sangat berbeda meski namanya sama.
 
-    python metrik_fase.py                       # per fase, dari log run tunggal
-    python metrik_fase.py --eksperimen          # per fase, seluruh ulangan Tahap 9
-    python metrik_fase.py --layer --eksperimen  # dikelompokkan per layer arsitektur
+    python metrics.py                       # per fase, dari log run tunggal
+    python metrics.py --eksperimen          # per fase, seluruh ulangan Tahap 9
+    python metrics.py --layer --eksperimen  # dikelompokkan per layer arsitektur
 """
 import argparse
 
@@ -154,7 +154,7 @@ def main_():
 
     if args.layer:
         for mode in ('gt', 'vision'):
-            pola = (f'{config.OUT_DIR}/eksperimen_s1_{mode}.npz' if args.eksperimen
+            pola = (f'{config.OUT_DIR}/experiment_s1_{mode}.npz' if args.eksperimen
                     else f'{config.OUT_DIR}/run_s1_mpc_{mode}.npz')
             try:
                 d = np.load(pola, allow_pickle=True)
@@ -174,7 +174,7 @@ def main_():
                     print(f'    {nama:<40}{v.mean():>12.4g}{tail}')
         return
     for mode in ('gt', 'vision'):
-        pola = (f'{config.OUT_DIR}/eksperimen_s1_{mode}.npz' if args.eksperimen
+        pola = (f'{config.OUT_DIR}/experiment_s1_{mode}.npz' if args.eksperimen
                 else f'{config.OUT_DIR}/run_s1_mpc_{mode}.npz')
         try:
             d = np.load(pola, allow_pickle=True)
@@ -184,7 +184,7 @@ def main_():
         kolom = list(d['kolom'])
         if args.eksperimen:
             if 'log' not in d:
-                print(f'\n{pola} tidak memuat log mentah -- jalankan ulang eksperimen.py')
+                print(f'\n{pola} tidak memuat log mentah -- jalankan ulang experiment.py')
                 continue
             per_run = [metrik(d['log'][i], d['fsm_state'][i], kolom)
                        for i in range(len(d['log']))]

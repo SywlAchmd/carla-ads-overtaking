@@ -18,7 +18,7 @@ import numpy as np
 import config
 import control
 import evaluation
-import gambar
+import overlay
 import localization
 import perception
 import planning
@@ -256,7 +256,7 @@ def main():
                 rig = sensors.RigKamera(world, ego, params)
                 print(f'vision: YOLOPX epoch {net.epoch}, {net.device}')
                 if args.rekam:
-                    perekam = gambar.Perekam(localization.PathFrame(ref), ref5)
+                    perekam = overlay.Perekam(localization.PathFrame(ref), ref5)
             elif args.rekam:
                 ap.error('--rekam butuh --perception vision')
             with evaluation.pantau_tabrakan(world, ego) as monitor:

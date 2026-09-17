@@ -2,7 +2,7 @@
 
 Dokumen ini dibuat untuk ditempel ke percakapan baru saat mulai menulis. Isinya
 seluruh angka, sitasi, dan keputusan yang sudah terverifikasi sampai Tahap 4.
-Catatan kerja lengkap ada di `CATATAN.md` (1.088 baris); yang ini ringkasannya.
+Catatan kerja lengkap ada di `NOTES.md` (1.088 baris); yang ini ringkasannya.
 
 **Judul:** Implementasi Model Predictive Control untuk Skenario Manuver
 Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
@@ -351,8 +351,8 @@ karena PDGJ 2021 memuat semua yang dibutuhkan.
 | `model_validation.png` | Validasi bicycle model 34–50 km/jam: lintasan, error, input | Bab 3 — validasi model |
 | `model_validation_18kmh.png` | Validasi yang sama di 7–18 km/jam | Bab 3 — validasi model |
 | `planner_candidates.png` | 9 kandidat lintasan + yang terpilih + profil percepatan lateral | Bab 3 — local planner |
-| `ambang_ttc.png` | Kenapa ambang memakai waktu bukan jarak | Bab 3 atau bab 4 — pembahasan FSM |
-| `kenapa_450_derajat.png` | Ilustrasi lompatan sudut 2π | Bab 4 — pembahasan temuan |
+| `ttc_threshold.png` | Kenapa ambang memakai waktu bukan jarak | Bab 3 atau bab 4 — pembahasan FSM |
+| `why_q_psi_450.png` | Ilustrasi lompatan sudut 2π | Bab 4 — pembahasan temuan |
 | `overtake_topdown.mp4` | Video manuver tampak atas dengan overlay kandidat | Sidang |
 | `overtake_planner.mp4` | Video manuver kamera kejar dengan overlay kandidat | Sidang |
 | `reference_path.mp4` | Video jalur acuan global planner 300 m | Sidang |
@@ -670,7 +670,7 @@ bagian bawah citra, karena rig KITTI dipasang di atap station wagon sedangkan di
 sini kamera berada di atas kabin sedan. Bagian itu tidak membawa informasi jalan.
 
 Verifikasi penempatan dilakukan terhadap simulator, bukan terhadap nilai yang
-diminta: `cek_sensor.py` membaca transform sensor yang benar-benar terjadi dan
+diminta: `check_sensors.py` membaca transform sensor yang benar-benar terjadi dan
 membandingkannya dengan titik terbawah bodi sebagai permukaan jalan.
 
 **Catatan sitasi:** makalah KITTI terbit 2013, di luar aturan empat tahun. Ia
@@ -687,7 +687,7 @@ butir di bagian 16.
 
 ## 18. Kalibrasi deteksi YOLOPX terhadap ground truth (Tahap 8)
 
-15 September 2026, `cek_deteksi.py`. Nissan Patrol ditaruh pada sembilan jarak di
+15 September 2026, `check_detection.py`. Nissan Patrol ditaruh pada sembilan jarak di
 depan ego, di lajur ego dan lajur menyalip; tiap frame dibandingkan dengan kotak
 2D hasil proyeksi bounding box 3D-nya. Ini pengukuran terhadap **simulator**, di
 lingkungan uji yang sama dengan eksperimen kendali -- bukan angka pelatihan.
@@ -778,8 +778,8 @@ mengikuti konvensi anotasi data latih, bukan kekeliruan model.
 Karena kendali skripsi ini memakai geometri lajur dari peta, dua keluaran
 segmentasi itu berperan sebagai bahan pembahasan, bukan masukan kendali.
 
-Gambar: `out/deteksi_30m_lajur0.png` (fine-tuned), `out/deteksi_30m_lajur0_bdd.png`
-(BDD, pembanding), `out/deteksi_15m_lajur1.png` (lajur menyalip).
+Gambar: `out/detection_30m_lane0.png` (fine-tuned), `out/detection_30m_lane0_bdd.png`
+(BDD, pembanding), `out/detection_15m_lane1.png` (lajur menyalip).
 
 
 ---
@@ -817,7 +817,7 @@ waktu pindah lajur -- masuk batasan masalah.
 
 ### 19.2 Ketelitian estimasi terhadap ground truth simulator
 
-`cek_estimasi.py`, geometri S1 dengan kecepatan dipaksa tetap (ego 13,4 m/s,
+`check_estimation.py`, geometri S1 dengan kecepatan dipaksa tetap (ego 13,4 m/s,
 target 7,0 m/s), jarak menyapu 55 -> 9 m, 140 tick di 20 Hz.
 
 | Besaran | Bias | RMS | Maks |
@@ -1203,7 +1203,7 @@ lebarnya. Dan 38 tick nol kandidat masih jauh di atas 4 tick milik GT.
 
 ## 20. Tuning ulang di atas vision (Tahap 8, bagian 10.6)
 
-16 September 2026, `tuning_vision.py`.
+16 September 2026, `tune_vision.py`.
 
 ### 20.1 Sapuan skenario penuh kini sah
 
@@ -1212,7 +1212,7 @@ dan itu memang satu-satunya cara yang sah sebelumnya: skenario penuh belum
 terulang, sehingga selisih antar konfigurasi tidak bisa dibedakan dari derau.
 Setelah lup planner-MPC distabilkan (bagian 19.14), dua run S1 vision berkode
 identik memberi jarak bodi 2,12 / 2,12 m dan tick nol kandidat 38 / 38. **Satu
-run kini menggambarkan satu konfigurasi**, dan `tuning_vision.py` menyapu justru
+run kini menggambarkan satu konfigurasi**, dan `tune_vision.py` menyapu justru
 parameter yang tidak bisa disentuh step response: ambang FSM, bobot pemilihan
 kandidat, dan slack yang menengahi kenyamanan versus jarak aman.
 
@@ -1318,7 +1318,7 @@ menuntut perubahan rancangan, bukan bobot.
 
 ## 21. Tahap 9 — eksperimen penuh S1 (matriks bagian 11.4)
 
-16 September 2026, `eksperimen.py`. Server CARLA **direstart tepat sebelum
+16 September 2026, `experiment.py`. Server CARLA **direstart tepat sebelum
 pengukuran** -- README mencatat waktu solve 26-31 ms saat senggang versus 70 ms
 setelah server berjalan berjam-jam, jadi tanpa restart seluruh klaim real-time
 tidak sah.
@@ -1493,7 +1493,7 @@ mobil boleh berisik.
 
 ## 23. Hasil Tahap 9 lengkap, per layer dan per fase (S1)
 
-16 September 2026, `eksperimen.py` + `metrik_fase.py --layer --eksperimen`.
+16 September 2026, `experiment.py` + `metrics.py --layer --eksperimen`.
 GT 5 ulangan (log identik bit-per-bit), vision 10 ulangan. Server direstart
 sebelum pengukuran. Nilai ditulis rata-rata ± sd lintas ulangan; tanpa ± berarti
 sd di bawah resolusi yang dicetak.
@@ -1611,18 +1611,18 @@ Seluruhnya di `out/`, dibangkitkan ulang dari log tanpa menjalankan simulasi
 
 | Berkas | Isi | Perintah |
 |---|---|---|
-| `banding_s1.png` | **GT versus vision berdampingan** — simpangan lateral, kecepatan, jarak antar bodi, kandidat planner. Gambar paling padat informasi untuk slide hasil | `python plot_banding.py` |
+| `compare_s1.png` | **GT versus vision berdampingan** — simpangan lateral, kecepatan, jarak antar bodi, kandidat planner. Gambar paling padat informasi untuk slide hasil | `python plot_compare.py` |
 | `run_s1_mpc_gt.png` | S1 ground truth, 4 panel, latar diwarnai state FSM | `python plot_run.py` |
 | `run_s1_mpc_vision.png` | S1 vision, format sama | `python plot_run.py --perception vision` |
 | `run_s3_mpc_gt.png` | S3 ground truth (mengikuti lalu menyalip ulang) | `python plot_run.py --skenario S3` |
 | `vision_s1.mp4` | Video kamera dengan kotak deteksi berisi jarak dan kecepatan, kandidat planner, dan yang dieksekusi | `python main.py --perception vision --rekam` |
-| `deteksi_30m_lajur0.png` | Deteksi + segmentasi, model fine-tuned | `python cek_deteksi.py` |
-| `deteksi_30m_lajur0_bdd.png` | Pembanding: weight BDD100K asli | `python cek_deteksi.py --weight ...` |
-| `deteksi_15m_lajur1.png` | Target di lajur menyalip | `python cek_deteksi.py --lajur 1` |
-| `sensor_rgb.png`, `sensor_depth.png` | Contoh keluaran rig kamera | `python cek_sensor.py` |
+| `detection_30m_lane0.png` | Deteksi + segmentasi, model fine-tuned | `python check_detection.py` |
+| `detection_30m_lane0_bdd.png` | Pembanding: weight BDD100K asli | `python check_detection.py --weight ...` |
+| `detection_15m_lane1.png` | Target di lajur menyalip | `python check_detection.py --lajur 1` |
+| `sensor_rgb.png`, `sensor_depth.png` | Contoh keluaran rig kamera | `python check_sensors.py` |
 | `model_validation.png` | Validasi bicycle model (Tahap 1) | `python validate_model.py` |
 | `planner_candidates.png` | 9 kandidat lintasan planner | `python show_lanes.py` |
-| `ambang_ttc.png`, `kenapa_450_derajat.png`, `mpc_konsep.png` | Gambar konsep untuk bab 2-3 | — |
+| `ttc_threshold.png`, `why_q_psi_450.png`, `mpc_concept.png` | Gambar konsep untuk bab 2-3 | — |
 
 **Yang belum ada gambarnya:** tidak ada visual untuk S3 + vision, karena S3 tidak
 bisa dijalankan dengan rig satu kamera depan (kendaraan lajur tujuan mulai di

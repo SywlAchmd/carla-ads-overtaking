@@ -11,10 +11,10 @@ Yang disapu di sini justru yang TIDAK bisa disentuh step response: ambang FSM,
 bobot pemilihan kandidat planner, dan slack yang menengahi kenyamanan versus
 jarak aman.
 
-    python tuning_vision.py --sweep K_DEV 10,20,40
-    python tuning_vision.py --sweep MPC_RHO_LAT 20,50,200
-    python tuning_vision.py --sweep MPC_Q:1 20,60,150     # entri tuple, indeks 1
-    python tuning_vision.py                       # konfigurasi sekarang saja
+    python tune_vision.py --sweep K_DEV 10,20,40
+    python tune_vision.py --sweep MPC_RHO_LAT 20,50,200
+    python tune_vision.py --sweep MPC_Q:1 20,60,150     # entri tuple, indeks 1
+    python tune_vision.py                       # konfigurasi sekarang saja
 
 Parameter dibaca modul hilir lewat `config.<NAMA>` saat dipanggil, jadi cukup
 ditimpa di modul config sebelum run. Ego di-spawn ULANG tiap konfigurasi --

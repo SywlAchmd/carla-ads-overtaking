@@ -4,8 +4,8 @@ Mengulang satu konfigurasi N kali dan melaporkan success rate berikut sebaran
 tiap metrik. Kriteria lulus ditetapkan di `config` SEBELUM eksperimen dijalankan
 (bagian 11.2), jadi vonisnya tidak subjektif.
 
-    python eksperimen.py --perception gt --ulang 5
-    python eksperimen.py --perception vision --ulang 10
+    python experiment.py --perception gt --ulang 5
+    python experiment.py --perception vision --ulang 10
 
 Berapa ulangan yang perlu berbeda menurut mode:
 
@@ -27,7 +27,7 @@ import numpy as np
 import config
 import main
 import simulation
-import tuning_vision
+import tune_vision
 import yolopx
 
 METRIK = [('jarak_min', 'jarak min antar bodi [m]', '{:.3f}'),
@@ -59,7 +59,7 @@ def main_():
               f'{"nol kand":>10}{"solve rata":>12}{"solve maks":>12}{"gagal":>7}{"detik":>8}')
         for i in range(args.ulang):
             t0 = time.time()
-            m = tuning_vision.sekali(world, net, params, ref, ref5)
+            m = tune_vision.sekali(world, net, params, ref, ref5)
             hasil.append(m)
             print(f'{i + 1:>4}{m["vonis"]:>10}{m["jarak_min"]:>11.3f}{m["durasi"]:>8.2f}'
                   f'{m["lateral"]:>9.3f}{m["nol_kandidat"]:>10d}{m["solve_rata"]:>12.2f}'
@@ -88,7 +88,7 @@ def main_():
     # cukup: metrik bab 4 baru didefinisikan saat menulis, dan bagian 15.5
     # menunjukkan metrik yang tampak wajar bisa mengukur hal lain -- tanpa data
     # mentah, mendefinisikan ulang berarti menjalankan ulang seluruh eksperimen.
-    jalur = f'{config.OUT_DIR}/eksperimen_s1_{args.perception}.npz'
+    jalur = f'{config.OUT_DIR}/experiment_s1_{args.perception}.npz'
     np.savez(jalur, **{k: np.array([m[k] for m in hasil]) for k, _, _ in METRIK},
              vonis=np.array([m['vonis'] for m in hasil]),
              gagal_solver=np.array([m['gagal_solver'] for m in hasil]),

@@ -7,9 +7,9 @@ Dokumen pendamping:
 
 | File | Isi |
 |---|---|
-| `RANGKUMAN_PENULISAN.md` | angka, sitasi, dan keputusan terverifikasi — untuk menulis skripsi |
+| `WRITING_SUMMARY.md` | angka, sitasi, dan keputusan terverifikasi — untuk menulis skripsi |
 | `TUNING_MPC.md` | seluruh proses tuning bobot: teori, data percobaan, alasan berhenti |
-| `CATATAN.md` | catatan kerja kronologis lengkap, termasuk bug dan jalan buntu |
+| `NOTES.md` | catatan kerja kronologis lengkap, termasuk bug dan jalan buntu |
 
 ---
 
@@ -17,7 +17,7 @@ Dokumen pendamping:
 
 ```bash
 # 1. dependensi sistem (hanya untuk record_path.py & record_maneuver.py;
-#    gambar.py memakai cv2, tidak butuh ffmpeg)
+#    overlay.py memakai cv2, tidak butuh ffmpeg)
 sudo apt install ffmpeg
 
 # 2. dependensi Python (3.10)
@@ -49,26 +49,26 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python main.py` | skenario S1 lengkap, loop tertutup, vonis berhasil/gagal |
 | `python main.py --skenario S3 --detik 25` | lajur tujuan terisi: mengikuti, lalu menyalip ulang |
 | `python main.py --perception vision --rekam` | S1 dengan YOLOPX + depth, plus video overlay |
-| `python cek_estimasi.py` | ketelitian jarak & kecepatan vision vs ground truth |
+| `python check_estimation.py` | ketelitian jarak & kecepatan vision vs ground truth |
 | `python tuning.py --sweep Q_PSI 300,450,600` | harness tuning step response |
-| `python tuning_vision.py --sweep K_DEV 10,20,40` | sapuan parameter di skenario penuh + vision |
-| `python eksperimen.py --perception vision --ulang 10` | Tahap 9: success rate + sebaran metrik |
-| `python metrik_fase.py --layer --eksperimen` | metrik per layer/fase dari log (tidak butuh server) |
+| `python tune_vision.py --sweep K_DEV 10,20,40` | sapuan parameter di skenario penuh + vision |
+| `python experiment.py --perception vision --ulang 10` | Tahap 9: success rate + sebaran metrik |
+| `python metrics.py --layer --eksperimen` | metrik per layer/fase dari log (tidak butuh server) |
 | `python validate_model.py` | validasi bicycle model terhadap plant |
 | `python validate_model.py --steer` | verifikasi konversi kemudi |
 | `python validate_model.py --scan` | cari spawn point ruas lurus |
 | `python record_maneuver.py --kamera atas` | video dengan overlay kandidat |
 | `python show_lanes.py` | gambar lingkungan uji dan kandidat planner |
 | `python plot_run.py --skenario S3` | grafik hasil run dari log (tidak butuh server) |
-| `python cek_sensor.py` | pasang rig kamera, verifikasi penempatan, simpan contoh frame |
-| `python cek_deteksi.py --lajur 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
+| `python check_sensors.py` | pasang rig kamera, verifikasi penempatan, simpan contoh frame |
+| `python check_detection.py --lajur 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
 
 ## Arsitektur
 
 ```
 localization.py  ground truth CARLA -> frame right-handed, titik sumbu belakang
 perception.py    GroundTruth + VisionPerception -> halangan dalam FRAME EGO
-gambar.py        overlay video: deteksi, kandidat planner, HUD  [butuh cv2]
+overlay.py        overlay video: deteksi, kandidat planner, HUD  [butuh cv2]
 planning.py      quintic/quartic, local planner, BehaviorFSM      [tanpa carla]
 tracking.py      asosiasi dua tahap + Kalman filter halangan        [tanpa carla]
 control.py       MPC CasADi + IPOPT, ThrottlePI, konversi kemudi  [tanpa carla]
@@ -79,7 +79,7 @@ config.py        semua konstanta
 ```
 
 `planning.py` dan `control.py` **tidak boleh** mengimpor `carla` (aturan 2.4
-rencana kerja). Ditegakkan oleh `tests/test_arsitektur.py`.
+rencana kerja). Ditegakkan oleh `tests/test_architecture.py`.
 
 ---
 
@@ -139,7 +139,7 @@ mengerem mendadak) butuh profil kecepatan terjadwal.
 
 ### 3. Tahap 8 — `VisionPerception`
 `perception.VisionPerception` + `tracking.py` sudah ada dan tervalidasi terhadap
-ground truth simulator (`cek_estimasi.py`): jarak RMS 0,046 m, kecepatan RMS
+ground truth simulator (`check_estimation.py`): jarak RMS 0,046 m, kecepatan RMS
 0,020 m/s, jangkauan deteksi sampai 45,6 m. **Belum disambungkan ke `main.py`.**
 
 Sisa pekerjaannya:
@@ -175,7 +175,7 @@ skenario diulang 10–20 kali.
 - **Semua perintah aktor wajib lewat `simulation.tick`.** `apply_control`,
   `set_target_velocity`, `set_transform` asinkron dan balapan dengan
   `world.tick()`: tanpa ini lima run identik memberi lima hasil berbeda, satu
-  gagal. Ditegakkan `test_arsitektur.py`.
+  gagal. Ditegakkan `test_architecture.py`.
 
 - **Server CARLA menurun setelah berjalan berjam-jam.** Terukur: kode identik,
   waktu solve 26–31 ms saat senggang vs 70 ms saat CARLA memakai 141% CPU.
@@ -215,7 +215,7 @@ skenario diulang 10–20 kali.
   dan dari **ground truth** — bukan perception. Yang dinilai harus benar; yang
   dipakai mobil boleh berisik.
 - **Sensor tabrakan hanya di `evaluation.py`.** Instrumen pengukuran, bukan
-  masukan kendali. Ditegakkan `test_arsitektur.py`.
+  masukan kendali. Ditegakkan `test_architecture.py`.
 - **`tuning.py` men-spawn ulang ego tiap konfigurasi.** Jangan diganti
   `set_transform` — putaran roda terbawa dan hasilnya bergantung pada urutan sapuan.
 - **Periksa alasan di balik setiap perbaikan angka.** Selama pengembangan, metrik

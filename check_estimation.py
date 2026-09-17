@@ -7,7 +7,7 @@ jarak menyapu 55 -> 10 m dalam satu run. Pembandingnya transform aktor dari
 simulator, bukan `GroundTruthPerception`; keluaran GT ikut diukur terhadap
 pembanding yang sama supaya acuannya sendiri ikut terverifikasi.
 
-    python cek_estimasi.py
+    python check_estimation.py
 """
 import json
 import math
@@ -78,7 +78,7 @@ def main_():
                     target.destroy()
 
     a = np.array(baris)
-    np.savez(f'{config.OUT_DIR}/cek_estimasi.npz', data=a)
+    np.savez(f'{config.OUT_DIR}/check_estimation.npz', data=a)
     t, benar, vis, g = a[:, 0], a[:, 1:5], a[:, 5:9], a[:, 9:13]
     ada = ~np.isnan(vis[:, 0])
 

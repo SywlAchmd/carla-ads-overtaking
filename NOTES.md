@@ -1843,7 +1843,7 @@ Kalimat untuk batasan masalah:
 > keberhasilan setiap percobaan, bukan sebagai masukan bagi sistem kendali.
 > Kendaraan uji tidak memiliki akses terhadap informasi tersebut.
 
-**Ditegakkan otomatis** oleh `tests/test_arsitektur.py`: memindai `planning.py`
+**Ditegakkan otomatis** oleh `tests/test_architecture.py`: memindai `planning.py`
 dan `control.py` dengan AST untuk impor terlarang (`carla`, `simulation`,
 `perception`, `evaluation`, `localization`, `main`), dan memastikan string
 `collision` tidak muncul di ketiga modul jalur kendali.
@@ -1894,7 +1894,7 @@ informasi.
 dikerjakan.
 
 Konsekuensi dan apa yang tetap dimiliki skripsi dicatat di
-`RANGKUMAN_PENULISAN.md` bagian 13. Ringkasnya: sumbu perbandingan bergeser
+`WRITING_SUMMARY.md` bagian 13. Ringkasnya: sumbu perbandingan bergeser
 sepenuhnya ke **GT versus vision perception** (bagian 11.4 baris 1 dan 2), yang
 untuk skripsi berpipeline YOLOPX justru lebih pusat.
 
@@ -1939,7 +1939,7 @@ penjadwalan thread server; mesin berbeda, peluangnya berbeda. Pelajarannya:
 determinisme yang tidak ditegakkan oleh kode hanyalah kebetulan.
 
 **Perbaikan:** `simulation.tick(world, perintah)` -- satu-satunya jalan perintah
-aktor. `tests/test_arsitektur.py` menolak `.apply_control(`,
+aktor. `tests/test_architecture.py` menolak `.apply_control(`,
 `.set_target_velocity(`, `.set_transform(` di luar `simulation.py`.
 
 ### TEMUAN: optimum `kp = 0,3` adalah artefak
@@ -2103,7 +2103,7 @@ ulang. `out/run_s1_mpc_gt.png` dan `out/run_s3_mpc_gt.png` sudah dibangkitkan ul
 
 ## Tahap 8 Langkah 1 — Rig Kamera dan Kalibrasi Deteksi
 
-15 September 2026. Angka lengkap di `RANGKUMAN_PENULISAN.md` bagian 17 dan 18.
+15 September 2026. Angka lengkap di `WRITING_SUMMARY.md` bagian 17 dan 18.
 
 **Rig kamera** mengikuti KITTI (keputusan penulis): 1,65 m di atas jalan, 1,68 m di
 depan sumbu roda belakang, fov 90 derajat, resolusi 1280x720. Diverifikasi terhadap
@@ -2141,7 +2141,7 @@ render kamera tidak sedeterministik fisika.
 
 ## Tahap 8 Langkah 2 — Weight yang Benar, dan Pertukaran Jangkauan
 
-15 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 18.
+15 September 2026. Angka di `WRITING_SUMMARY.md` bagian 18.
 
 ### Jalan buntu: menguji weight yang salah
 
@@ -2189,7 +2189,7 @@ ego.
 
 ## Tahap 8 Langkah 3 — VisionPerception, dan Jangkar Halangan 1,433 m
 
-16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.
+16 September 2026. Angka di `WRITING_SUMMARY.md` bagian 19.
 
 ### Depth CARLA: PLANAR, bukan radial
 
@@ -2199,7 +2199,7 @@ Terukur rasio tepi/tengah **1,000x** di empat baris, sedangkan radial
 memprediksi 1,28x. RMS terhadap model planar 0,045 m di baris yang seluruhnya
 aspal. Tidak butuh kendaraan target dan tidak bergantung isi adegan.
 
-Ini tidak bisa dibedakan oleh `cek_deteksi.py`: targetnya hampir di tengah
+Ini tidak bisa dibedakan oleh `check_detection.py`: targetnya hampir di tengah
 citra, dan di sana kedua tafsiran berselisih 1 cm. Selisihnya baru muncul di
 lajur sebelah pada jarak dekat -- 0,64 m di 10 m, 1,10 m di 5 m -- yaitu
 satu-satunya tempat keputusan S3 diambil. Salah tebak tidak akan pernah
@@ -2220,7 +2220,7 @@ melahirkan) + Kalman constant-velocity, state frame ego relatif ego. Kompensasi
 gerak ego: suku translasi saling meniadakan, jadi hanya rotasi dan perubahan
 laju ego yang masuk -- modul ini tidak perlu tahu posisi ego sama sekali.
 
-Validasi `cek_estimasi.py` terhadap ground truth simulator, geometri S1 dengan
+Validasi `check_estimation.py` terhadap ground truth simulator, geometri S1 dengan
 kecepatan dipaksa tetap, jarak menyapu 55 -> 9 m:
 
 | | bias | RMS | maks |
@@ -2246,7 +2246,7 @@ Terlalu rapi untuk derau. Ternyata itu milik acuannya:
 `get_velocity()` berderau 0,28 m/s per tick ketika kecepatan aktor dipaksa tiap
 tick. Diukur terhadap pergeseran posisi, RMS vision jatuh 0,589 -> 0,020 m/s --
 dan keluaran KF-nya lebih halus daripada pembacaan kecepatan simulator sendiri.
-Acuannya sudah diganti di `cek_estimasi.py`. Pola yang sama dengan bagian 15:
+Acuannya sudah diganti di `check_estimation.py`. Pola yang sama dengan bagian 15:
 angka menyesatkan karena alat ukurnya, bukan karena yang diukur.
 
 ### TEMUAN: halangan dijangkar di sumbu belakang, bukan pusat bodi
@@ -2289,7 +2289,7 @@ regresi, tapi tetap butir terbuka.
 
 ## Tahap 8 Langkah 4 — Loop Tertutup Vision dan Video Overlay
 
-16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.6-19.7.
+16 September 2026. Angka di `WRITING_SUMMARY.md` bagian 19.6-19.7.
 
 `main.py` dapat flag `--perception vision|gt` dan `--rekam`. Mode gt sengaja
 tidak memasang rig kamera sama sekali, supaya hasilnya tetap identik dengan run
@@ -2306,12 +2306,12 @@ itu hanya memeriksa kembali ke lajur asal, bukan menjaga lajur selama menyalip.
 
 Dugaan utama: koreksi muka -> pusat gugur saat ego berdampingan, karena kamera
 melihat sisi kendaraan, bukan muka belakangnya. Terlihat di video t=8,50 s
-(target terbaca 31 km/jam padahal 25). Belum diukur -- `cek_estimasi.py` perlu
+(target terbaca 31 km/jam padahal 25). Belum diukur -- `check_estimation.py` perlu
 diperluas ke lajur sebelah sudut besar.
 
 ### ffmpeg tidak ada di mesin ini
 
-`gambar.Perekam.simpan` semula memanggil ffmpeg seperti `record_path.capture`,
+`overlay.Perekam.simpan` semula memanggil ffmpeg seperti `record_path.capture`,
 dan gagal di akhir run 20 detik. Diganti `cv2.VideoWriter`: OpenCV sudah jadi
 dependensi perception, sedangkan ffmpeg dependensi sistem yang ternyata belum
 terpasang. Frame-nya selamat karena `rmtree` berada setelah encode, jadi run-nya
@@ -2322,7 +2322,7 @@ ffmpeg dan karena itu masih belum bisa dijalankan di mesin ini.
 
 ## Tahap 8 Langkah 5 — Kenapa Kandidat Habis, dan Batas yang Tidak Dibagi
 
-16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.8-19.10.
+16 September 2026. Angka di `WRITING_SUMMARY.md` bagian 19.8-19.10.
 
 Dua perbaikan dikerjakan. **Koreksi permukaan sadar sudut pandang berhasil**
 (galat berdampingan bias +1,31 -> +0,39 m, galat melintang saat target di depan
@@ -2356,7 +2356,7 @@ Bagian 11.4 tidak boleh memakai satu run per konfigurasi untuk vision.
 
 ## Tahap 8 Langkah 6 — Ruang Kelayakan Dibagi, dan Akar yang Tersisa
 
-16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.11-19.13.
+16 September 2026. Angka di `WRITING_SUMMARY.md` bagian 19.11-19.13.
 
 Batas percepatan lateral ditambahkan ke MPC memakai konstanta yang sama dengan
 planner, dan `dy0` planner diambil dari rencana. Keduanya bekerja: percepatan
@@ -2393,7 +2393,7 @@ dicocokkan. Pola yang sama dengan bagian 15.4.
 
 ## Tahap 8 Langkah 7 — Komitmen Planner dan Batas Lateral yang Lunak
 
-16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 19.13-19.14.
+16 September 2026. Angka di `WRITING_SUMMARY.md` bagian 19.13-19.14.
 
 ### KOREKSI: klaim "pemicu terlalu lambat" di langkah 6 keliru
 
@@ -2429,9 +2429,9 @@ kandidat masih jauh di atas 4 tick milik GT.
 
 ## Tahap 8 Langkah 8 — Tuning Ulang di Atas Vision
 
-16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 20.
+16 September 2026. Angka di `WRITING_SUMMARY.md` bagian 20.
 
-`tuning_vision.py` menyapu parameter di SKENARIO PENUH dengan vision -- sah
+`tune_vision.py` menyapu parameter di SKENARIO PENUH dengan vision -- sah
 karena run vision sudah terulang setelah bagian 19.14. Yang disapu justru yang
 tidak bisa disentuh step response: ambang FSM dan bobot pemilihan kandidat.
 
@@ -2480,10 +2480,10 @@ Masih terbuka: 40 tick nol kandidat vs 4 milik GT, dan angka itu bertahan
 
 ## Tahap 9 — Eksperimen Penuh S1
 
-16 September 2026. Angka di `RANGKUMAN_PENULISAN.md` bagian 21.
+16 September 2026. Angka di `WRITING_SUMMARY.md` bagian 21.
 
 Server CARLA direstart tepat sebelum pengukuran (README: 26-31 ms senggang vs
-70 ms setelah berjam-jam). `eksperimen.py` mengulang satu konfigurasi N kali dan
+70 ms setelah berjam-jam). `experiment.py` mengulang satu konfigurasi N kali dan
 melaporkan success rate berikut sebaran tiap metrik.
 
 **GT 5/5, vision 10/10, seluruhnya BERHASIL. Solver gagal 0 dari 6.000 solve.**

@@ -3,7 +3,7 @@
 Menyimpan satu frame RGB dan depth, lalu memeriksa tinggi dan posisi memanjang
 kamera yang BENAR-BENAR terjadi di simulator, bukan yang diminta.
 
-    python cek_sensor.py
+    python check_sensors.py
 """
 import json
 

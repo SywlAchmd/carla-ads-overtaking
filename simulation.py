@@ -47,7 +47,7 @@ def tick(world, perintah=()):
     tick pertama, satu gagal lane_departure. Fisika CARLA sendiri deterministik.
 
     `apply_batch_sync` baru kembali setelah perintah diterapkan, jadi urutannya
-    terjamin: tiga run identik bit-per-bit. Ditegakkan tests/test_arsitektur.py.
+    terjamin: tiga run identik bit-per-bit. Ditegakkan tests/test_architecture.py.
     """
     if perintah:
         for r in _klien.apply_batch_sync(list(perintah), False):
