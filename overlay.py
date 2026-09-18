@@ -30,60 +30,107 @@ JALAN, MARKA = (60, 200, 60), (40, 40, 235)      # area jalan, garis lajur (BGR)
 KISI, SUMBU = (255, 170, 40), (255, 90, 200)     # garis lajur tercocok, sumbu lajur ego
 
 
-def _garis_lajur(img, lajur):
-    """Gambar KISI hasil cocokan -- tersambung penuh, bukan penggal maskernya.
-
-    Marka putus-putus tidak perlu disambung: semua penggal pada satu garis punya
-    offset melintang yang sama, jadi mereka mengelompokkan diri sendiri di
-    histogram. Yang digambar di sini hasil cocokannya, dan itulah yang dipakai
-    kendali.
-    """
-    if lajur is None or lajur.lebar_lajur is None:
-        return
-    for x, y in lajur.garis():
-        u, v = lanes.ke_piksel(x, y)
-        titik = np.column_stack([u, v]).astype(np.int32)
-        cv2.polylines(img, [titik], False, KISI, 2, cv2.LINE_AA)
-    tengah = lajur.garis_tengah()
-    if tengah is not None:
-        u, v = lanes.ke_piksel(*tengah)
-        titik = np.column_stack([u, v]).astype(np.int32)
-        for i in range(0, len(titik) - 1, 2):            # putus-putus, biar beda
-            cv2.line(img, tuple(titik[i]), tuple(titik[i + 1]), SUMBU, 2, cv2.LINE_AA)
-
-
 def _segmentasi(img, masker, alpha=0.35):
     """Tumpangkan area jalan & garis lajur dari kepala segmentasi YOLOPX.
 
     Masker keluar pada ukuran masukan jaringan (384x640) setelah letterbox, jadi
     bingkainya dibuang dulu sebelum diregangkan balik -- kalau tidak, seluruh
     lapisannya bergeser 24 piksel ke atas terhadap citranya.
+
+    Kembalikan masker area jalan seukuran citra, dipakai memotong garis lajur.
     """
     if masker is None:
-        return
+        return None
     da, ll = masker
     h, w = np.shape(ll)
     r, pad_u, pad_v = lanes.letterbox_ke_citra((h, w), img.shape)
     u0, v0 = int(round(pad_u)), int(round(pad_v))
     u1, v1 = w - u0 if u0 else w, h - v0 if v0 else h
-    lapis = img.copy()
+    lapis, besar_da = img.copy(), None
     for m, warna in ((da, JALAN), (ll, MARKA)):
         potong = np.asarray(m)[v0:v1, u0:u1]
         besar = cv2.resize(potong.astype(np.uint8), (img.shape[1], img.shape[0]),
                            interpolation=cv2.INTER_NEAREST)
+        if warna is JALAN:
+            besar_da = besar > 0
         lapis[besar > 0] = warna
     cv2.addWeighted(lapis, alpha, img, 1.0 - alpha, 0.0, dst=img)
+    return besar_da
 
 
 def _teks(img, baris, pojok, skala=0.5, warna=PUTIH):
     """Tulis beberapa baris dengan latar gelap supaya terbaca di aspal maupun langit."""
     x, y = pojok
-    for i, s in enumerate(baris):
-        (w, h), _ = cv2.getTextSize(s, cv2.FONT_HERSHEY_SIMPLEX, skala, 1)
+    for i, t in enumerate(baris):
+        (w, h), _ = cv2.getTextSize(t, cv2.FONT_HERSHEY_SIMPLEX, skala, 1)
         yy = y + i * (h + 8)
         cv2.rectangle(img, (x - 3, yy - h - 4), (x + w + 3, yy + 4), GELAP, -1)
-        cv2.putText(img, s, (x, yy), cv2.FONT_HERSHEY_SIMPLEX, skala, warna, 1,
+        cv2.putText(img, t, (x, yy), cv2.FONT_HERSHEY_SIMPLEX, skala, warna, 1,
                     cv2.LINE_AA)
+
+
+def _legenda(img, entri, skala=0.45):
+    """Panel legenda di KANAN ATAS. `entri` = [(label, warna, tebal), ...].
+
+    Label dan contoh warnanya digambar dari SATU daftar pasangan. Versi sebelumnya
+    menulis labelnya di satu tempat dan menggambar garisnya di loop terpisah, jadi
+    menambah satu baris di salah satunya menggeser seluruh pasangan -- dan itu
+    sempat terjadi.
+    """
+    if not entri:
+        return
+    ukur = [cv2.getTextSize(e[0], cv2.FONT_HERSHEY_SIMPLEX, skala, 1)[0] for e in entri]
+    lebar_teks = max(w for w, _ in ukur)
+    tinggi = max(h for _, h in ukur)
+    langkah, contoh, jeda, tepi = tinggi + 12, 46, 10, 14
+    x_teks = config.KAMERA_LEBAR - tepi - lebar_teks
+    x_contoh = x_teks - jeda - contoh
+    y0 = tepi + tinggi + 4
+    cv2.rectangle(img, (x_contoh - 8, y0 - tinggi - 8),
+                  (config.KAMERA_LEBAR - tepi + 4, y0 + langkah * (len(entri) - 1) + 8),
+                  GELAP, -1)
+    for i, ((nama, warna, tebal), (w, h)) in enumerate(zip(entri, ukur)):
+        yy = y0 + i * langkah
+        cv2.line(img, (x_contoh, yy - h // 2), (x_contoh + contoh, yy - h // 2),
+                 warna, tebal, cv2.LINE_AA)
+        cv2.putText(img, nama, (config.KAMERA_LEBAR - tepi - w, yy),
+                    cv2.FONT_HERSHEY_SIMPLEX, skala, PUTIH, 1, cv2.LINE_AA)
+
+
+def _garis_lajur(img, lajur, da=None):
+    """Gambar KISI hasil cocokan -- tersambung penuh, bukan penggal maskernya.
+
+    Marka putus-putus tidak perlu disambung: semua penggal pada satu garis punya
+    offset melintang yang sama, jadi mereka mengelompokkan diri sendiri di
+    histogram. Yang digambar di sini hasil cocokannya, dan itulah yang dipakai
+    kendali.
+
+    `da` = masker area jalan pada ukuran citra. Garis dipotong ke sana: kisi itu
+    lurus tak berhingga, dan tanpa potongan ini ia terlihat merayap naik ke
+    tanggul dan dinding -- mengklaim lajur di tempat yang jelas bukan jalan.
+    """
+    if lajur is None or lajur.lebar_lajur is None:
+        return
+
+    def gambar(x, y, warna, tebal, putus=False):
+        u, v = lanes.ke_piksel(x, y)
+        titik = np.column_stack([u, v]).astype(np.int32)
+        h, w = img.shape[:2]
+        for i in range(len(titik) - 1):
+            if putus and i % 2:
+                continue
+            a, b = titik[i], titik[i + 1]
+            if not (0 <= a[0] < w and 0 <= a[1] < h and 0 <= b[0] < w and 0 <= b[1] < h):
+                continue
+            if da is not None and not (da[a[1], a[0]] or da[b[1], b[0]]):
+                continue
+            cv2.line(img, tuple(a), tuple(b), warna, tebal, cv2.LINE_AA)
+
+    for x, y in lajur.garis():
+        gambar(x, y, KISI, 2)
+    tengah = lajur.garis_tengah()
+    if tengah is not None:
+        gambar(*tengah, SUMBU, 2, putus=True)
 
 
 class Perekam:
@@ -116,8 +163,8 @@ class Perekam:
     def tambah(self, rgb, w2c, terlihat, layak, terpilih, hud, v_ego, masker=None,
                lajur=None):
         img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-        _segmentasi(img, masker)                            # paling bawah
-        _garis_lajur(img, lajur)
+        da_besar = _segmentasi(img, masker)                 # paling bawah
+        _garis_lajur(img, lajur, da_besar)
         for _, _, _, traj in (layak or []):                 # kandidat yang lolos
             self._garis(img, w2c, traj, ABU, 1)
         if terpilih is not None:
@@ -141,16 +188,15 @@ class Perekam:
         if lajur is not None and lajur.lebar_lajur is not None:
             hud = list(hud) + [f'lebar lajur {lajur.lebar_lajur:.2f} m  '
                                f'({len(lajur.offset)} marka)',
-                               f'simpangan   {lajur.dev_lajur:+.2f} m']
+                               f'simpangan   {lajur.dev_lajur:+.2f} m',
+                               f'sisa kisi   {lajur.sisa_kisi:.3f} m']
         _teks(img, hud, (14, 30), 0.6)
-        y0 = config.KAMERA_TINGGI - 180
-        _teks(img, ['area jalan', 'marka terdeteksi', 'garis lajur tercocok',
-                    'sumbu lajur ego', 'kandidat planner', 'dieksekusi'],
-              (14, y0), 0.45)
-        for i, (warna, tebal) in enumerate(((JALAN, 6), (MARKA, 6), (KISI, 2),
-                                            (SUMBU, 2), (ABU, 2), (HIJAU, 3))):
-            yy = y0 - 5 + i * 28
-            cv2.line(img, (170, yy), (215, yy), warna, tebal)
+        _legenda(img, [('area jalan', JALAN, 6),
+                       ('marka terdeteksi', MARKA, 6),
+                       ('garis lajur tercocok', KISI, 2),
+                       ('sumbu lajur ego', SUMBU, 2),
+                       ('kandidat planner', ABU, 2),
+                       ('dieksekusi', HIJAU, 3)])
 
         cv2.imwrite(f'{self.dir}/{self.n:05d}.png', img)
         self.n += 1
