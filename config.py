@@ -41,6 +41,10 @@ OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'out')
 VEHICLE_PARAMS_JSON = os.path.join(OUT_DIR, 'vehicle_params.json')
 
 # Local planner (bagian 5.2-5.5)
+# Tetapan tapis arah jalan hasil ukur, per tick 20 Hz. Derau sudut hadap terukur
+# 0,257 deg RMS (check_lanes.py); alpha 0,02 memberi tetapan waktu ~2,5 detik dan
+# menekannya ~7x, masih jauh lebih cepat daripada perubahan arah jalan itu sendiri.
+ALPHA_ARAH_JALAN = 0.02
 LANE_WIDTH = 3.50                   # m, terukur dari Town04; PDGJ 2021 Tabel 5-58 (V_D 40-80)
 PLANNER_DT = 0.1                    # detik, resolusi sampling lintasan
 LATERAL_OFFSETS = (3.0, 3.5, 4.0)   # m, magnitudo -- dikalikan SIDE_SIGN

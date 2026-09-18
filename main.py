@@ -91,7 +91,10 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
 
     `rig` terisi -> perception berbasis vision; None -> ground truth.
     """
-    frame = localization.PathFrame(ref_rh)
+    # Frame PETA. Dipakai untuk menempatkan kendaraan skenario, menggambar overlay,
+    # dan sebagai pembanding -- bukan untuk kendali di jalur vision (bagian 28.4).
+    frame_peta = localization.PathFrame(ref_rh)
+    frame = frame_peta
     loc = localization.CarlaGTLocalization(ego_actor, params['rear_axle_offset_x'])
     lihat = (perception.VisionPerception(net, rig) if rig
              else perception.GroundTruthPerception(world, ego_actor))
@@ -100,6 +103,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
 
     dt = config.FIXED_DELTA_SECONDS
     traj, t_traj, v_prev = None, 0.0, None
+    psi_jalan = None              # arah jalan hasil ukur, ditapis (None = jalur GT)
     a_filt, a_cmd_prev = 0.0, 0.0
     n_layak, offset_pilih, layak_akhir = 0, 0.0, []
     t_plan = float('nan')
@@ -112,19 +116,48 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
         if k == 0:
             # Kendaraan lain baru di-spawn setelah transien reda, relatif posisi
             # ego yang SEBENARNYA -- bukan relatif titik spawn.
-            ego_x = frame.ego(loc.update()).x
+            ego_x = frame_peta.ego(loc.update()).x
             aktor = [spawn_kendaraan(world, ref5, ego_x, jarak, lajur)
                      for jarak, lajur, _ in kendaraan]
         # Searah JALAN, bukan arah hadap aktor: hanya kecepatan yang dipaksa, jadi
         # gaya ban memutar arah hadap dan kendaraan bergeser lateral. Terukur di
         # S3: penghalang bergeser -3,50 -> -2,83 m, jarak bodi ke ego 0,87 m
         # padahal ego diam di lajurnya.
-        kirim += [simulation.kecepatan(a, v, -math.degrees(frame.psi0))
+        kirim += [simulation.kecepatan(a, v, -math.degrees(frame_peta.psi0))
                   for a, (_, _, v) in zip(aktor, kendaraan)]
         simulation.tick(world, kirim)
         t = k * dt
 
-        ego = frame.ego(loc.update())                        # 20 Hz
+        if k == -1 and rig is not None and getattr(lihat, 'lajur', None) is not None:
+            # JANGKAR PETA DIBUANG (bagian 28.4). Arah jalan dan letak sumbu lajur
+            # diambil dari kepala segmentasi, bukan dari `world.get_map()`. s = 0
+            # tetap disamakan dengan frame peta -- itu konvensi, bukan geometri --
+            # supaya log kedua jalur bisa dibandingkan angka per angka.
+            g0, e0 = lihat.lajur, loc.update()
+            if g0.lebar_lajur is not None:
+                frame = localization.PathFrame.dari_perception(
+                    e0, g0, x0=frame_peta.ego(e0).x)
+                p_peta, p_lihat = frame_peta.ego(e0), frame.ego(e0)
+                if perekam is not None:
+                    perekam.pf = frame     # lintasan planner kini di frame kendali
+                psi_jalan = frame.psi0
+                print(f'jangkar dari perception: arah jalan '
+                      f'{math.degrees(localization.wrap(frame.psi0 - frame_peta.psi0)):+.3f} deg '
+                      f'terhadap peta, sumbu lajur {p_lihat.y - p_peta.y:+.3f} m')
+
+        st_rh = loc.update()
+        ego = frame.ego(st_rh)                               # 20 Hz
+        # JEJAK arah jalan, jangan dibekukan. Titik asal digeser bersamaan supaya
+        # (x, y) ego tidak melompat: yang dikoreksi hanya arah ke depan.
+        geo_f = getattr(lihat, 'lajur', None)
+        if psi_jalan is not None and geo_f is not None and geo_f.lebar_lajur is not None:
+            psi_jalan = localization.wrap(
+                psi_jalan + config.ALPHA_ARAH_JALAN
+                * localization.wrap(st_rh.yaw - geo_f.yaw - psi_jalan))
+            frame = localization.PathFrame.dari_pose(st_rh, psi_jalan, ego.x, ego.y)
+            if perekam is not None:
+                perekam.pf = frame
+            ego = frame.ego(st_rh)
         a_mentah = 0.0 if v_prev is None else (ego.v - v_prev) / dt
         v_prev = ego.v
         # potong lonjakan non-fisik lalu haluskan; mentahnya terlalu berderau

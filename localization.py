@@ -59,6 +59,51 @@ class PathFrame:
         self.psi0 = float(np.mean(ref[2]))
         self._c, self._s = math.cos(self.psi0), math.sin(self.psi0)
 
+    @classmethod
+    def dari_perception(cls, ego_rh, lajur, x0=0.0):
+        """Frame jalan dari APA YANG DILIHAT, bukan dari `world.get_map()`.
+
+        `ego_rh` = EgoState frame dunia right-handed, `lajur` = `lanes.GeometriLajur`
+        frame terakhir. Dua besaran yang dipakai keduanya hasil ukur kamera:
+
+          * arah jalan  = yaw ego dunia dikurangi yaw ego terhadap lajur;
+          * tengah lajur = posisi ego digeser melintang sejauh simpangan terukur.
+
+        `x0` hanya memilih di mana s = 0 diletakkan. Itu konvensi, bukan geometri --
+        tidak ada besaran fisik yang bergantung padanya -- dan disamakan dengan
+        frame peta supaya log kedua jalur bisa dibandingkan langsung.
+        """
+        psi0 = wrap(ego_rh.yaw - lajur.yaw)
+        c, s_ = math.cos(psi0), math.sin(psi0)
+        dev = lajur.dev_lajur
+        # titik di sumbu lajur, sejajar ego; lalu mundur x0 supaya ego.x = x0
+        ox = ego_rh.x + dev * s_ - x0 * c
+        oy = ego_rh.y - dev * c - x0 * s_
+        diri = cls.__new__(cls)
+        diri.origin = np.array([ox, oy], dtype=float)
+        diri.psi0 = float(psi0)
+        diri._c, diri._s = c, s_
+        return diri
+
+    @classmethod
+    def dari_pose(cls, ego_rh, psi0, x0, y0):
+        """Frame berarah `psi0` yang menempatkan ego tepat di (x0, y0).
+
+        Untuk MENJEJAK arah jalan tanpa memindahkan apa pun: jangkar sekali di
+        awal membekukan galat arah, dan galat 0,3 deg saja menjadi simpangan
+        0,87 m setelah 250 m -- terukur, dan ego benar-benar keluar dari tengah
+        lajur, bukan sekadar frame yang miring. Memutar frame begitu saja tidak
+        bisa: ego 250 m dari titik asal, jadi rotasi 0,3 deg melompatkan y-nya
+        1,3 m. Titik asalnya karena itu ikut digeser supaya (x0, y0) tetap.
+        """
+        c, s_ = math.cos(psi0), math.sin(psi0)
+        diri = cls.__new__(cls)
+        diri.origin = np.array([ego_rh.x - (x0 * c - y0 * s_),
+                                ego_rh.y - (x0 * s_ + y0 * c)], dtype=float)
+        diri.psi0 = float(psi0)
+        diri._c, diri._s = c, s_
+        return diri
+
     def _xy(self, x, y):
         dx, dy = x - self.origin[0], y - self.origin[1]
         return self._c * dx + self._s * dy, -self._s * dx + self._c * dy
