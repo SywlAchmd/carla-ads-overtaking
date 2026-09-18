@@ -27,6 +27,29 @@ import perception
 PUTIH, KUNING, HIJAU, ABU, GELAP = ((255, 255, 255), (0, 255, 255), (0, 230, 0),
                                     (150, 150, 150), (0, 0, 0))
 JALAN, MARKA = (60, 200, 60), (40, 40, 235)      # area jalan, garis lajur (BGR)
+KISI, SUMBU = (255, 170, 40), (255, 90, 200)     # garis lajur tercocok, sumbu lajur ego
+
+
+def _garis_lajur(img, lajur):
+    """Gambar KISI hasil cocokan -- tersambung penuh, bukan penggal maskernya.
+
+    Marka putus-putus tidak perlu disambung: semua penggal pada satu garis punya
+    offset melintang yang sama, jadi mereka mengelompokkan diri sendiri di
+    histogram. Yang digambar di sini hasil cocokannya, dan itulah yang dipakai
+    kendali.
+    """
+    if lajur is None or lajur.lebar_lajur is None:
+        return
+    for x, y in lajur.garis():
+        u, v = lanes.ke_piksel(x, y)
+        titik = np.column_stack([u, v]).astype(np.int32)
+        cv2.polylines(img, [titik], False, KISI, 2, cv2.LINE_AA)
+    tengah = lajur.garis_tengah()
+    if tengah is not None:
+        u, v = lanes.ke_piksel(*tengah)
+        titik = np.column_stack([u, v]).astype(np.int32)
+        for i in range(0, len(titik) - 1, 2):            # putus-putus, biar beda
+            cv2.line(img, tuple(titik[i]), tuple(titik[i + 1]), SUMBU, 2, cv2.LINE_AA)
 
 
 def _segmentasi(img, masker, alpha=0.35):
@@ -94,6 +117,7 @@ class Perekam:
                lajur=None):
         img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
         _segmentasi(img, masker)                            # paling bawah
+        _garis_lajur(img, lajur)
         for _, _, _, traj in (layak or []):                 # kandidat yang lolos
             self._garis(img, w2c, traj, ABU, 1)
         if terpilih is not None:
@@ -119,10 +143,12 @@ class Perekam:
                                f'({len(lajur.offset)} marka)',
                                f'simpangan   {lajur.dev_lajur:+.2f} m']
         _teks(img, hud, (14, 30), 0.6)
-        y0 = config.KAMERA_TINGGI - 124
-        _teks(img, ['area jalan', 'garis lajur', 'kandidat planner', 'dieksekusi'],
+        y0 = config.KAMERA_TINGGI - 180
+        _teks(img, ['area jalan', 'marka terdeteksi', 'garis lajur tercocok',
+                    'sumbu lajur ego', 'kandidat planner', 'dieksekusi'],
               (14, y0), 0.45)
-        for i, (warna, tebal) in enumerate(((JALAN, 6), (MARKA, 6), (ABU, 2), (HIJAU, 3))):
+        for i, (warna, tebal) in enumerate(((JALAN, 6), (MARKA, 6), (KISI, 2),
+                                            (SUMBU, 2), (ABU, 2), (HIJAU, 3))):
             yy = y0 - 5 + i * 28
             cv2.line(img, (170, yy), (215, yy), warna, tebal)
 

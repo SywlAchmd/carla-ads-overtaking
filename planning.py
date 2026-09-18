@@ -294,7 +294,12 @@ class BehaviorFSM:
     def update(self, t, d, v_ego, obstacles, dd=0.0, lajur=None):
         """Satu langkah FSM. `obstacles` = (M,4) [x, y, vx, vy], x relatif ego.
 
-        `d` = simpangan lateral ego dari lajur asal, `dd` = lajunya (m/s).
+        `d` = y ego di frame jalan; simpangan terhadap lajur asal dihitung DI SINI
+        terhadap tengah lajur hasil ukur, bukan terhadap centerline peta. Sebelum
+        18 Sep 2026 `d` dipakai apa adanya, jadi ambang `LATERAL_MASUK` dan
+        `LATERAL_SELESAI` masih diukur dari peta HD sementara `y_goal` sudah dari
+        hasil ukur -- dua acuan berbeda di satu mesin keputusan. `dd` = laju
+        lateral (m/s).
         `lajur` = (y tengah lajur ego di frame jalan, lebar lajur) hasil UKUR dari
         kepala segmentasi YOLOPX; None berarti memakai konstanta peta seperti
         sebelum bagian 28. Kembalikan nama state.
@@ -315,6 +320,7 @@ class BehaviorFSM:
         if lajur is not None and self.state == LANE_KEEPING:
             self._lajur = lajur
         lw, y_asal = self.lebar_lajur, self.y_asal
+        d = d - y_asal                 # -> simpangan dari tengah lajur asal TERUKUR
         y_tujuan = y_asal + self.side_sign * lw
         depan = _terdepan(_di_lajur(obstacles, y_asal, lw))
         lajur_tujuan = _di_lajur(obstacles, y_tujuan, lw)

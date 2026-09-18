@@ -62,6 +62,13 @@ def ipm(u, v, z=config.KAMERA_Z, f=F_PIKSEL,
     return x, y
 
 
+def ke_piksel(x, y, z=config.KAMERA_Z, f=F_PIKSEL,
+              cu=config.KAMERA_LEBAR / 2.0, cv=config.KAMERA_TINGGI / 2.0):
+    """Kebalikan `ipm`: titik di permukaan jalan -> piksel citra. Untuk menggambar."""
+    x = np.maximum(np.asarray(x, dtype=float), 1e-3)
+    return cu - np.asarray(y, dtype=float) * f / x, cv + f * z / x
+
+
 def titik_lajur(masker, bentuk_citra, jangkauan=JANGKAUAN):
     """Masker garis lajur -> (N, 2) titik (x, y) meter di frame ego."""
     vm, um = np.nonzero(np.asarray(masker) > 0)
@@ -183,6 +190,34 @@ class GeometriLajur:
         # tengah lajur ada di fase + (n + 1/2) * w; cari yang terdekat ke ego (0)
         n = np.round((0.0 - self.fase) / w - 0.5)
         return -float(self.fase + (n + 0.5) * w)
+
+    def garis(self, jangkauan=JANGKAUAN, n=24):
+        """Garis kisi sebagai lintasan di frame ego -> [(x, y), ...] per garis.
+
+        Yang digambar KISI hasil cocokan, bukan piksel maskernya. Itu sebabnya
+        garisnya tersambung penuh walaupun markanya putus-putus: yang dicari
+        memang satu garis lurus per lajur, bukan sekumpulan penggal.
+        """
+        if self.lebar_lajur is None:
+            return []
+        x = np.linspace(jangkauan[0], jangkauan[1], n)
+        w = self.lebar_lajur
+        # Hanya slot kisi yang BENAR-BENAR didukung marka. Kisinya tak berhingga;
+        # menggambar seluruhnya berarti menarik garis lajur di atas tanggul dan
+        # pembatas, yaitu mengklaim sesuatu yang tidak pernah diukur.
+        keluar = []
+        for c in np.unique(np.round((self.offset - self.fase) / w)):
+            c = self.fase + c * w
+            keluar.append((x, c + self.kemiringan * x))
+        return keluar
+
+    def garis_tengah(self, jangkauan=JANGKAUAN, n=24):
+        """Sumbu lajur yang sedang ditempati ego, di frame ego."""
+        if self.lebar_lajur is None:
+            return None
+        x = np.linspace(jangkauan[0], jangkauan[1], n)
+        c = -self.dev_lajur
+        return x, c + self.kemiringan * x
 
     def tengah_lajur(self, sisi):
         """Tengah lajur sebelah, relatif ego. `sisi` = +1 kiri, -1 kanan.

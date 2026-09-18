@@ -118,6 +118,18 @@ def test_pipeline_lengkap_dari_masker_buatan():
     assert abs(math.degrees(g.yaw) - yaw) < 0.6, math.degrees(g.yaw)
 
 
+def test_garis_hanya_pada_slot_yang_didukung_marka():
+    """Kisi itu tak berhingga. Yang boleh digambar hanya slot yang punya marka --
+    kalau tidak, garis lajur ditarik di atas tanggul dan pembatas."""
+    garis = np.array([-5.25, -1.75, 1.75, 5.25])
+    g = lanes.GeometriLajur(garis, np.full(4, 300.0), 0.0, 4000)
+    assert len(g.garis()) == 4, len(g.garis())
+    # satu marka hilang -> tiga garis, bukan empat, dan bukan pula tak berhingga
+    g2 = lanes.GeometriLajur(garis[[0, 1, 3]], np.full(3, 300.0), 0.0, 3000)
+    assert len(g2.garis()) == 3, len(g2.garis())
+    assert abs(g2.lebar_lajur - 3.5) < 0.05
+
+
 def test_masker_kosong_mengembalikan_none():
     assert lanes.dari_masker(np.zeros(BENTUK_MASKER, dtype=np.uint8), BENTUK_CITRA) is None
 
