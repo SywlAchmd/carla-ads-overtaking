@@ -21,10 +21,35 @@ import cv2
 import numpy as np
 
 import config
+import lanes
 import perception
 
 PUTIH, KUNING, HIJAU, ABU, GELAP = ((255, 255, 255), (0, 255, 255), (0, 230, 0),
                                     (150, 150, 150), (0, 0, 0))
+JALAN, MARKA = (60, 200, 60), (40, 40, 235)      # area jalan, garis lajur (BGR)
+
+
+def _segmentasi(img, masker, alpha=0.35):
+    """Tumpangkan area jalan & garis lajur dari kepala segmentasi YOLOPX.
+
+    Masker keluar pada ukuran masukan jaringan (384x640) setelah letterbox, jadi
+    bingkainya dibuang dulu sebelum diregangkan balik -- kalau tidak, seluruh
+    lapisannya bergeser 24 piksel ke atas terhadap citranya.
+    """
+    if masker is None:
+        return
+    da, ll = masker
+    h, w = np.shape(ll)
+    r, pad_u, pad_v = lanes.letterbox_ke_citra((h, w), img.shape)
+    u0, v0 = int(round(pad_u)), int(round(pad_v))
+    u1, v1 = w - u0 if u0 else w, h - v0 if v0 else h
+    lapis = img.copy()
+    for m, warna in ((da, JALAN), (ll, MARKA)):
+        potong = np.asarray(m)[v0:v1, u0:u1]
+        besar = cv2.resize(potong.astype(np.uint8), (img.shape[1], img.shape[0]),
+                           interpolation=cv2.INTER_NEAREST)
+        lapis[besar > 0] = warna
+    cv2.addWeighted(lapis, alpha, img, 1.0 - alpha, 0.0, dst=img)
 
 
 def _teks(img, baris, pojok, skala=0.5, warna=PUTIH):
@@ -65,8 +90,10 @@ class Perekam:
         if len(titik) > 1:
             cv2.polylines(img, [titik], False, warna, tebal, cv2.LINE_AA)
 
-    def tambah(self, rgb, w2c, terlihat, layak, terpilih, hud, v_ego):
+    def tambah(self, rgb, w2c, terlihat, layak, terpilih, hud, v_ego, masker=None,
+               lajur=None):
         img = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
+        _segmentasi(img, masker)                            # paling bawah
         for _, _, _, traj in (layak or []):                 # kandidat yang lolos
             self._garis(img, w2c, traj, ABU, 1)
         if terpilih is not None:
@@ -83,12 +110,21 @@ class Perekam:
                      f'rel {float(x[2]):+.1f} m/s  absolute {absolute:.0f} km/j']
             if hilang:
                 label.append(f'melayang {hilang}')
-            _teks(img, label, (x1, max(y1 - 48, 52)), 0.5, warna)
+            # Jepit ke dalam citra: kotak yang terpotong tepi kiri -- persis saat
+            # berdampingan -- membuat labelnya keluar layar seluruhnya.
+            _teks(img, label, (max(x1, 14), max(y1 - 48, 52)), 0.5, warna)
 
+        if lajur is not None and lajur.lebar_lajur is not None:
+            hud = list(hud) + [f'lebar lajur {lajur.lebar_lajur:.2f} m  '
+                               f'({len(lajur.offset)} marka)',
+                               f'simpangan   {lajur.dev_lajur:+.2f} m']
         _teks(img, hud, (14, 30), 0.6)
-        _teks(img, ['kandidat planner', 'dieksekusi'], (14, config.KAMERA_TINGGI - 46), 0.45)
-        cv2.line(img, (170, config.KAMERA_TINGGI - 54), (215, config.KAMERA_TINGGI - 54), ABU, 2)
-        cv2.line(img, (170, config.KAMERA_TINGGI - 26), (215, config.KAMERA_TINGGI - 26), HIJAU, 3)
+        y0 = config.KAMERA_TINGGI - 124
+        _teks(img, ['area jalan', 'garis lajur', 'kandidat planner', 'dieksekusi'],
+              (14, y0), 0.45)
+        for i, (warna, tebal) in enumerate(((JALAN, 6), (MARKA, 6), (ABU, 2), (HIJAU, 3))):
+            yy = y0 - 5 + i * 28
+            cv2.line(img, (170, yy), (215, yy), warna, tebal)
 
         cv2.imwrite(f'{self.dir}/{self.n:05d}.png', img)
         self.n += 1

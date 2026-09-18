@@ -215,6 +215,7 @@ class VisionPerception:
         # None = pakai konstanta bounding box simulator (perilaku sebelum bagian 28)
         self.dimensi = DimensiKendaraan() if ukur_dimensi else None
         self.lajur = None                  # GeometriLajur frame terakhir, atau None
+        self.masker = None                 # (area jalan, garis lajur) frame terakhir
 
     def update(self, frame, dt, ego_v=0.0, ego_a=0.0, ego_w=0.0):
         depth = sensors.depth_meter(frame['depth'])
@@ -222,8 +223,9 @@ class VisionPerception:
         # Kepala segmentasi lajur ikut dipakai, bukan dibuang seperti sebelum
         # bagian 28. Inferensinya sudah berjalan tiap tick; yang ditambahkan
         # hanya balik-proyeksi maskernya, ~1 ms.
-        kotak, _, ll = self.net.infer(rgb, conf=config.TRACK_CONF_RENDAH)
+        kotak, da, ll = self.net.infer(rgb, conf=config.TRACK_CONF_RENDAH)
         self.lajur = lanes.dari_masker(ll, rgb.shape)
+        self.masker = (da, ll)        # untuk overlay video; kendali tidak memakainya
         pakai, z, R = [], [], []
         for b in kotak:
             u, v = int((b[0] + b[2]) / 2), int((b[1] + b[3]) / 2)

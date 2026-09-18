@@ -196,18 +196,43 @@ def test_ground_truth_tidak_berubah_perilakunya():
         assert jalan(fsm, 1.0, Y_SALIP, obs) == harap, dx
 
 
-def test_laju_dibekukan_selagi_target_masih_di_depan():
-    """Taksiran laju memburuk begitu ego sejajar (kotak terpotong tepi citra).
-    Yang dipakai ekstrapolasi harus laju saat target masih di depan, bukan laju
-    buruk yang terukur terakhir -- kalau tidak, kembali tertunda 3 detik."""
+def test_laju_dibekukan_saat_keputusan_menyalip():
+    """REGRESI. Laju target dibekukan saat KEPUTUSAN menyalip diambil, di mana ia
+    masih jauh di depan dan terlihat utuh -- bukan dari frame terakhir, di mana
+    kotaknya sudah terpotong tepi citra.
+
+    Terukur di run sungguhan: laju yang dibekukan belakangan memberi 9,09 m/s
+    terhadap 7,0 m/s yang benar.
+    """
+    fsm = P.BehaviorFSM()
+    obs = [depan(30.0, V_LAMBAT), di_lajur_salip(60.0)]
+    jalan(fsm, 3.0, 0.0, obs)
+    assert fsm.state == P.LANE_CHANGE_OVERTAKE, fsm.state
+    assert fsm._v_target is not None
+    assert abs(fsm._v_target - V_LAMBAT) < 1e-9, fsm._v_target
+
+    # laju buruk yang terukur belakangan tidak boleh menggantikannya
+    fsm.state = P.OVERTAKING
+    fsm.update(9.0, Y_SALIP, V_EGO, [depan(2.0, V_EGO + 2.0)])
+    assert abs(fsm._lewat[2] - V_LAMBAT) < 1e-9, fsm._lewat
+
+
+def test_gerbang_kembali_tidak_bisa_buntu_selamanya():
+    """REGRESI. Kalau taksiran laju target menyamai atau melampaui laju ego,
+    ekstrapolasi tidak akan pernah menyimpulkan "lewat" dan ego tersangkut di
+    lajur salip sampai run habis -- terjadi sungguhan pada 18 Sep 2026.
+
+    Laju relatif karena itu dijepit ke paling lambat -DV_EXIT: FSM hanya masuk
+    manuver ini karena target lebih lambat dari DV_TRIGGER.
+    """
     fsm = P.BehaviorFSM()
     fsm.state = P.OVERTAKING
-    fsm.update(0.00, Y_SALIP, V_EGO, [depan(4.2, V_EGO - 6.4)])   # di depan: laju benar
-    fsm.update(0.05, Y_SALIP, V_EGO, [depan(-1.0, V_EGO - 3.2)])  # sejajar: laju buruk
-    assert abs(fsm._lewat[2] - (V_EGO - 6.4)) < 1e-9, fsm._lewat
-    # dengan laju benar, (1,0 + 8,0) / 6,4 = 1,41 s; laju buruk butuh 2,81 s
-    assert jalan(fsm, 1.2, Y_SALIP, [], t0=0.10) == P.OVERTAKING
-    assert jalan(fsm, 0.6, Y_SALIP, [], t0=1.30) == P.LANE_CHANGE_RETURN
+    # taksiran laju target SAMA DENGAN ego: tanpa jepitan, dv = 0 selamanya
+    fsm.update(0.0, Y_SALIP, V_EGO, [depan(2.0, V_EGO)])
+    assert fsm.state == P.OVERTAKING
+    # (2,0 + 8,0) / 1,5 = 6,67 s, lalu FSM_DWELL
+    assert jalan(fsm, 6.0, Y_SALIP, [], t0=0.05) == P.OVERTAKING
+    assert jalan(fsm, 1.5, Y_SALIP, [], t0=6.05) == P.LANE_CHANGE_RETURN
 
 
 def test_ekstrapolasi_tidak_terbawa_ke_salip_berikutnya():
@@ -219,7 +244,7 @@ def test_ekstrapolasi_tidak_terbawa_ke_salip_berikutnya():
     fsm.state = P.LANE_CHANGE_RETURN
     jalan(fsm, 0.5, 0.0, [])
     assert fsm.state == P.LANE_KEEPING
-    assert fsm._lewat is None
+    assert fsm._lewat is None and fsm._v_target is None
 
 
 def test_selesai_saat_kembali_ke_tengah_lajur():

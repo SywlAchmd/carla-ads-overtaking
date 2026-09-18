@@ -216,7 +216,8 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
                 [f't = {t:5.2f} s', f'{fsm.state}', f'{ego.v * 3.6:.1f} km/jam',
                  f'kandidat lolos {n_layak}/9, offset {offset_pilih:.1f} m',
                  f'solve {cmd.solve_time_ms:.0f} ms'],
-                ego.v)
+                ego.v, masker=getattr(lihat, 'masker', None),
+                lajur=getattr(lihat, 'lajur', None))
         if not cmd.solver_ok:
             print(f'  solver gagal t={t:5.2f}s  state={fsm.state:<22} '
                   f'{mpc.last_status}  ({cmd.solve_time_ms:.0f} ms)')

@@ -259,6 +259,7 @@ class BehaviorFSM:
         # (y tengah lajur ego di frame jalan, lebar lajur) hasil UKUR, atau None
         # untuk memakai konstanta peta seperti sebelum bagian 28.
         self._lajur = None
+        self._v_target = None         # laju target saat KEPUTUSAN menyalip diambil
         self.v_goal = config.V_REF    # kecepatan acuan untuk planner, lihat _v_ikut
 
     @property
@@ -336,7 +337,10 @@ class BehaviorFSM:
             if batal:
                 self._minta(LANE_KEEPING, t)
             elif self._lajur_tujuan_aman(lajur_tujuan) and self._sempat(depan, v_ego):
-                self._minta(LANE_CHANGE_OVERTAKE, t)
+                if self._minta(LANE_CHANGE_OVERTAKE, t):
+                    # Target masih jauh di depan dan terlihat utuh: di sinilah
+                    # lajunya paling dapat dipercaya sepanjang manuver.
+                    self._v_target = float(depan[2])
             else:
                 self._calon = None
 
@@ -369,14 +373,25 @@ class BehaviorFSM:
                 # yang menunda kembali 3 detik tanpa alasan. Saat masih di depan
                 # target terlihat utuh dan lajunya terukur benar.
                 # obs[:, 2] kecepatan ABSOLUT (localization.halangan_ego_ke_jalan).
-                v_lain = (float(asal[j, 2]) if asal[j, 0] > 0.0 or self._lewat is None
-                          else self._lewat[2])
+                # Laju dari SAAT KEPUTUSAN menyalip (`self._v_target`), bukan dari
+                # frame terakhir. Terukur: laju yang dibekukan belakangan meleset
+                # 9,09 m/s terhadap 7,0 m/s yang sebenarnya -- 30% terlalu tinggi,
+                # karena kotak deteksi sudah terpotong saat ego mendekat. Sekali
+                # taksiran itu menyamai laju ego, ekstrapolasi TIDAK PERNAH
+                # menyimpulkan lewat dan ego tersangkut di lajur salip sampai run
+                # habis. Terjadi sungguhan, bukan kekhawatiran.
+                v_lain = self._v_target if self._v_target is not None else float(asal[j, 2])
                 self._lewat = (t, float(asal[j, 0]), v_lain)
                 lewat = asal[j, 0] <= -config.PASS_MARGIN
             elif self._lewat is not None:
                 t0, x0, v_lain = self._lewat
                 # v_ego sekarang, bukan yang dulu: laju ego diketahui persis tiap tick.
-                lewat = x0 + (v_lain - v_ego) * (t - t0) <= -config.PASS_MARGIN
+                # Dijepit supaya paling lambat -DV_EXIT: FSM hanya masuk manuver ini
+                # karena target lebih lambat dari DV_TRIGGER. Kalau taksiran laju
+                # belakangan berkata sebaliknya, yang keliru taksirannya, bukan
+                # premisnya -- dan tanpa jepitan ini gerbangnya bisa buntu selamanya.
+                dv = min(v_lain - v_ego, -config.DV_EXIT)
+                lewat = x0 + dv * (t - t0) <= -config.PASS_MARGIN
             else:
                 lewat = True                          # tidak pernah ada yang dilewati
             # ponytail: kalau kecepatan relatifnya tidak negatif, ekstrapolasi tidak akan
@@ -396,7 +411,7 @@ class BehaviorFSM:
 
         elif self.state == LANE_CHANGE_RETURN:
             if abs(d) < config.LATERAL_SELESAI:
-                self._lewat = None            # jangan terpakai ulang di salip berikutnya
+                self._lewat = self._v_target = None   # jangan terpakai di salip berikutnya
                 self._minta(LANE_KEEPING, t)
             else:
                 self._calon = None
