@@ -218,12 +218,57 @@ LAIN_TINGGI = 1.855                 # m, bounding box CARLA terukur 16 Sep 2026
 # lagi menebak sudut pandang dari rasio kotak, melainkan menghitungnya dari garis
 # pandang. Alasannya di WRITING_SUMMARY.md bagian 26.2.
 ELLIPSE_P = 4
+
+
+def zona_dari_dimensi(lain_panjang, lain_lebar, lebar_lajur=None):
+    """(A, B) elips-super dari dimensi kendaraan lain -> zona aman.
+
+    Dulu dua konstanta. Jadi fungsi supaya jalur VISION bisa memakai dimensi yang
+    DIUKUR sendiri (bagian 28.2) alih-alih dimensi bounding box simulator; jalur
+    ground truth tetap memanggilnya dengan LAIN_PANJANG/LAIN_LEBAR dan karena itu
+    menghasilkan angka yang sama persis seperti sebelumnya.
+
+    B di tengah antara batas perlu dan jarak berpapasan di tengah lajur: margin
+    seimbang ke keduanya. A = nilai terkecil yang memuat sudut persegi terlarang.
+    """
+    w = LANE_WIDTH if lebar_lajur is None else lebar_lajur
+    setengah_panjang = (EGO_PANJANG + lain_panjang) / 2 + JARAK_AMAN
+    setengah_lebar = (EGO_LEBAR + lain_lebar) / 2 + JARAK_AMAN
+    # B HARUS melebihi setengah lebar, kalau tidak (1 - (sl/B)^p) negatif dan
+    # akar pangkat genapnya kompleks. Titik tengah memenuhi itu selama lajur lebih
+    # lebar daripada syarat -- benar untuk dimensi peta, TIDAK selalu benar untuk
+    # dimensi hasil ukur di jalur vision. Terbentur nyata saat lebar lajur terukur
+    # 3,4 m dan lebar kendaraan tertaksir mendekati batas jepitnya.
+    b = max((w + setengah_lebar) / 2, setengah_lebar * 1.02)
+    a = setengah_panjang / (1 - (setengah_lebar / b) ** ELLIPSE_P) ** (1 / ELLIPSE_P)
+    return float(a), float(b)
+
+
 _SETENGAH_PANJANG = (EGO_PANJANG + LAIN_PANJANG) / 2 + JARAK_AMAN     # 5,81 m
 _SETENGAH_LEBAR = (EGO_LEBAR + LAIN_LEBAR) / 2 + JARAK_AMAN          # 2,91 m
-# B di tengah antara batas perlu (2,91) dan jarak berpapasan di tengah lajur (3,50):
-# margin sama ~0,30 m ke keduanya. A = nilai terkecil yang memuat sudut persegi.
-ELLIPSE_B = (LANE_WIDTH + _SETENGAH_LEBAR) / 2                       # 3,20 m
-ELLIPSE_A = _SETENGAH_PANJANG / (1 - (_SETENGAH_LEBAR / ELLIPSE_B) ** ELLIPSE_P) ** (1 / ELLIPSE_P)  # 7,71 m
+ELLIPSE_A, ELLIPSE_B = zona_dari_dimensi(LAIN_PANJANG, LAIN_LEBAR)   # 7,71 / 3,20 m
+
+# Prior dimensi kendaraan lain untuk jalur VISION. Sengaja BUKAN LAIN_PANJANG/
+# LAIN_LEBAR di atas: itu bounding box simulator, dan memakainya berarti jalur
+# vision diam-diam meminjam ground truth. Ini kendaraan desain Toyota Hiace,
+# PDGJ 2021 Tabel 5-9 -- sumber yang sama yang dipakai menjustifikasi kendaraan
+# uji (WRITING_SUMMARY.md bagian 3), dan lebih besar daripada target sebenarnya
+# sehingga priornya konservatif.
+PRIOR_PANJANG, PRIOR_LEBAR = 5.38, 1.88
+# Bobot prior dalam satuan "setara berapa pengamatan". Ada pertukaran nyata di
+# sini dan angkanya dipilih sadar, bukan ditebak:
+#
+# Saat target masih tepat di depan (theta ~ 0) panjangnya TIDAK teramati sama
+# sekali -- siluetnya cuma lebar -- padahal justru di situ `koreksi_muka`
+# memakai panjang/2 sepenuhnya. Prior yang terlalu lemah membuat panjang
+# melayang bebas persis ketika ia paling dipakai. Prior yang terlalu kuat
+# membiaskan hasil akhir.
+#
+# Terukur pada sapuan sintetis theta 0-42 deg (tests/test_dimensi.py):
+#   bobot 8 -> panjang 5,05 m   bobot 4 -> 4,93 m   bobot 1 -> 4,73 m  (benar 4,61)
+# Dipilih 4: taksirannya meleset ~0,3 m TERLALU PANJANG, yang berarti zona aman
+# sedikit lebih besar daripada perlu -- arah kesalahan yang aman.
+PRIOR_BOBOT = 4.0
 
 # Skenario (bagian 11.1): kendaraan lain = (jarak awal dari ego m, lajur, kecepatan m/s).
 # Lajur 0 = lajur ego, 1 = lajur menyalip. Kendaraan pertama = target yang disalip.

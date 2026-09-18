@@ -136,6 +136,11 @@ class MPCController:
         xref = opti.parameter(4, N + 1)
         uprev = opti.parameter(2)
         obs = opti.parameter(4, self.n_obs)          # x, y, vx, vy
+        # Sumbu zona aman sebagai PARAMETER, bukan konstanta: jalur vision
+        # memasoknya dari dimensi kendaraan yang diukurnya sendiri (bagian 28.2),
+        # sedangkan grafik CasADi hanya dibangun sekali di sini. Nilai bawaannya
+        # sama dengan konstanta lama, jadi jalur ground truth tidak berubah.
+        zona = opti.parameter(2)
 
         opti.subject_to(X[:, 0] == x0)
         biaya = 0
@@ -187,7 +192,8 @@ class MPCController:
                 yj = obs[1, j] + obs[3, j] * (k * dt)
                 # zona diukur dari pusat bodi, state X = sumbu belakang
                 g = planning.zona_aman(X[0, k] + config.SUMBU_KE_PUSAT * ca.cos(X[2, k]) - xj,
-                                       X[1, k] + config.SUMBU_KE_PUSAT * ca.sin(X[2, k]) - yj)
+                                       X[1, k] + config.SUMBU_KE_PUSAT * ca.sin(X[2, k]) - yj,
+                                       zona[0], zona[1])
                 # slack per obstacle, TIDAK dijumlahkan: satu kendaraan yang mepet
                 # tidak boleh menghapus batas aman terhadap kendaraan lain
                 opti.subject_to(g >= 1 - eps[j, k])
@@ -202,7 +208,7 @@ class MPCController:
                      'acceptable_tol': config.MPC_TOL * 100, 'acceptable_iter': 5})
 
         self.opti, self.X, self.U, self.eps, self.eps_lat = opti, X, U, eps, eps_lat
-        self.p = dict(x0=x0, xref=xref, uprev=uprev, obs=obs)
+        self.p = dict(x0=x0, xref=xref, uprev=uprev, obs=obs, zona=zona)
 
     def _obstacle_matrix(self, obstacles, x_ego):
         m = np.full((4, self.n_obs), 0.0)
@@ -218,13 +224,15 @@ class MPCController:
             m[:, :len(o)] = o.T
         return m
 
-    def solve(self, x_meas, xref, obstacles=None):
+    def solve(self, x_meas, xref, obstacles=None, zona=None):
         """-> (a, delta, waktu_ms, ok). xref shape (4, N+1)."""
         opti = self.opti
         opti.set_value(self.p['x0'], x_meas)
         opti.set_value(self.p['xref'], xref)
         opti.set_value(self.p['uprev'], self.u_prev)
         opti.set_value(self.p['obs'], self._obstacle_matrix(obstacles, x_meas))
+        opti.set_value(self.p['zona'],
+                       [config.ELLIPSE_A, config.ELLIPSE_B] if zona is None else list(zona))
 
         if self._x_buffer is not None:                # warm start: geser 1 langkah
             opti.set_initial(self.X, np.hstack([self._x_buffer[:, 1:],
@@ -264,9 +272,9 @@ class MPCController:
         self.u_prev = np.array([a, delta])
         return a, delta, ms, ok
 
-    def compute(self, x_meas, xref, a_ukur=0.0, obstacles=None, dt=None):
+    def compute(self, x_meas, xref, a_ukur=0.0, obstacles=None, dt=None, zona=None):
         """Satu tick penuh -> ControlCommand siap dikirim ke CARLA."""
-        a, delta, ms, ok = self.solve(x_meas, xref, obstacles)
+        a, delta, ms, ok = self.solve(x_meas, xref, obstacles, zona)
         throttle, brake = self.pi.update(a, a_ukur,
                                          config.FIXED_DELTA_SECONDS if dt is None else dt)
         return ControlCommand(throttle, brake,

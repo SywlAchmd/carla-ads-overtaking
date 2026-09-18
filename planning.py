@@ -104,18 +104,24 @@ def _curvature(dx, dy, ddx, ddy):
     return np.abs(dx * ddy - dy * ddx) / np.maximum(speed**3, 1e-6)
 
 
-def zona_aman(dx, dy):
+def zona_aman(dx, dy, A=None, B=None):
     """g >= 1 berarti aman. dx, dy = pusat bodi ego ke pusat kendaraan lain.
 
     Elips-super ((dx/A)^p + (dy/B)^p)^(1/p); dipakai bersama planner (numpy) dan
     MPC (CasADi). Akar ke-p membuat g berskala seperti jarak: tanpa itu slot kosong
     MPC (diparkir 1e4 m) memberi gradien ~1e9. p genap, jadi tanda dx/dy tak penting.
+
+    `A`, `B` bisa berupa simbol CasADi supaya jalur vision memasok zona dari
+    dimensi yang diukurnya sendiri (bagian 28.2). Bawaannya konstanta dimensi
+    bounding box simulator, sehingga jalur ground truth tidak berubah sama sekali.
     """
     p = config.ELLIPSE_P
-    return ((dx / config.ELLIPSE_A) ** p + (dy / config.ELLIPSE_B) ** p + 1e-12) ** (1.0 / p)
+    A = config.ELLIPSE_A if A is None else A
+    B = config.ELLIPSE_B if B is None else B
+    return ((dx / A) ** p + (dy / B) ** p + 1e-12) ** (1.0 / p)
 
 
-def _ellipse_g(states, obstacles):
+def _ellipse_g(states, obstacles, zona=None):
     """g_j untuk tiap obstacle di tiap sampel. g >= 1 berarti aman (bagian 7.2)."""
     if obstacles is None or len(obstacles) == 0:
         return None
@@ -127,7 +133,7 @@ def _ellipse_g(states, obstacles):
     # states = sumbu belakang; zona diukur dari pusat bodi
     xc = states[0] + config.SUMBU_KE_PUSAT * np.cos(states[2])
     yc = states[1] + config.SUMBU_KE_PUSAT * np.sin(states[2])
-    return zona_aman(xc - xj, yc - yj)
+    return zona_aman(xc - xj, yc - yj, *(zona or (None, None)))
 
 
 def _cost(t, states, ddy, T, y_lane_center, v_desired, cy, cx, g):
@@ -141,7 +147,7 @@ def _cost(t, states, ddy, T, y_lane_center, v_desired, cy, cx, g):
 
 
 def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
-                     side_sign=None, dt=None, y_goal=None):
+                     side_sign=None, dt=None, y_goal=None, zona=None, lebar_lajur=None):
     """Bangkitkan kandidat, saring yang tidak layak, kembalikan (terbaik, semua_layak).
 
     Mengembalikan (None, []) bila tidak ada kandidat yang lolos -- FSM harus
@@ -149,15 +155,18 @@ def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
     """
     side_sign = config.SIDE_SIGN if side_sign is None else side_sign
     dt = config.PLANNER_DT if dt is None else dt
+    # Lebar lajur hasil ukur bila jalur vision memasoknya (bagian 28.3); kalau
+    # tidak, konstanta peta seperti sebelumnya.
+    lw = config.LANE_WIDTH if lebar_lajur is None else lebar_lajur
     # y_goal = tengah lajur tujuan (absolut). Diperlukan untuk manuver kembali,
     # yang targetnya 0 dan tidak bisa dinyatakan sebagai side_sign * LANE_WIDTH.
-    y_lane_center = side_sign * config.LANE_WIDTH if y_goal is None else y_goal
+    y_lane_center = side_sign * lw if y_goal is None else y_goal
     arah = 1.0 if y_lane_center >= y0 else -1.0
     kappa_max = 1.0 / config.MIN_TURN_RADIUS
 
     feasible = []
     for offset in config.LATERAL_OFFSETS:
-        y_target = y_lane_center + arah * (offset - config.LANE_WIDTH)
+        y_target = y_lane_center + arah * (offset - lw)
         for T in config.MANEUVER_TIMES:
             if peak_lateral_accel(y_target - y0, T) > config.MAX_LATERAL_ACCEL:
                 continue                                  # saringan analitik, murah
@@ -170,7 +179,7 @@ def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
                 continue
             if _curvature(dx, dy, ddx, ddy).max() > kappa_max:
                 continue
-            g = _ellipse_g(states, obstacles)
+            g = _ellipse_g(states, obstacles, zona)
             if g is not None and g.min() < 1.0:
                 continue                                  # bertabrakan
 
@@ -191,12 +200,13 @@ OVERTAKING = 'OVERTAKING'
 LANE_CHANGE_RETURN = 'LANE_CHANGE_RETURN'
 
 
-def _di_lajur(obstacles, y_lajur):
+def _di_lajur(obstacles, y_lajur, lebar=None):
     """Halangan yang pusatnya berada di dalam lajur y_lajur."""
     if obstacles is None or len(obstacles) == 0:
         return np.empty((0, 4))
     obs = np.asarray(obstacles, dtype=float)
-    return obs[np.abs(obs[:, 1] - y_lajur) < config.LANE_WIDTH / 2.0]
+    w = config.LANE_WIDTH if lebar is None else lebar
+    return obs[np.abs(obs[:, 1] - y_lajur) < w / 2.0]
 
 
 def _ttc(depan, v_ego):
@@ -246,13 +256,25 @@ class BehaviorFSM:
         self._calon = None            # (state tujuan, waktu permintaan pertama)
         self.abort_terakhir = None    # untuk logging bagian 11.5
         self._lewat = None            # (t, x, v_lain) lajur asal terakhir TERLIHAT
+        # (y tengah lajur ego di frame jalan, lebar lajur) hasil UKUR, atau None
+        # untuk memakai konstanta peta seperti sebelum bagian 28.
+        self._lajur = None
         self.v_goal = config.V_REF    # kecepatan acuan untuk planner, lihat _v_ikut
+
+    @property
+    def lebar_lajur(self):
+        return config.LANE_WIDTH if self._lajur is None else self._lajur[1]
+
+    @property
+    def y_asal(self):
+        """Tengah lajur asal di frame jalan. 0 bila memakai konstanta peta."""
+        return 0.0 if self._lajur is None else self._lajur[0]
 
     @property
     def y_goal(self):
         """Tengah lajur yang sedang dituju -- diteruskan ke plan_lane_change."""
         menyalip = self.state in (LANE_CHANGE_OVERTAKE, OVERTAKING)
-        return self.side_sign * config.LANE_WIDTH if menyalip else 0.0
+        return self.y_asal + (self.side_sign * self.lebar_lajur if menyalip else 0.0)
 
     def _minta(self, tujuan, t):
         """Transisi baru dieksekusi setelah diminta terus-menerus selama dwell."""
@@ -268,15 +290,33 @@ class BehaviorFSM:
         """Abort tidak menunggu dwell -- menunda 0,3 s justru menambah risiko."""
         self.state, self._calon = tujuan, None
 
-    def update(self, t, d, v_ego, obstacles, dd=0.0):
+    def update(self, t, d, v_ego, obstacles, dd=0.0, lajur=None):
         """Satu langkah FSM. `obstacles` = (M,4) [x, y, vx, vy], x relatif ego.
 
         `d` = simpangan lateral ego dari lajur asal, `dd` = lajunya (m/s).
-        Kembalikan nama state.
+        `lajur` = (y tengah lajur ego di frame jalan, lebar lajur) hasil UKUR dari
+        kepala segmentasi YOLOPX; None berarti memakai konstanta peta seperti
+        sebelum bagian 28. Kembalikan nama state.
         """
-        y_tujuan = self.side_sign * config.LANE_WIDTH
-        depan = _terdepan(_di_lajur(obstacles, 0.0))
-        lajur_tujuan = _di_lajur(obstacles, y_tujuan)
+        # `lajur` = (y tengah lajur ego di frame jalan, lebar) hasil ukur, atau None.
+        #
+        # HANYA disegarkan saat LANE_KEEPING, lalu DIKUNCI sepanjang manuver.
+        # Alasannya keras: `dev_lajur` mengukur simpangan dari lajur TERDEKAT,
+        # jadi begitu ego menyeberang, lajur terdekat berubah menjadi lajur salip
+        # dan "tengah lajur asal" ikut melompat satu lajur. `y_goal` lalu
+        # menunjuk satu lajur lebih jauh lagi, dan ego mengejar sasaran yang terus
+        # lari. Terukur: ego melayang sampai -14,48 m -- empat lajur -- lalu
+        # menabrak tiang.
+        #
+        # Pelajarannya umum: ukuran RELATIF terhadap yang terdekat tidak bisa
+        # mendefinisikan sasaran ABSOLUT selama manuver yang mengubah mana yang
+        # terdekat. Ia harus dikunci sebelum manuver dimulai.
+        if lajur is not None and self.state == LANE_KEEPING:
+            self._lajur = lajur
+        lw, y_asal = self.lebar_lajur, self.y_asal
+        y_tujuan = y_asal + self.side_sign * lw
+        depan = _terdepan(_di_lajur(obstacles, y_asal, lw))
+        lajur_tujuan = _di_lajur(obstacles, y_tujuan, lw)
         # Pemicu & batal memakai kecepatan yang INGIN dipakai, bukan v_ego saja.
         # Saat mengikuti, v_ego ~ v_depan: TTC terhadap v_ego tak hingga dan FSM
         # tidak akan pernah menyalip ulang. Alasan menyalip adalah kendaraan depan
@@ -304,7 +344,7 @@ class BehaviorFSM:
             if not self._lajur_tujuan_aman(lajur_tujuan):
                 self.abort_terakhir = t                       # jalur abort, bagian 6
                 self._langsung(LANE_KEEPING)
-            elif abs(d) >= config.LATERAL_MASUK * config.LANE_WIDTH:
+            elif abs(d) >= config.LATERAL_MASUK * lw:
                 self._minta(OVERTAKING, t)
             else:
                 self._calon = None
@@ -312,7 +352,7 @@ class BehaviorFSM:
         elif self.state == OVERTAKING:
             # _terdepan tidak bisa dipakai di sini: dia hanya melihat x > 0,
             # sehingga kendaraan yang baru terlewati 1 m sudah dianggap hilang.
-            asal = _di_lajur(obstacles, 0.0)
+            asal = _di_lajur(obstacles, y_asal, lw)
             # Daftar kosong AMBIGU: bisa "sudah terlewat PASS_MARGIN", bisa "tidak
             # terlihat". Rig satu kamera depan kehilangan target tepat saat ego
             # berdampingan, dan versi lama memperlakukan keduanya sama -- vision

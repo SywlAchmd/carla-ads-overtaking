@@ -140,6 +140,19 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
             lihat.update(citra, dt, ego.v, a_filt, ego.yaw_rate) if rig
             else lihat.update(), ego)
 
+        # Geometri lajur & dimensi kendaraan dari perception, bukan dari peta HD
+        # maupun bounding box simulator (bagian 28). None selama jalur GT atau
+        # selama masker lajur belum terbaca -- pemakainya jatuh ke konstanta peta.
+        lajur = zona = lebar_lajur = None
+        geo = getattr(lihat, 'lajur', None)
+        if geo is not None and geo.lebar_lajur is not None:
+            # dev_lajur positif = ego di KIRI tengah lajur, sama seperti frame jalan
+            lajur = (ego.y - geo.dev_lajur, geo.lebar_lajur)
+            lebar_lajur = geo.lebar_lajur
+        dim = getattr(lihat, 'dimensi', None)
+        if dim is not None:
+            zona = config.zona_dari_dimensi(*dim.ukuran(), lebar_lajur)
+
         if k % 2 == 0:                                       # 10 Hz
             obs_rel = obs.copy()
             if len(obs_rel):
@@ -150,16 +163,16 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
             # saat belum ada rencana sama sekali.
             dy_ukur = ego.v * math.sin(ego.yaw)
             dy = dy_ukur if traj is None else float(traj.lateral_at(t - t_traj)[1])
-            fsm.update(t, ego.y, ego.v, obs_rel, dy_ukur)
+            fsm.update(t, ego.y, ego.v, obs_rel, dy_ukur, lajur=lajur)
             # Percepatan awal lateral (y'') dan longitudinal (a0) dari RENCANA/
             # PERINTAH, bukan hasil ukur. Hasil ukur menutup lup planner-MPC: MPC
             # mengikuti kelengkungan awal rencana, percepatan itu terukur, lalu
             # jadi syarat awal rencana berikutnya. Di S3 satu tendangan kecil
             # tumbuh jadi simpangan 2,3 m keluar lajur (TUNING_MPC.md 13).
             ddy = 0.0 if traj is None else float(traj.lateral_at(t - t_traj)[2])
-            traj_baru, layak = planning.plan_lane_change(ego.y, dy, ddy, ego.x, ego.v,
-                                                         a_cmd_prev, fsm.v_goal,
-                                                         obstacles=obs, y_goal=fsm.y_goal)
+            traj_baru, layak = planning.plan_lane_change(
+                ego.y, dy, ddy, ego.x, ego.v, a_cmd_prev, fsm.v_goal,
+                obstacles=obs, y_goal=fsm.y_goal, zona=zona, lebar_lajur=lebar_lajur)
             # KOMITMEN: replan yang gagal tidak membuang rencana yang sedang
             # berjalan (bagian 19.14). Menyeberang itu balapan antara kemajuan
             # lateral dan celah yang menutup, dan celah minimum yang dibutuhkan
@@ -185,7 +198,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
         # dibandingkan dengan posisi SEBENARNYA 0,5 dan 2,0 detik kemudian.
         y_plan_05 = float(xref[1, int(0.5 / config.MPC_DT)])
         y_plan_20 = float(xref[1, config.MPC_N])
-        cmd = mpc.compute(ego.as_vector(), xref, a_filt, obs)  # 20 Hz
+        cmd = mpc.compute(ego.as_vector(), xref, a_filt, obs, zona=zona)  # 20 Hz
         kirim = [carla.command.ApplyVehicleControl(ego_actor.id, to_carla(cmd))]
         a_cmd_prev = cmd.accel_cmd
         if perekam is not None and k >= 0:
