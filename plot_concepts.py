@@ -291,7 +291,7 @@ def scenario():
 
     b = ax[1]
     b.axis('off'); b.set_xlim(0, 1); b.set_ylim(0, 1)
-    isi = [['Model', 'Dodge Charger 2020', 'Nissan Patrol'],
+    isi = [['Model', 'Dodge Charger 2020', 'Lincoln MKZ 2020'],
            ['Length x width', '%.3f x %.3f m' % (P['length'], P['width']),
             '%.3f x %.3f m' % (config.LAIN_PANJANG, config.LAIN_LEBAR)],
            ['Wheelbase', '%.3f m' % P['L'], 'not modelled'],

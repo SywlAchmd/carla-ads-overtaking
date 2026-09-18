@@ -193,7 +193,7 @@ def main():
         pose_target = [ke_transform(ref, GAP_AWAL + V_TARGET * i * dt, 0.0, 0.0, rear)
                        for i in range(len(jejak))]
 
-        bp = world.get_blueprint_library().find('vehicle.nissan.patrol')
+        bp = world.get_blueprint_library().find(config.LAIN_BP)
         with simulation.ego_vehicle(world) as ego:
             target = world.spawn_actor(bp, pose_target[0])
             world.tick()

@@ -11,6 +11,11 @@ FIXED_DELTA_SECONDS = 0.05          # 20 Hz, mode sinkron
 
 # Kendaraan ego
 EGO_BP = 'vehicle.dodge.charger_2020'
+# Kendaraan yang disalip. Diganti dari Nissan Patrol ke Lincoln MKZ 2020 pada
+# 18 Sep 2026: sedan, bukan SUV, jadi tingginya 1,49 m alih-alih 1,86 m -- beda
+# yang cukup tajam untuk menguji apakah `DimensiKendaraan` benar-benar MENGUKUR
+# atau cuma mengembalikan priornya.
+LAIN_BP = 'vehicle.lincoln.mkz_2020'
 
 # Cari kandidat ruas lurus dengan: python validate_model.py --scan
 SPAWN_IDX = 75          # lajur paling kiri, 3 lajur di kanan, lurus, lebar 3.50 m konstan
@@ -205,12 +210,12 @@ BATAS_MANUVER = 20.0                # detik, sejak keluar dari LANE_KEEPING
 # sumbu belakang setara jarak bodi 0,29 m saat berpapasan. Elips biasa (p=2) yang
 # memuat sudut persegi butuh A ~14 m; p=4 cukup 7,71 m. TUNING_MPC.md bagian 13.
 # Dimensi ego = out/vehicle_params.json (dikunci tests/test_planning.py). Kendaraan
-# lain = Nissan Patrol, bounding box CARLA terukur 11 Sep 2026: terbesar di
-# skenario, dan perception tidak mengukur dimensi.
+# lain = LAIN_BP, bounding box CARLA terukur. Dipakai HANYA oleh jalur ground
+# truth dan oleh penilai; jalur vision mengukurnya sendiri (bagian 28.2).
 EGO_PANJANG, EGO_LEBAR = 5.008, 1.882
 SUMBU_KE_PUSAT = 1.433              # m, sumbu belakang (state MPC) -> pusat bodi ego
-LAIN_PANJANG, LAIN_LEBAR = 4.605, 1.932
-LAIN_TINGGI = 1.855                 # m, bounding box CARLA terukur 16 Sep 2026
+LAIN_PANJANG, LAIN_LEBAR = 4.892, 1.837
+LAIN_TINGGI = 1.490                 # m, bounding box Lincoln MKZ 2020, 18 Sep 2026
 # Depth membaca permukaan yang TERLIHAT (bagian 18.4), dan permukaan itu berbeda
 # saat target di depan (muka belakang) dan saat berdampingan (sisi). Rasio
 # lebar/tinggi kotak deteksi membedakannya; keduanya terpisah 2,4x.

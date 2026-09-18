@@ -242,6 +242,13 @@ class VisionPerception:
             # keterlambatan satu frame tidak berarti apa-apa -- sedangkan memakai
             # hasil ukur frame ini untuk mengoreksi frame ini sendiri menutup lup.
             if self.dimensi is not None:
+                # Diukur pada depth PERMUKAAN, bukan pusat bodi. Sempat saya geser
+                # ke d + dx dengan alasan yang sama seperti `koreksi_muka`, dan itu
+                # KELIRU: tinggi terbentang di muka yang terlihat, yang memang ada
+                # di depth d. Menggesernya merusak tinggi dari galat +1,1% menjadi
+                # +14,3% dan membuat lebar menabrak batas jepitnya, sehingga zona
+                # aman ikut berubah dan run gagal lane_departure. Yang ditaksir di
+                # sini ukuran BENDA, bukan letak pusatnya.
                 self.dimensi.amati(b, d, theta)
                 dx, dy = koreksi_muka(theta, *self.dimensi.ukuran())
             else:

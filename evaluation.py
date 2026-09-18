@@ -96,7 +96,7 @@ def _bertumpuk(A, B):
 def jarak_kotak(dx, dy, dim_a, dim_b, yaw_a=0.0, yaw_b=0.0):
     """Jarak antar BODI kendaraan, bukan antar titik pusat. (dx, dy) = pusat ke pusat.
 
-    Jarak pusat-ke-pusat menyesatkan: Charger 1,88 m dan Patrol 1,93 m lebar,
+    Jarak pusat-ke-pusat menyesatkan: Charger 1,88 m dan MKZ 1,84 m lebar,
     jadi pusat berjarak 1,5 m sudah saling menembus.
 
     Kedua kotak diputar menurut sudut hadapnya masing-masing. Yang dipaksa

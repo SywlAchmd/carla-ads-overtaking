@@ -72,7 +72,7 @@ def spawn_kendaraan(world, ref, ego_x, jarak, lajur):
     loc = carla.Location(x=float(np.interp(s_t, s, x)) - d * math.sin(p),
                          y=-(float(np.interp(s_t, s, y)) + d * math.cos(p)),
                          z=float(np.interp(s_t, s, z)) + 0.3)
-    bp = world.get_blueprint_library().find('vehicle.nissan.patrol')
+    bp = world.get_blueprint_library().find(config.LAIN_BP)
     return world.spawn_actor(bp, carla.Transform(loc, carla.Rotation(yaw=-math.degrees(p))))
 
 
@@ -149,9 +149,16 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
             # dev_lajur positif = ego di KIRI tengah lajur, sama seperti frame jalan
             lajur = (ego.y - geo.dev_lajur, geo.lebar_lajur)
             lebar_lajur = geo.lebar_lajur
-        dim = getattr(lihat, 'dimensi', None)
-        if dim is not None:
-            zona = config.zona_dari_dimensi(*dim.ukuran(), lebar_lajur)
+        if getattr(lihat, 'dimensi', None) is not None:
+            # Zona aman memakai KENDARAAN DESAIN, bukan taksiran per-frame.
+            # Taksiran dimensi dipakai untuk KETELITIAN (`koreksi_muka`), zona aman
+            # untuk KESELAMATAN, dan keduanya menuntut hal yang berbeda: bias
+            # perception sebesar 0,26 m pada lebar sudah cukup menggeser zona dan
+            # menggagalkan run. Margin keselamatan tidak boleh bisa menyusut oleh
+            # galat penaksir. Kendaraan desain PDGJ 2021 lebih besar daripada target
+            # mana pun di skenario, jadi zonanya konservatif dengan sendirinya.
+            zona = config.zona_dari_dimensi(config.PRIOR_PANJANG, config.PRIOR_LEBAR,
+                                            lebar_lajur)
 
         if k % 2 == 0:                                       # 10 Hz
             obs_rel = obs.copy()
@@ -245,6 +252,26 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
                         y_plan_05, y_plan_20])
             states.append(fsm.state)
             posisi.append(pos)
+
+    # Dimensi & geometri lajur yang DITAKSIR perception, disandingkan dengan
+    # bounding box simulator dan peta -- keduanya alat ukur di sini, bukan masukan.
+    dim = getattr(lihat, 'dimensi', None)
+    if dim is not None and dim.n_amatan:
+        pj, lb = dim.ukuran()
+        tg = dim.tinggi
+        print(f'\ndimensi kendaraan lain, DITAKSIR dari kotak deteksi '
+              f'({dim.n_amatan} amatan, teramati {dim.teramati:.3f}):')
+        print(f'  panjang {pj:6.3f} m   benar {config.LAIN_PANJANG:.3f}   '
+              f'galat {pj - config.LAIN_PANJANG:+.3f}')
+        print(f'  lebar   {lb:6.3f} m   benar {config.LAIN_LEBAR:.3f}   '
+              f'galat {lb - config.LAIN_LEBAR:+.3f}')
+        if tg is not None:
+            print(f'  tinggi  {tg:6.3f} m   benar {config.LAIN_TINGGI:.3f}   '
+                  f'galat {tg - config.LAIN_TINGGI:+.3f}')
+    geo = getattr(lihat, 'lajur', None)
+    if geo is not None and geo.lebar_lajur is not None:
+        print(f'lebar lajur ditaksir {geo.lebar_lajur:.3f} m   '
+              f'peta {config.LANE_WIDTH:.3f}   galat {geo.lebar_lajur - config.LANE_WIDTH:+.3f}')
 
     return np.array(log), np.array(states), aktor, np.array(posisi)
 
