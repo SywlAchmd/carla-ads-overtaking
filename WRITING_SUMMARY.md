@@ -2365,25 +2365,10 @@ Kalimat siap pakai untuk pembahasan:
 > yang menjangkar arahnya sekali di awal karena itu akan selalu melenceng, berapa
 > pun telitinya pengukuran awal tersebut.
 
-### 28.4 Dua temuan tentang perkakas dan data
+### 28.4 Anotasi lajur menandai CAT, bukan batas lajur
 
-**(a) `connect_lane` bawaan YOLOPX tidak menyambung apa pun.** Di `demo.py`
-resmi, fungsi itu **di-import tetapi tidak pernah dipanggil**; garis merah
-menerus pada gambar demo datang dari `show_seg_result` yang menggambar masker
-mentah. Isinya mencocokkan polinomial derajat dua **per komponen terhubung**,
-dengan saringan `area > 400` piksel. Diukur pada masker CARLA:
-
-| | |
-|---|---|
-| Komponen terhubung | 22 |
-| Lolos ambang 400 px | **2** |
-| Piksel sebelum -> sesudah | 2.849 -> 10.107 |
-
-**20 dari 22 penggal dibuang, dan tidak ada yang tersambung.** Pada BDD100K satu
-garis lajur adalah satu komponen besar, jadi di sana fungsi itu bekerja.
-
-**(b) Anotasi lajur menandai CAT, bukan batas lajur.** `dataset_recorder.py`
-membangkitkan label dari kamera segmentasi semantik CARLA:
+`dataset_recorder.py` membangkitkan label lajur dari kamera segmentasi
+semantik CARLA:
 
 ```python
 ll = np.where(self.color_mask(seg, LL_COLOR), 255, 0)

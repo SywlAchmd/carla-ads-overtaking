@@ -2872,12 +2872,7 @@ hadapnya justru MEMBURUK di Epic. Ditarik.
 
 Pola yang berulang: satu sampel bukan pengukuran.
 
-### Dua temuan tentang data, bukan tentang kode
-
-**`connect_lane` YOLOPX tidak menyambung apa pun.** Di demo resmi ia di-import
-tapi tidak pernah dipanggil. Isinya mencocokkan polinomial per komponen
-terhubung dengan saringan area > 400 px. Pada masker CARLA: 22 komponen, 2 lolos.
-Diukur, bukan diasumsikan.
+### Satu temuan tentang data, bukan tentang kode
 
 **Anotasi lajur menandai CAT, bukan batas lajur.** `dataset_recorder.py`
 mengambilnya dari kelas RoadLine kamera segmentasi semantik CARLA, yang melabeli
