@@ -2785,3 +2785,129 @@ pada -18,0 m versus -10,4 m milik GT.
 
 Ketiganya sisa dari rig **satu kamera depan**. Bukan tuning, bukan bobot.
 Pekerjaan belum selesai nomor 3.
+
+---
+
+## Perception Tanpa Peta HD — 18 September 2026
+
+Branch `perception-tanpa-gt`. Uraian lengkap dengan tabel: `WRITING_SUMMARY.md`
+bagian 28. Di sini yang dicatat jalan ceritanya — terutama percobaan yang gagal,
+karena itu yang tidak muat di tabel.
+
+### Persoalannya
+
+Audit 17 September mendaftar enam ketergantungan ground truth yang tersisa di
+jalur kendali vision. Penulis minta semuanya dibuang kecuali lokalisasi ego.
+
+### Bagaimana penggal marka menjadi satu garis lajur
+
+Ini pertanyaan yang paling sering muncul, dan jawabannya bukan di jaringan.
+YOLOPX cuma bilang "piksel ini cat marka" — tanpa identitas, tanpa nomor garis.
+
+Penyatuannya geometris: proyeksikan tiap piksel ke bidang jalan, lalu hitung
+`c = y - b*x`. Nilai `c` itu jarak melintang garis dari ego, dan SAMA untuk
+seluruh penggal milik satu garis, sejauh apa pun di depan. Histogram `c`
+memuncak sekali per garis lajur, dan puncak itulah identitasnya.
+
+Penggalnya tidak pernah disambung. Mereka cuma punya alamat melintang yang sama.
+
+### Kegagalan 1 — median jarak antar garis
+
+Rancangan pertama mengambil median jarak antar garis bersebelahan. Gagal telak:
+satu marka yang terlewat membuat celah ke tetangga berikutnya jadi DUA KALI
+lebar lajur. Lebar lajur RMS 1,550 m.
+
+Diganti pencocokan kisi — marka berjarak sama, seperti garis buku tulis, jadi
+cukup satu jarak dan satu fase. Garis yang hilang tinggal jadi lubang. RMS turun
+ke 0,074 m, 21 kali lebih baik.
+
+Yang meyakinkan: sudut hadap TIDAK berubah (0,259 → 0,257 deg). Ia memang
+ditentukan di lapis sebelumnya. Perbaikannya terisolasi dengan bersih ke tempat
+yang seharusnya.
+
+### Kegagalan 2 — jangkar arah sekali di awal
+
+Membuang jangkar peta itu sendiri mudah. Yang mengajarkan sesuatu kegagalannya.
+
+Arah jalan diukur sekali di akhir pemanasan, meleset 0,3 deg. Sekilas tak
+berarti. Tapi ego lalu mengikuti sumbu yang sedikit salah, dan galat arah TUMBUH
+sebanding jarak: 250 m × tan(0,3 deg) = 1,3 m. Ego benar-benar keluar dari tengah
+lajur, simpangan maks 0,871 m.
+
+Diganti penjejakan arah dengan tapis ~2,5 detik. Simpangan maks turun ke 0,297 m.
+
+Satu jebakan di dalamnya: frame TIDAK boleh sekadar diputar. Ego 250 m dari titik
+asal, jadi rotasi 0,3 deg melompatkan y-nya 1,3 m. Titik asalnya harus ikut
+digeser supaya (x, y) ego tetap.
+
+Pelajaran umum yang layak masuk pembahasan: **galat posisi diam, galat arah
+tumbuh.** Itu sebabnya sistem navigasi nyata tidak pernah mengukur arah sekali
+lalu pergi.
+
+### Kegagalan 3 — zona aman dari dimensi taksiran
+
+Awalnya zona aman diberi dimensi hasil ukur. Run GAGAL lane_departure — bias
+lebar 0,26 m saja sudah menggeser zona.
+
+Dipisah menurut apa yang dituntut: dimensi terukur untuk KETELITIAN
+(`koreksi_muka`), kendaraan desain PDGJ untuk KESELAMATAN (zona aman). Margin
+keselamatan tidak boleh bisa menyusut oleh galat penaksir.
+
+### Kegagalan 4 — mengukur dimensi di depth pusat bodi
+
+Saya geser pengukuran dimensi ke `d + dx`, dengan alasan yang sama yang
+melahirkan `koreksi_muka`. Keliru: tinggi terbentang di muka yang TERLIHAT, yang
+memang ada di depth `d`. Tinggi rusak dari +1,1% jadi +14,3%, lebar menabrak
+batas jepitnya, zona berubah, run gagal. Dikembalikan.
+
+Yang ditaksir di situ ukuran BENDA, bukan letak pusatnya. Dua hal berbeda yang
+kebetulan sama-sama menyangkut depth.
+
+### Kegagalan 5 — klaim saya sendiri soal setelan render
+
+Saya lihat nilai jangkar di Epic (-0,012 deg) versus Low (-0,300 deg) dan menyebut
+itu temuan besar. Keliru. Keduanya satu sampel dari sebaran ber-RMS 0,25 deg.
+Sapuan 320 frame menunjukkan perbaikannya sedang saja, dan maksimum sudut
+hadapnya justru MEMBURUK di Epic. Ditarik.
+
+Pola yang berulang: satu sampel bukan pengukuran.
+
+### Dua temuan tentang data, bukan tentang kode
+
+**`connect_lane` YOLOPX tidak menyambung apa pun.** Di demo resmi ia di-import
+tapi tidak pernah dipanggil. Isinya mencocokkan polinomial per komponen
+terhubung dengan saringan area > 400 px. Pada masker CARLA: 22 komponen, 2 lolos.
+Diukur, bukan diasumsikan.
+
+**Anotasi lajur menandai CAT, bukan batas lajur.** `dataset_recorder.py`
+mengambilnya dari kelas RoadLine kamera segmentasi semantik CARLA, yang melabeli
+cat yang benar-benar ada. Di celah antar-marka tidak ada cat, jadi tidak ada
+label. BDD100K sebaliknya: manusia menggambar polyline menerus — tafsiran.
+
+Model tidak cacat; ia mereproduksi persis apa yang diajarkan.
+
+Argumen yang lahir dari situ: **menyambungkan marka itu persoalan geometri,
+bukan persoalan segmentasi.** Jaringan hanya bisa melihat bukti; di celah tidak
+ada bukti. Yang menjembatani adalah batasan geometris. Sisa cocokan kisi 0,011 m
+membuktikannya, dan angka itu ditampilkan di HUD video supaya bisa diperiksa.
+
+Konsekuensinya menutup godaan melatih ulang dengan label menerus: itu justru
+melemahkan sistem, karena jaringan diajari mengarang cat yang tidak ada lalu
+karangannya dipercaya.
+
+### Koreksi untuk diri sendiri, di percakapan yang sama
+
+Saya sempat bilang label menandai penggal (benar), lalu menariknya berdasarkan
+jumlah komponen yang sedikit (keliru — komponennya sedikit hanya karena marka
+yang terlihat sedikit), lalu mengembalikannya setelah membuka gambar anotasinya.
+
+Yang menyelesaikan bukan hitungan, melainkan membuka berkasnya dan membaca skrip
+perekamnya. Hitungan agregat bisa menipu; gambar tidak.
+
+### Status
+
+Uji 91 → 125. Tiga run vision berturut BERHASIL. Ground truth tidak berubah.
+
+Yang belum: seluruh Tahap 9 harus diulang (kendaraan target berganti DAN jalur
+perception berubah), penilaian jalur vision masih di frame perception, dan depth
+camera tetap ideal.

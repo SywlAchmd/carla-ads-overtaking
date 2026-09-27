@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 98 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 125 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -68,6 +68,7 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python show_rig.py` | konfigurasi sensor ala KITTI: foto ego + skema berdimensi |
 | `python plot_concepts.py` | gambar konsep: rig, frame, skenario, pipeline, MPC (tanpa server) |
 | `python check_detection.py --lajur 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
+| `python check_lanes.py` | ketelitian geometri lajur (lebar, simpangan, sudut hadap) vs peta HD |
 
 ## Arsitektur
 
@@ -77,6 +78,7 @@ perception.py    GroundTruth + VisionPerception -> halangan dalam FRAME EGO
 overlay.py        overlay video: deteksi, kandidat planner, HUD  [butuh cv2]
 planning.py      quintic/quartic, local planner, BehaviorFSM      [tanpa carla]
 tracking.py      asosiasi dua tahap + Kalman filter halangan        [tanpa carla]
+lanes.py         masker lajur YOLOPX -> IPM -> kisi -> lebar & simpangan [tanpa carla]
 control.py       MPC CasADi + IPOPT, ThrottlePI, konversi kemudi  [tanpa carla]
 evaluation.py    sensor tabrakan + kriteria keberhasilan 11.2
 simulation.py    koneksi, mode sinkron, spawn, reference path
@@ -167,14 +169,31 @@ kendaraan lajur tujuan mulai 10 m di belakang ego dan tidak pernah terlihat,
 sehingga gerbang `D_SAFE_BELAKANG` selalu lolos bukan karena aman melainkan
 karena tidak terlihat.
 
-### 4. Validasi perception saat berdampingan belum terkendali
+### 4. Data Tahap 9 sudah basi — harus diukur ulang sebelum bab 4
+Branch `perception-tanpa-gt` mengganti kendaraan target (Nissan Patrol -> Lincoln
+MKZ 2020) **dan** merombak jalur perception (`WRITING_SUMMARY.md` bagian 28).
+`out/experiment_s1_gt.npz` dan `out/experiment_s1_vision.npz` diukur sebelum
+keduanya, jadi angka di bagian 21-27 tidak lagi menggambarkan kode yang ada.
+
+Perlu diulang: 10 run vision + 5 run GT, plus `check_estimation.py` dan
+`check_lanes.py`. Kerjakan SETELAH nomor 5 di bawah, supaya tidak diukur dua kali.
+
+### 5. Penilaian jalur vision memakai frame hasil perception
+Sejak jangkar peta dibuang, syarat `|y| < LULUS_LATERAL` dinilai di frame yang
+dijangkarkan kamera — jadi ia menilai "kembali ke lajur yang DIYAKINI kamera",
+bukan lajur sebenarnya. Selisih kedua frame ~0,05 m terhadap ambang 0,5 m
+sehingga vonisnya tidak berubah, tetapi secara metodologi harus dipisah:
+penilaian ke frame peta, kendali ke frame perception. Ongkosnya dua kolom log
+tambahan (`x_peta`, `y_peta`).
+
+### 6. Validasi perception saat berdampingan belum terkendali
 `check_estimation.py` menyapu 55 → 9 m tetapi seluruhnya di lajur ego dengan ego
 berjalan lurus. Angka untuk kasus berdampingan (bias +0,39 m, maks +2,41 m)
 diambil dari log run loop tertutup — bukan sapuan yang dirancang. Padahal di
 situlah `perception.koreksi_muka` bekerja paling keras, dan asumsi "ego dan
 target sehadap" melemah saat yaw ego mencapai 10,8°.
 
-### 5. 33,8 tick tanpa kandidat planner (vision) versus 4 (ground truth)
+### 7. 33,8 tick tanpa kandidat planner (vision) versus 4 (ground truth)
 Terurai jadi tiga sebab berbeda (`WRITING_SUMMARY.md` bagian 26.3). Sepuluh tick
 "halangan hantu" **sudah hilang** setelah perbaikan bagian 27, persis seperti
 diramalkan; 39,2 turun jadi 33,8. Sisanya:
@@ -192,7 +211,7 @@ Tidak menurunkan keselamatan: jarak bodi 1,644 m terhadap syarat 1,0 m, karena
 sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal bukan lagi
 kehilangan arah.
 
-### 6. Skrip rekam lama masih playback dan hardcode
+### 8. Skrip rekam lama masih playback dan hardcode
 `main.py --perception vision --rekam` sudah merekam **hasil kendali sungguhan**
 dengan overlay deteksi dan kandidat planner, jadi kebutuhan utamanya tertutupi.
 Yang tersisa: `record_maneuver.py` masih playback (physics mati, ego ditempel ke
@@ -203,7 +222,7 @@ belakang `-1.4329...` alih-alih membaca `out/vehicle_params.json`.
 `record_maneuver.py` memanggil ffmpeg, yang tidak terpasang. `overlay.py` sudah
 memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
 
-### 7. Sitasi
+### 9. Sitasi
 - **ByteTrack** — strateginya dipakai `tracking.py`, tapi sumbernya belum
   dibuka, jadi sengaja tidak ditulis sebagai entri pustaka. Terbit 2022, tepat
   di batas aturan empat tahun.
@@ -213,7 +232,7 @@ memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
   Hayward 1972, Flash & Hogan 1985, KITTI 2013) belum diputuskan. Lihat
   `WRITING_SUMMARY.md` bagian 16.
 
-### 8. Lain-lain
+### 10. Lain-lain
 - Klaim real-time sudah diukur (`WRITING_SUMMARY.md` 21.3), tetapi mesin **tidak
   benar-benar senggang** saat pengukuran (load ~3-5). Angka di mesin sepi
   kemungkinan sedikit lebih baik, bukan lebih buruk.
