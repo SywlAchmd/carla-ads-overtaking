@@ -62,7 +62,10 @@ def metrik(log, states, kolom):
         # ke ego, jadi sah di seluruh fase (bagian 22.5).
         pusat = np.array([0.0, config.SIDE_SIGN * config.LANE_WIDTH,
                           config.SIDE_SIGN * 2 * config.LANE_WIDTH])
-        xte_lajur = np.abs(log[m, k['y']][:, None] - pusat[None, :]).min(axis=1)
+        # y frame PETA bila ada: XTE harus diukur terhadap lajur yang SEBENARNYA,
+        # bukan terhadap lajur yang diyakini kamera (bagian 28.3).
+        y_nilai = log[m, k['y_peta']] if 'y_peta' in k else log[m, k['y']]
+        xte_lajur = np.abs(y_nilai[:, None] - pusat[None, :]).min(axis=1)
         out[nama] = dict(
             n=int(m.sum()),
             lacak_rata=float(lacak.mean()), lacak_maks=float(lacak.max()),
@@ -142,7 +145,8 @@ def per_layer(log, states, kolom):
     # dan memuncak di setengah lebar lajur saat menyeberang -- memang begitu.
     pusat = np.array([0.0, config.SIDE_SIGN * config.LANE_WIDTH,
                       config.SIDE_SIGN * 2 * config.LANE_WIDTH])
-    xte_lajur = np.abs(log[:, k['y']][:, None] - pusat[None, :]).min(axis=1)
+    y_nilai = log[:, k['y_peta']] if 'y_peta' in k else log[:, k['y']]
+    xte_lajur = np.abs(y_nilai[:, None] - pusat[None, :]).min(axis=1)
 
     # ITAE memakai waktu sejak MANUVER dimulai, bukan sejak run mulai: galat
     # yang lambat hilang setelah manuver itu yang ingin dihukum.

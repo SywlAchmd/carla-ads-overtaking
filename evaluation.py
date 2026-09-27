@@ -119,13 +119,19 @@ def jarak_kotak(dx, dy, dim_a, dim_b, yaw_a=0.0, yaw_b=0.0):
 
 
 def nilai_run(t, x, y, states, x_tgt, y_tgt, tabrakan, dim_ego, dim_tgt, lain=(),
-              yaw=None, yaw_tgt=0.0):
+              yaw=None, yaw_tgt=0.0, y_lajur=None):
     """Menilai satu run terhadap lima syarat bagian 11.2.
 
     `x`, `y` = titik sumbu belakang ego (state MPC); jarak antar bodi diukur dari
     PUSAT bodi, jadi digeser SUMBU_KE_PUSAT menurut `yaw`. Syarat lajur tetap
     memakai `y` sumbu belakang, sama seperti acuan yang dijejak pengendali.
     `lain` = [(x, y, yaw, dim), ...] kendaraan selain target; ikut syarat jarak aman.
+    `y_lajur` = simpangan lateral untuk SYARAT LAJUR saja; None berarti memakai `y`.
+    Dipisah sejak jangkar peta dibuang (WRITING_SUMMARY.md bagian 28.3): `y`
+    kemudian ada di frame yang dijangkarkan kamera, dan menilai "kembali ke lajur"
+    dengannya berarti bertanya apakah ego kembali ke lajur yang DIYAKININYA
+    sendiri. Syarat jarak antar bodi tidak terpengaruh -- ia selisih dua titik,
+    jadi nilainya sama di frame mana pun.
     Kembali: (berhasil, kategori, rincian). Kategori mengikuti bagian 11.2 --
     `abort` BUKAN kegagalan sistem melainkan keputusan FSM untuk tidak menyalip.
     """
@@ -157,7 +163,7 @@ def nilai_run(t, x, y, states, x_tgt, y_tgt, tabrakan, dim_ego, dim_tgt, lain=()
 
     # Syarat 2: kembali ke lajur semula dan bertahan
     n_tahan = int(round(config.LULUS_TAHAN / (t[1] - t[0])))
-    di_lajur = np.abs(y) < config.LULUS_LATERAL
+    di_lajur = np.abs(y if y_lajur is None else y_lajur) < config.LULUS_LATERAL
     di_lajur[:lewat[0]] = False                       # hanya setelah melewati
     berjalan, i_selesai = 0, None
     for i, ada in enumerate(di_lajur):

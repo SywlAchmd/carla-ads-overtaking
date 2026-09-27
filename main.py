@@ -30,7 +30,13 @@ import simulation
 KOLOM = ['t', 'x', 'y', 'yaw', 'v', 'y_ref', 'y_goal', 'dev_lajur', 'a_cmd',
          'delta_cmd', 'steer', 'throttle', 'brake', 'solve_ms', 'solver_ok',
          'n_layak', 'offset', 'x_tgt', 'y_tgt', 'v_goal', 'x_est', 'y_est',
-         'iterasi', 't_plan', 'eps', 'eps_lat', 'y_plan_05', 'y_plan_20']
+         'iterasi', 't_plan', 'eps', 'eps_lat', 'y_plan_05', 'y_plan_20',
+         # Posisi ego di frame PETA, hanya untuk PENILAIAN. Sejak jangkar peta
+         # dibuang (bagian 28.3), `x`/`y` di atas ada di frame yang dijangkarkan
+         # KAMERA -- itu benar untuk kendali, tetapi menilai "kembali ke lajur"
+         # dengannya berarti bertanya apakah ego kembali ke lajur yang DIYAKININYA
+         # sendiri. Alat ukur harus terpisah dari yang diukur.
+         'x_peta', 'y_peta']
 
 
 def to_carla(cmd):
@@ -147,6 +153,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
 
         st_rh = loc.update()
         ego = frame.ego(st_rh)                               # 20 Hz
+        ego_peta = frame_peta.ego(st_rh)                     # hanya untuk penilaian
         # JEJAK arah jalan, jangan dibekukan. Titik asal digeser bersamaan supaya
         # (x, y) ego tidak melompat: yang dikoreksi hanya arah ke depan.
         geo_f = getattr(lihat, 'lajur', None)
@@ -283,7 +290,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
                         float(cmd.solver_ok), float(n_layak), offset_pilih, tx, ty,
                         fsm.v_goal, x_est, y_est,
                         float(mpc.last_iter), t_plan, mpc.last_eps, mpc.last_eps_lat,
-                        y_plan_05, y_plan_20])
+                        y_plan_05, y_plan_20, ego_peta.x, ego_peta.y])
             states.append(fsm.state)
             posisi.append(pos)
 
@@ -388,7 +395,10 @@ def main():
     berhasil, kategori, rincian = evaluation.nilai_run(
         log[:, k['t']], log[:, k['x']], log[:, k['y']], states,
         log[:, k['x_tgt']], log[:, k['y_tgt']], monitor.tabrakan, dim_ego, dims[0], lain,
-        yaw=log[:, k['yaw']], yaw_tgt=posisi[:, 0, 2])
+        yaw=log[:, k['yaw']], yaw_tgt=posisi[:, 0, 2],
+        # Jarak antar bodi tidak bergantung frame -- ia selisih dua titik. Syarat
+        # LAJUR bergantung, jadi ia dan hanya ia dinilai di frame peta.
+        y_lajur=log[:, k['y_peta']])
     print()
     print(evaluation.ringkas_penilaian(berhasil, kategori, rincian))
     if perekam is not None:
