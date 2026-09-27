@@ -112,16 +112,20 @@ Hasil terakhir (MPC + GT perception, 16 Sep 2026), identik bit-per-bit antar-run
 | S1 | **BERHASIL** | 1,42 m | 0,015 m | 11,6 s | flying overtaking |
 | S3 | **BERHASIL** | 1,47 m | 0,018 m | 19,0 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
 
-Hasil jalur vision (MPC + YOLOPX, S1, 10 run, 17 Sep 2026) setelah perbaikan
-`WRITING_SUMMARY.md` bagian 27:
+Hasil S1 setelah perception tanpa peta HD (18 Sep 2026, `WRITING_SUMMARY.md`
+bagian 29). Kendaraan yang disalip **Lincoln MKZ 2020**, render `quality-level=Low`:
 
-| Metrik | Vision | GT (acuan) |
+| Metrik | MPC + vision (10 run) | MPC + GT (5 run) |
 |---|---|---|
-| Vonis | **10/10 BERHASIL** | 5/5 |
-| Jarak min antar bodi | 1,644 ± 0,009 m | 1,423 m |
-| Durasi manuver | 13,03 ± 0,05 s | 11,65 s |
-| Galat prediksi @ 0,5 s, RMS | 0,0361 m | 0,0204 m |
-| XTE ke lajur terdekat, RMS | 0,575 m | 0,535 m |
+| Vonis | **10/10 BERHASIL** | **5/5 BERHASIL** |
+| Jarak min antar bodi | 1,802 ± 0,007 m | 1,432 m (sd 0,000) |
+| Durasi manuver | 12,19 ± 0,11 s | 11,65 s |
+| Galat prediksi @ 0,5 s, RMS | 0,0384 m | 0,0203 m |
+| XTE ke lajur terdekat, RMS | 0,572 m | 0,535 m |
+| Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
+
+Jalur GT tetap deterministik penuh: lima run identik bit-per-bit. Tabel S1/S3 di
+atas memakai kendaraan target LAMA (Nissan Patrol) dan belum diukur ulang.
 
 Angka GT di atas setelah perbaikan jangkar halangan 1,433 m (16 Sep). Sebelumnya
 1,43 / 1,51 m: zona aman dulu lebih konservatif daripada rancangannya.
@@ -169,22 +173,19 @@ kendaraan lajur tujuan mulai 10 m di belakang ego dan tidak pernah terlihat,
 sehingga gerbang `D_SAFE_BELAKANG` selalu lolos bukan karena aman melainkan
 karena tidak terlihat.
 
-### 4. Data Tahap 9 sudah basi — harus diukur ulang sebelum bab 4
-Branch `perception-tanpa-gt` mengganti kendaraan target (Nissan Patrol -> Lincoln
-MKZ 2020) **dan** merombak jalur perception (`WRITING_SUMMARY.md` bagian 28).
-`out/experiment_s1_gt.npz` dan `out/experiment_s1_vision.npz` diukur sebelum
-keduanya, jadi angka di bagian 21-27 tidak lagi menggambarkan kode yang ada.
+### 4. Perbandingan bagian 27 versus 29 tidak bersih
+Kendaraan target berganti (Nissan Patrol -> Lincoln MKZ 2020) **bersamaan** dengan
+perombakan jalur perception, jadi selisih angka antara `WRITING_SUMMARY.md`
+bagian 27 dan 29 memuat dua sebab sekaligus. Yang bisa disimpulkan hanya yang
+kasar: menghapus peta HD tidak menurunkan tingkat keberhasilan, jarak aman,
+maupun kualitas prediksi.
 
-Perlu diulang: 10 run vision + 5 run GT, plus `check_estimation.py` dan
-`check_lanes.py`. Kerjakan SETELAH nomor 5 di bawah, supaya tidak diukur dua kali.
+Untuk perbandingan bersih, konfigurasi lama harus dijalankan dengan MKZ. Belum
+dikerjakan, dan harus dinyatakan bila selisihnya dikutip.
 
-### 5. Penilaian jalur vision memakai frame hasil perception
-Sejak jangkar peta dibuang, syarat `|y| < LULUS_LATERAL` dinilai di frame yang
-dijangkarkan kamera — jadi ia menilai "kembali ke lajur yang DIYAKINI kamera",
-bukan lajur sebenarnya. Selisih kedua frame ~0,05 m terhadap ambang 0,5 m
-sehingga vonisnya tidak berubah, tetapi secara metodologi harus dipisah:
-penilaian ke frame peta, kendali ke frame perception. Ongkosnya dua kolom log
-tambahan (`x_peta`, `y_peta`).
+### 5. Tabel hasil S1/S3 ground truth memakai kendaraan lama
+Baris S1 dan S3 di bagian Status masih Nissan Patrol; S3 belum pernah diukur ulang
+dengan MKZ sama sekali.
 
 ### 6. Validasi perception saat berdampingan belum terkendali
 `check_estimation.py` menyapu 55 → 9 m tetapi seluruhnya di lajur ego dengan ego
@@ -193,10 +194,10 @@ diambil dari log run loop tertutup — bukan sapuan yang dirancang. Padahal di
 situlah `perception.koreksi_muka` bekerja paling keras, dan asumsi "ego dan
 target sehadap" melemah saat yaw ego mencapai 10,8°.
 
-### 7. 33,8 tick tanpa kandidat planner (vision) versus 4 (ground truth)
+### 7. 36,2 tick tanpa kandidat planner (vision) versus 4 (ground truth)
 Terurai jadi tiga sebab berbeda (`WRITING_SUMMARY.md` bagian 26.3). Sepuluh tick
 "halangan hantu" **sudah hilang** setelah perbaikan bagian 27, persis seperti
-diramalkan; 39,2 turun jadi 33,8. Sisanya:
+diramalkan. Diukur ulang 18 Sep 2026 dengan MKZ: 36,2 ± 0,6. Sisanya:
 
 | Sebab | Tick | Status |
 |---|---|---|
@@ -207,7 +208,7 @@ diramalkan; 39,2 turun jadi 33,8. Sisanya:
 Klaim lama "38-44 tick bertahan di seluruh sapuan, jadi ini geometri bukan
 tuning" benar untuk kelompok kedua, dan terbukti salah untuk kelompok ketiga.
 
-Tidak menurunkan keselamatan: jarak bodi 1,644 m terhadap syarat 1,0 m, karena
+Tidak menurunkan keselamatan: jarak bodi 1,802 m terhadap syarat 1,0 m, karena
 sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal bukan lagi
 kehilangan arah.
 

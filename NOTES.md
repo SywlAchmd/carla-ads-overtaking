@@ -2911,3 +2911,61 @@ Uji 91 → 125. Tiga run vision berturut BERHASIL. Ground truth tidak berubah.
 Yang belum: seluruh Tahap 9 harus diulang (kendaraan target berganti DAN jalur
 perception berubah), penilaian jalur vision masih di frame perception, dan depth
 camera tetap ideal.
+
+---
+
+## Tahap 9 Diukur Ulang, dan Satu Metrik yang Melonjak — 18 September 2026
+
+10 run vision + 5 run GT dengan konfigurasi baru: MKZ 2020, render Low, jangkar
+frame dari kamera, dimensi dan geometri lajur diukur sendiri. Angka lengkap di
+`WRITING_SUMMARY.md` bagian 29; bagian 21-27 diberi spanduk DIGANTIKAN.
+
+### Hasil pokoknya
+
+10/10 dan 5/5 BERHASIL. Nol kegagalan solver dari 6.000 panggilan. Jarak bodi
+minimum vision 1,802 m terhadap syarat 1,0 m. Ground truth tetap identik
+bit-per-bit antar run.
+
+Yang paling layak dikutip: **galat prediksi 0,5 detik vision 1,9 kali GT**
+(0,0384 versus 0,0203 m). Riwayatnya 3,7x sebelum perbaikan bagian 26-27, 1,8x
+sesudahnya, dan 1,9x setelah peta HD dibuang seluruhnya dari jalur kendali.
+
+**Membuang ground truth tidak memperburuk pengendali.** Itu kesimpulan utamanya.
+
+### Metrik yang melonjak, dan itu justru benar
+
+IAE lateral saat LANE_KEEPING: 0,143 (GT) versus **1,036 m·s** (vision). Bagian
+27 melaporkan 0,137 untuk metrik yang sama. Lonjakan tujuh kali lipat.
+
+Bukan pengendalinya memburuk — **alat ukurnya diperbaiki.** Sampai bagian 28.3,
+XTE dihitung dari `y` di frame yang dijangkarkan kamera. Frame itu ikut bergeser
+bersama keyakinan kamera, jadi sebagian simpangan ego lenyap bersamanya.
+Sekarang XTE memakai kolom `y_peta`, yaitu posisi ego di frame peta.
+
+Dan selisih kedua frame ternyata jauh lebih besar daripada perkiraan saya: saya
+sempat bilang "~0,05 m terhadap ambang 0,5 m". Diukur satu run penuh, selisihnya
+mencapai **0,324 m** — dua pertiga ambang lulus. Vonisnya memang tidak berubah,
+tetapi marginnya jauh lebih tipis daripada yang saya klaim.
+
+Pola yang sama dengan bagian 22.5 (galat lacak 0,0017 m) dan bagian 26 (halangan
+hantu): **metrik yang diukur terhadap acuan yang ikut bergerak bersama yang
+diukur akan selalu tampak bagus.** Ini kali ketiga pola itu muncul, dan tiap kali
+penyebabnya berbeda.
+
+### Yang tidak bisa disimpulkan
+
+Kendaraan target berganti BERSAMAAN dengan perombakan perception. Jadi selisih
+angka antara bagian 27 dan 29 memuat dua sebab sekaligus dan tidak bisa
+diatribusikan. Yang bisa dikatakan cuma yang kasar — dan itu pun sudah cukup:
+tingkat keberhasilan, jarak aman, dan kualitas prediksi tidak turun.
+
+Untuk perbandingan bersih, konfigurasi lama harus dijalankan dengan MKZ. Saya
+catat sebagai pekerjaan belum selesai, bukan saya diamkan.
+
+### Satu pertanyaan lama ditutup
+
+Catatan Tahap 8 menyimpan kekhawatiran "area jalan versi fine-tuned tidak
+mencakup lajur yang sedang ditempati ego". Diukur dengan membalik-proyeksi petak
+jalan ke maskernya: lajur ego 100% tertandai di 6-12 m maupun 30-45 m, lajur
+salip juga 100%, lajur di seberang pembatas 5,8% — dan yang terakhir memang
+seharusnya dikecualikan. Tidak terbukti, dan maskernya aman dipakai.
