@@ -400,11 +400,11 @@ class BehaviorFSM:
                 lewat = x0 + dv * (t - t0) <= -config.PASS_MARGIN
             else:
                 lewat = True                          # tidak pernah ada yang dilewati
-            # ponytail: kalau kecepatan relatifnya tidak negatif, ekstrapolasi tidak akan
-            # pernah menyimpulkan "lewat" dan ego bertahan di lajur salip. Itu memang
-            # perilaku yang benar -- target yang tidak tertinggal belum boleh dipotong --
-            # tapi berarti tidak ada jalan keluar otomatis. Kamera belakang yang
-            # menyelesaikannya, bukan batas waktu.
+            # ponytail: jepitan -DV_EXIT di atas menjamin gerbang ini SELALU bisa
+            # menyimpulkan, tetapi harganya taksiran laju yang buruk membuat
+            # kesimpulannya terlambat, bukan salah. Di S1 terukur kembali pada
+            # -18 m terhadap -10,4 m milik GT. Kamera belakang yang memperbaikinya,
+            # bukan menyetel ulang jepitan ini.
             # Jangan mulai kembali selagi masih bergerak menjauhi lajur asal: quintic
             # kembali berangkat dengan laju itu dan kebablasan keluar. Di S3 kelima
             # run gagal mulai kembali pada 0,91-1,89 m/s menjauh; semua yang lolos
