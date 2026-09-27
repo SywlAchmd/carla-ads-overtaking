@@ -2185,9 +2185,14 @@ sama persis dengan yang dipakai eksperimen kendali.
 ### Segmentasi
 
 Dengan `best.pth` keluaran lajur rapi mengikuti marka, dan area jalan bersih.
-Dengan BDD, lajur pecah 7-8 komponen dan bahu kanan ikut dicat. Perlu dikonfirmasi
-ke anotasi: area jalan versi fine-tuned tidak mencakup lajur yang sedang ditempati
-ego.
+Dengan BDD, lajur pecah 7-8 komponen dan bahu kanan ikut dicat.
+
+**Ditutup 18 September 2026.** Kekhawatiran "area jalan tidak mencakup lajur yang
+sedang ditempati ego" ternyata **tidak terbukti**. Diukur dengan membalik-proyeksi
+petak jalan ke masker: lajur ego **100%** tertandai pada 6-12 m maupun 30-45 m,
+lajur salip juga 100%, sedangkan lajur di seberang pembatas hanya 5,8% -- dan itu
+memang seharusnya dikecualikan. Jadi masker area jalan aman dipakai memotong garis
+lajur di overlay (bagian 28).
 
 ---
 
