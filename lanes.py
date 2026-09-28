@@ -147,6 +147,55 @@ def _kisi(offset, bobot, lebar=(2.8, 4.4), langkah=0.01):
     return w_terbaik, fase_terbaik
 
 
+def _haluskan(titik, b0, iterasi=3):
+    """Haluskan kemiringan bersama dengan kuadrat terkecil. -> b
+
+    `_kemiringan_bersama` mencari lewat argmax histogram, dan itu kasar: skornya
+    dihitung pada bin selebar 0,10 m, jadi puncaknya rata dan letaknya melenceng.
+    Terukur pada masker sintetis, galat sudut hadap RMS 0,210 deg dengan maksimum
+    0,305 deg -- padahal kameranya sempurna dan garisnya lurus sempurna. Jadi itu
+    galat ESTIMATOR, bukan galat sensor.
+
+    Memperhalus langkah pencarian TIDAK menolong (diuji: 0,005 -> 0,0005 membuat
+    RMS-nya 0,210 -> 0,261, malah lebih buruk). Yang menolong mengganti pencarian
+    dengan penyelesaian: tugaskan tiap titik ke garis terdekat, lalu cari satu
+    kemiringan bersama dari regresi dalam-kelompok terkumpul
+
+        b = sum_k sum_i (x - xbar_k)(y - ybar_k) / sum_k sum_i (x - xbar_k)^2
+
+    yaitu kemiringan yang sama untuk semua garis, dengan perpotongan yang boleh
+    berbeda. Hasilnya RMS 0,095 deg dan maksimum 0,102 deg -- 2,2 dan 3,0 kali
+    lebih baik. Argmax tetap dipakai untuk masuk ke lembah yang benar; yang
+    diganti hanya langkah terakhirnya.
+    """
+    x, y = titik[:, 0], titik[:, 1]
+    b = b0
+    for _ in range(iterasi):
+        c = y - b * x
+        offset, _ = _puncak(c)
+        if not len(offset):
+            return b
+        kel = np.argmin(np.abs(c[:, None] - offset[None, :]), axis=1)
+        # buang titik yang jauh dari garis mana pun: marka palsu tidak boleh
+        # ikut menarik kemiringan bersama
+        dekat = np.abs(c - offset[kel]) < 0.4
+        if dekat.sum() < 20:
+            return b
+        xk, yk, kk = x[dekat], y[dekat], kel[dekat]
+        atas = bawah = 0.0
+        for g in np.unique(kk):
+            m = kk == g
+            if m.sum() < 5:
+                continue
+            dx, dy = xk[m] - xk[m].mean(), yk[m] - yk[m].mean()
+            atas += float((dx * dy).sum())
+            bawah += float((dx * dx).sum())
+        if bawah <= 0.0:
+            return b
+        b = atas / bawah
+    return b
+
+
 class GeometriLajur:
     """Hasil satu frame. `offset` positif = ke kiri ego, meter."""
 
@@ -240,7 +289,7 @@ def dari_masker(masker, bentuk_citra, jangkauan=JANGKAUAN):
     titik = titik_lajur(masker, bentuk_citra, jangkauan)
     if len(titik) < MIN_PIKSEL:
         return None
-    b = _kemiringan_bersama(titik)
+    b = _haluskan(titik, _kemiringan_bersama(titik))
     offset, bobot = _puncak(titik[:, 1] - b * titik[:, 0])
     if not len(offset):
         return None

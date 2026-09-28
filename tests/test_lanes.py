@@ -115,7 +115,7 @@ def test_pipeline_lengkap_dari_masker_buatan():
     assert g is not None
     assert abs(g.lebar_lajur - 3.5) < 0.12, g.lebar_lajur
     assert abs(g.dev_lajur - geser) < 0.12, g.dev_lajur
-    assert abs(math.degrees(g.yaw) - yaw) < 0.6, math.degrees(g.yaw)
+    assert abs(math.degrees(g.yaw) - yaw) < 0.25, math.degrees(g.yaw)
 
 
 def test_garis_hanya_pada_slot_yang_didukung_marka():
@@ -128,6 +128,26 @@ def test_garis_hanya_pada_slot_yang_didukung_marka():
     g2 = lanes.GeometriLajur(garis[[0, 1, 3]], np.full(3, 300.0), 0.0, 3000)
     assert len(g2.garis()) == 3, len(g2.garis())
     assert abs(g2.lebar_lajur - 3.5) < 0.05
+
+
+def test_penghalusan_mengalahkan_argmax_histogram():
+    """REGRESI bagian 28.1. Argmax histogram kasar karena skornya dihitung pada
+    bin 0,10 m; penghalusan kuadrat terkecil menggantikan langkah terakhirnya.
+
+    Diukur pada sapuan sudut: RMS 0,210 -> 0,095 deg, maksimum 0,305 -> 0,102.
+    Memperhalus langkah PENCARIAN tidak menolong -- itu sudah diuji dan malah
+    memburuk -- jadi uji ini menjaga penyelesaiannya, bukan kisinya.
+    """
+    kasar, halus = [], []
+    for yaw in (-1.7, -0.4, 0.0, 0.8, 2.7):
+        m = _masker_buatan(np.array([-5.25, -1.75, 1.75, 5.25]), yaw_deg=yaw)
+        t = lanes.titik_lajur(m, BENTUK_CITRA)
+        b0 = lanes._kemiringan_bersama(t)
+        kasar.append(math.degrees(-math.atan(b0)) - yaw)
+        halus.append(math.degrees(-math.atan(lanes._haluskan(t, b0))) - yaw)
+    kasar, halus = np.array(kasar), np.array(halus)
+    assert np.abs(halus).max() < np.abs(kasar).max(), (kasar, halus)
+    assert np.abs(halus).max() < 0.15, halus
 
 
 def test_masker_kosong_mengembalikan_none():
