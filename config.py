@@ -45,6 +45,12 @@ VEHICLE_PARAMS_JSON = os.path.join(OUT_DIR, 'vehicle_params.json')
 # 0,257 deg RMS (check_lanes.py); alpha 0,02 memberi tetapan waktu ~2,5 detik dan
 # menekannya ~7x, masih jauh lebih cepat daripada perubahan arah jalan itu sendiri.
 ALPHA_ARAH_JALAN = 0.02
+# Tetapan tapis TENGAH lajur, per tick 20 Hz. Tengah lajur adalah sifat jalan --
+# ia tidak boleh melompat. Tanpa tapis ini `y_goal` melompat sampai 0,147 m antar
+# replan (sd 0,044 m), dan MPC mengejar acuan yang berkedut. Simpangan ukur
+# 0,050 m RMS (check_lanes.py). Diterapkan di `BehaviorFSM` yang berjalan 10 Hz,
+# jadi alpha 0,05 memberi tetapan waktu ~2 detik.
+ALPHA_TENGAH_LAJUR = 0.05
 LANE_WIDTH = 3.50                   # m, terukur dari Town04; PDGJ 2021 Tabel 5-58 (V_D 40-80)
 PLANNER_DT = 0.1                    # detik, resolusi sampling lintasan
 LATERAL_OFFSETS = (3.0, 3.5, 4.0)   # m, magnitudo -- dikalikan SIDE_SIGN

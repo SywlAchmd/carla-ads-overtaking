@@ -186,7 +186,12 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
         lajur = zona = lebar_lajur = None
         geo = getattr(lihat, 'lajur', None)
         if geo is not None and geo.lebar_lajur is not None:
-            # dev_lajur positif = ego di KIRI tengah lajur, sama seperti frame jalan
+            # dev_lajur positif = ego di KIRI tengah lajur, sama seperti frame jalan.
+            # Mentah di sini; penapisannya di `BehaviorFSM`, di tempat yang sama
+            # dengan latch-nya. Sempat ditapis di sini dan itu KELIRU: tapisnya
+            # ikut berjalan selama manuver, ketika `dev_lajur` mengacu ke lajur
+            # SALIP, sehingga saat kembali ia membawa nilai yang sudah tertarik ke
+            # lajur seberang -- lompatan `y_goal` justru naik 0,147 -> 0,693 m.
             lajur = (ego.y - geo.dev_lajur, geo.lebar_lajur)
             lebar_lajur = geo.lebar_lajur
         if getattr(lihat, 'dimensi', None) is not None:

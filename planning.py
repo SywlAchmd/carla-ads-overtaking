@@ -318,7 +318,18 @@ class BehaviorFSM:
         # mendefinisikan sasaran ABSOLUT selama manuver yang mengubah mana yang
         # terdekat. Ia harus dikunci sebelum manuver dimulai.
         if lajur is not None and self.state == LANE_KEEPING:
-            self._lajur = lajur
+            # DITAPIS, bukan disalin: tengah lajur adalah sifat jalan, jadi ia tidak
+            # boleh melompat. Mentah, `y_goal` berkedut sampai 0,147 m antar replan
+            # dan MPC mengejar acuan yang bergerigi. Tapisnya harus di SINI, dengan
+            # gerbang state yang sama dengan latch-nya: ditapis di pemanggil, ia
+            # ikut berjalan selama manuver -- ketika `dev_lajur` mengacu ke lajur
+            # SALIP -- dan lompatannya justru naik ke 0,693 m.
+            if self._lajur is None:
+                self._lajur = lajur
+            else:
+                a = config.ALPHA_TENGAH_LAJUR
+                self._lajur = tuple(lama + a * (baru - lama)
+                                    for lama, baru in zip(self._lajur, lajur))
         lw, y_asal = self.lebar_lajur, self.y_asal
         d = d - y_asal                 # -> simpangan dari tengah lajur asal TERUKUR
         y_tujuan = y_asal + self.side_sign * lw
