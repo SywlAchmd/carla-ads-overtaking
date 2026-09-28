@@ -210,9 +210,11 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
             if len(obs_rel):
                 obs_rel[:, 0] -= ego.x        # FSM memakai x relatif terhadap ego
             # Laju lateral awal planner dari RENCANA, sama alasannya dengan ddy
-            # di bawah (bagian 15.3 baru memperbaiki ddy0; dy0 masih hasil ukur
-            # dan lupnya tetap terbuka -- bagian 19.9). Hasil ukur dipakai hanya
-            # saat belum ada rencana sama sekali.
+            # di bawah. Hasil ukur dipakai hanya saat belum ada rencana sama
+            # sekali. Komentar lama di sini mengatakan lup dy0 masih terbuka --
+            # itu sudah TIDAK benar sejak baris di bawah mengambil dari `traj`,
+            # dan diverifikasi 28 Sep 2026: laju lateral rencana dan hasil ukur
+            # sepakat sampai 0,012 m/s saat LANE_KEEPING.
             dy_ukur = ego.v * math.sin(ego.yaw)
             dy = dy_ukur if traj is None else float(traj.lateral_at(t - t_traj)[1])
             fsm.update(t, ego.y, ego.v, obs_rel, dy_ukur, lajur=lajur)

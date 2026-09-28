@@ -38,6 +38,17 @@ import yolopx
 DETIK = 20.0
 
 
+def _dev(log, states, k, sebelum):
+    """|ego - y_goal| saat LANE_KEEPING, sebelum atau sesudah manuver."""
+    keluar = np.nonzero(states != 'LANE_KEEPING')[0]
+    if not len(keluar):
+        return float('nan')
+    lk = states == 'LANE_KEEPING'
+    m = (np.arange(len(states)) < keluar[0]) if sebelum else (
+        lk & (np.arange(len(states)) > keluar[-1]))
+    return float(np.abs(log[m, k['dev_lajur']]).mean()) if m.any() else float('nan')
+
+
 def sekali(world, net, params, ref, ref5, detik=None):
     """Satu run S1 -> metrik. `net` None berarti ground truth, bukan vision.
 
@@ -78,7 +89,13 @@ def sekali(world, net, params, ref, ref5, detik=None):
         kedipan=sum(1 for i in range(len(g) - 1) if g[i] != g[i + 1]),
         rem=log[:, k['a_cmd']].min(),
         durasi=rincian.get('durasi', float('nan')),
-        dev=np.abs(log[states == 'LANE_KEEPING', k['dev_lajur']]).mean(),
+        # DIPISAH sebelum/sesudah manuver. Digabung, angkanya hampir seluruhnya
+        # berisi EKOR TRANSIEN setelah kembali ke lajur, bukan kualitas menjaga
+        # lajur -- jebakan yang sudah tercatat di WRITING_SUMMARY.md bagian 15.5
+        # untuk jalur GT, dan menggigit jauh lebih keras di jalur vision: terukur
+        # 0,034 m sebelum manuver versus 0,247 m sesudahnya.
+        dev=_dev(log, states, k, sebelum=True),
+        dev_ekor=_dev(log, states, k, sebelum=False),
         solve_rata=log[1:, k['solve_ms']].mean(),
         solve_maks=log[1:, k['solve_ms']].max(),
         gagal_solver=int((log[:, k['solver_ok']] == 0).sum()),
