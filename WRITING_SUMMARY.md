@@ -2450,147 +2450,200 @@ Uji otomatis naik 91 -> **125**. Zona aman berubah menjadi 7,758 / 3,180 m
 
 ---
 
-## 29. Hasil Tahap 9 setelah perception tanpa peta HD (18 September 2026)
+## 29. Hasil Tahap 9 setelah perception tanpa peta HD (28 September 2026)
 
 **Ini angka yang berlaku untuk bab 4.** Bagian 21-27 diukur dengan kendaraan
 target lama (Nissan Patrol) dan jalur perception lama; bagian itu dipertahankan
 sebagai riwayat, bukan sebagai hasil.
 
 Konfigurasi: Lincoln MKZ 2020 sebagai kendaraan yang disalip, render
-`-quality-level=Low`, jangkar frame jalan dari kamera, dimensi kendaraan diukur,
-geometri lajur diukur. 10 run vision, 5 run GT.
+`-quality-level=Low`, jangkar frame jalan dari kamera, arah jalan dijejak,
+tengah lajur ditapis, dimensi kendaraan diukur, kisi kandidat planner berjangkar
+pada lebar lajur nominal. 10 run vision, 5 run GT.
 
 ### 29.1 Vonis dan metrik end-to-end
 
 | Metrik | MPC + vision (10 run) | MPC + GT (5 run) |
 |---|---|---|
 | **Vonis** | **10/10 BERHASIL** | **5/5 BERHASIL** |
-| Jarak min antar bodi (syarat > 1,0 m) | **1,802 ± 0,007 m** | **1,432 m** (sd 0,000) |
-| Durasi manuver (syarat <= 20 s) | 12,19 ± 0,11 s | 11,65 s |
-| Simpangan lateral terjauh (tepi lajur -5,25 m) | -4,446 ± 0,073 m | -3,879 m |
-| Deviasi lajur saat LANE_KEEPING | 0,113 ± 0,021 m | 0,015 m |
-| Perlambatan terdalam | -2,56 ± 0,03 m/s² | -0,14 m/s² |
-| Tick tanpa kandidat planner | 36,2 ± 0,6 | 4,0 |
-| Solve rata-rata / maksimum | 17,80 / 31,49 ms | 18,21 / 28,36 ms |
+| Jarak min antar bodi (syarat > 1,0 m) | **1,797 ± 0,017 m** | **1,432 m** (sd 0,000) |
+| Durasi manuver (syarat <= 20 s) | 12,12 ± 0,05 s | 11,65 s |
+| Simpangan lateral terjauh (tepi lajur -5,25 m) | -4,415 ± 0,008 m | -3,879 m |
+| **Deviasi lajur, SEBELUM manuver** | **0,0176 ± 0,0016 m** | **0,0000 m** |
+| Deviasi lajur, ekor SESUDAH manuver | 0,1303 ± 0,0012 m | 0,0286 m |
+| Tick tanpa kandidat planner | 36,6 ± 0,9 | 4,0 |
+| Solve rata-rata | 17,21 ± 0,09 ms | 18,21 ms |
 | Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
 | Tabrakan | tidak ada | tidak ada |
 
-**Jalur ground truth tetap deterministik penuh**: lima run identik bit-per-bit
-di luar kolom waktu. Jarak minimumnya bergeser 1,423 -> 1,432 m semata karena
-kendaraan target berganti, yang juga menggeser zona aman ke 7,758 / 3,180 m.
+**Jalur ground truth tetap deterministik penuh**: lima run identik bit-per-bit di
+luar kolom waktu.
+
+**Baris deviasi lajur DIPISAH sebelum/sesudah manuver, dan itu bukan kosmetik.**
+Digabung, angkanya hampir seluruhnya berisi ekor transien setelah kembali ke
+lajur -- jebakan yang sudah tercatat di bagian 15.5 untuk jalur GT, dan menggigit
+jauh lebih keras di jalur vision. Diukur terhadap tengah lajur SEBENARNYA
+(kolom `y_peta`): **0,008 m sebelum manuver versus 0,271 m sesudahnya**.
+
+Angka yang menjawab "seberapa baik sistem ini menjaga lajur" adalah yang
+pertama. Yang kedua menjawab "berapa lama transien kembali mengendap", dan itu
+pertanyaan lain.
+
+**Catatan waktu solve maksimum.** Terukur 36,18 ± 9,97 ms dengan satu run
+menyentuh 55,20 ms, melewati anggaran tick 50 ms. Pengukuran diambil saat mesin
+menjalankan 13 langkah beruntun, jadi kemungkinan besar itu kontensi dan bukan
+regresi solver -- rata-ratanya justru turun ke 17,21 ms. **Harus diukur ulang di
+mesin senggang sebelum dikutip.**
 
 ### 29.2 Metrik per layer
 
 | Metrik | Vision | GT |
 |---|---|---|
-| **Galat prediksi @ 0,5 s, RMS** | **0,0384 ± 0,0008 m** | **0,0203 m** |
-| Galat prediksi @ 2,0 s, RMS | 0,3176 ± 0,0054 m | 0,2872 m |
-| Galat lacak lateral RMS | 0,0136 ± 0,0004 m | 0,0017 m |
-| Slack zona aman maks (0 = patuh) | 0,1957 ± 0,0060 | ~0 |
-| Slack batas lateral maks | 0,0282 ± 0,0017 | ~0 |
-| Sudut hadap maks | 7,42 ± 0,06 deg | 6,42 deg |
-| Jerk lateral RMS | 4,111 ± 0,021 m/s³ | 1,326 m/s³ |
-| Zona aman `g` minimum (>=1 aman) | 1,072 ± 0,002 | 1,022 |
-| Kandidat lolos per replan (dari 9) | 7,56 ± 0,02 | 8,02 |
-| Replan tanpa kandidat | 9,05 ± 0,15 % | 1,00 % |
-| Iterasi solver rata-rata | 8,43 | 8,29 |
+| **Galat prediksi @ 0,5 s, RMS** | **0,0394 ± 0,0006 m** | **0,0203 m** |
+| Galat prediksi @ 2,0 s, RMS | 0,3170 ± 0,0017 m | 0,2872 m |
+| Galat lacak lateral RMS | 0,0142 ± 0,0003 m | 0,0017 m |
+| Slack zona aman maks (0 = patuh) | 0,2046 ± 0,0041 | 0,00015 |
+| Slack batas lateral maks | 0,0303 ± 0,0009 | 0,00100 |
+| Sudut hadap maks | 7,50 ± 0,07 deg | 6,42 deg |
+| Jerk lateral RMS | 4,064 ± 0,061 m/s³ | 1,326 m/s³ |
+| Jitter kemudi total | 0,466 ± 0,003 | 0,270 |
+| Zona aman `g` minimum (>=1 aman) | 1,069 ± 0,002 | 1,022 |
+| Kandidat lolos per replan (dari 9) | 7,55 ± 0,01 | 8,02 |
+| Replan tanpa kandidat | 9,15 ± 0,23 % | 1,00 % |
 
-**Galat prediksi 0,5 detik: vision 1,9 kali GT** (0,0384 versus 0,0203 m). Ini
-ukuran paling langsung dari "seberapa besar derau perception merusak pengendali".
-Sebelum perbaikan bagian 26-27 rasionya 3,7 kali; setelah perbaikan itu 1,8 kali;
-dan perombakan perception di bagian 28 -- yang MENGHAPUS ketergantungan peta --
-mempertahankannya di 1,9 kali. **Memangkas ground truth tidak memperburuk
-kinerja pengendali.** Itu temuan utama bagian ini.
+**Galat prediksi 0,5 detik: vision 1,9 kali GT.** Riwayatnya 3,7x sebelum
+perbaikan bagian 26-27, 1,8x sesudahnya, dan tetap 1,9x setelah peta HD dibuang
+seluruhnya dari jalur kendali. **Memangkas ground truth tidak memperburuk
+pengendali** -- itu temuan utama bagian 28 dan 29.
 
-`g` minimum 1,072 berarti zona aman **tidak pernah dilanggar** oleh geometri
+`g` minimum 1,069 berarti zona aman **tidak pernah dilanggar** oleh geometri
 sesungguhnya di seluruh 10 run.
 
 ### 29.3 Metrik galat: XTE, IAE, ISE, ITAE
 
 **Diukur di frame PETA**, bukan di frame yang dijangkarkan kamera (bagian 28.3,
-dan kolom `y_peta` yang ditambahkan untuk itu). Jadi yang dijawab "seberapa jauh
-ego dari lajur yang SEBENARNYA", bukan "dari lajur yang diyakininya sendiri".
+kolom `y_peta`). Jadi yang dijawab "seberapa jauh ego dari lajur yang
+SEBENARNYA", bukan "dari lajur yang diyakininya sendiri".
 
 | Metrik | Vision | GT |
 |---|---|---|
-| XTE ke lajur terdekat, RMS | 0,572 ± 0,004 m | 0,535 m |
-| XTE ke lajur terdekat, maks | 1,745 ± 0,004 m | 1,735 m |
-| IAE lateral | 7,708 ± 0,146 m·s | 5,877 m·s |
-| ISE lateral | 6,540 ± 0,093 m²·s | 5,730 m²·s |
-| ITAE lateral | 47,94 ± 0,53 m·s² | 35,28 m·s² |
-| IAE lateral saat LANE_KEEPING | 1,036 ± 0,192 m·s | 0,143 m·s |
-| IAE kecepatan | 4,729 ± 0,031 m | 4,551 m |
+| XTE ke lajur terdekat, RMS | 0,5696 ± 0,0013 m | 0,5353 m |
+| XTE ke lajur terdekat, maks | 1,746 ± 0,003 m | 1,735 m |
+| IAE lateral | 7,598 ± 0,015 m·s | 5,877 m·s |
+| ISE lateral | 6,490 ± 0,029 m²·s | 5,730 m²·s |
+| ITAE lateral | 52,02 ± 0,18 m·s² | 35,28 m·s² |
+| **IAE lateral saat LANE_KEEPING** | **0,662 ± 0,014 m·s** | 0,143 m·s |
+| IAE kecepatan | 4,841 ± 0,234 m | 4,551 m |
 
-XTE maksimum 1,745 m tetap mendekati setengah lebar lajur (1,75 m), yang
+XTE maksimum 1,746 m tetap mendekati setengah lebar lajur (1,75 m), yang
 memvalidasi definisinya: nilai terbesar terjadi tepat saat ego di tengah antara
 dua lajur, dan secara geometris tidak mungkin lebih besar.
 
-**Baris yang harus ditulis apa adanya: IAE lateral saat LANE_KEEPING naik dari
-0,143 (GT) menjadi 1,036 m·s.** Angka itu jauh lebih besar daripada yang pernah
-dilaporkan bagian 27 (0,137 m·s), dan sebabnya BUKAN pengendalinya memburuk
-melainkan **alat ukurnya diperbaiki**. Sebelum bagian 28.3 metrik ini dihitung di
-frame yang dijangkarkan kamera, sehingga sebagian simpangan ego lenyap bersama
-frame yang ikut bergeser. Sekarang ia diukur terhadap lajur sebenarnya, dan
-selisih kedua frame terukur mencapai **0,324 m** dalam satu run -- dua pertiga
-ambang lulus 0,5 m. Bukan 0,05 m seperti yang sempat saya perkirakan.
+**XTE dan IAE total praktis tidak bisa diperbaiki lagi lewat perception**, dan
+alasannya struktural: keduanya **didominasi manuvernya sendiri**. Menyeberang
+lajur adalah simpangan 3,5 m selama 12 detik; kedutan 0,1 m saat menjaga lajur
+nyaris tidak menyumbang. Selisih terhadap GT (0,570 versus 0,535) sebagian besar
+berasal dari ekor transien kembali, bukan dari derau perception.
 
-Pelajarannya sama dengan bagian 22.5 dan 26: **metrik yang diukur terhadap acuan
-yang ikut bergerak bersama yang diukur akan selalu tampak bagus.**
+Yang BISA diperbaiki, dan sudah: **IAE lateral saat LANE_KEEPING turun
+1,036 -> 0,662 m·s** dalam satu hari, lewat tiga perbaikan yang berbeda
+(bagian 29.5).
 
-### 29.4 Ketelitian perception (validasi per modul)
+### 29.4 Ketelitian perception
 
-**Jarak dan kecepatan halangan** (`check_estimation.py`, sapuan 53 -> 9 m):
+**Geometri lajur** (`check_lanes.py`, 320 frame, pose disapu +-1,2 m dan +-6 deg,
+terbaca 100%):
+
+| | Bias | RMS | Maks |
+|---|---|---|---|
+| Sudut hadap | -0,062 deg | **0,086 deg** | 0,189 deg |
+| Simpangan ego dari tengah | -0,004 m | **0,018 m** | 0,050 m |
+| Lebar lajur | -0,053 m | 0,076 m | 0,500 m |
+
+**Jarak dan kecepatan halangan** (`check_estimation.py`, sapuan 53 -> 9 m,
+terdeteksi 111 dari 140 tick, deteksi pertama **44,0 m**):
 
 | | Bias | RMS | Maks |
 |---|---|---|---|
 | x memanjang | +0,321 m | 0,323 m | 0,496 m |
-| y melintang | +0,014 m | 0,018 m | 0,034 m |
-| vx | +0,001 m/s | 0,020 m/s | 0,158 m/s |
-| vy | -0,002 m/s | 0,019 m/s | 0,048 m/s |
+| y melintang | +0,014 m | 0,018 m | 0,039 m |
+| vx | +0,002 m/s | 0,021 m/s | 0,158 m/s |
 
-Terdeteksi 110 dari 140 tick; **deteksi pertama pada 43,6 m**. Jangkauan itu
-konsisten dengan pertukaran yang tercatat di bagian 18: fine-tuning menukar
-jangkauan dengan ketelitian.
+**Dimensi kendaraan** (dari kotak deteksi): tinggi 1,507 m terhadap 1,490 m
+sebenarnya (**+1,1%**), lebar 1,642 terhadap 1,837 m (-10,6%), panjang 4,046
+terhadap 4,892 m (-17,3%), keteramatan 0,028. Batasnya diuraikan di bagian 28.2.
 
-Sebaran kecepatan VisionPerception (0,011 m/s) **lebih tenang daripada acuannya
-sendiri**: `get_velocity()` simulator berderau 0,259 m/s per tick, dan pergeseran
-posisi 0,016 m/s. Itu sebabnya acuan kecepatan diambil dari pergeseran posisi,
-bukan dari `get_velocity()` -- memakai yang terakhir berarti menghukum estimator
-dengan derau milik alat ukur.
+### 29.5 Tiga perbaikan yang membawa angka ini, dan empat dugaan yang gugur
 
-**Geometri lajur** (`check_lanes.py`, 320 frame, pose disapu +-1,2 m dan +-6 deg):
+Bagian 28 menutup jalur kendali dari peta HD. Bagian ini mencatat penyetelan
+sesudahnya, yang seluruhnya lahir dari satu pertanyaan: **kenapa ego duduk 0,24 m
+dari tengah lajur?**
 
-| | Bias | RMS | Maks |
-|---|---|---|---|
-| Lebar lajur | -0,051 m | 0,073 m | 0,500 m |
-| Simpangan ego dari tengah | +0,016 m | 0,050 m | 0,107 m |
-| Sudut hadap | -0,160 deg | 0,257 deg | 0,289 deg |
+**Perbaikan 1 -- tengah lajur ditapis.** FSM menyalin hasil ukur mentah tiap tick,
+sehingga `y_goal` melompat sampai 0,147 m antar replan dan MPC mengejar acuan
+yang bergerigi. Tapisnya harus berada di balik gerbang state yang SAMA dengan
+latch-nya: ditapis di pemanggil, ia ikut berjalan selama manuver -- ketika
+`dev_lajur` mengacu ke lajur SALIP -- dan lompatannya justru naik ke 0,693 m.
+Di tempat yang benar, lompatan turun ke **0,0094 m**.
 
-Terbaca **100% frame**.
+**Perbaikan 2 -- kemiringan lajur diselesaikan, bukan dicari.**
+`_kemiringan_bersama` memilih argmax histogram pada bin 0,10 m. Pada masker
+SINTETIS -- garis lurus sempurna, kamera sempurna, tanpa derau -- galatnya tetap
+0,210 deg RMS. Itu membuktikan galatnya lahir di dalam algoritma. Memperhalus
+langkah pencarian tidak menolong (0,005 -> 0,0005 memberi 0,210 -> 0,261).
+Yang menolong mengganti langkah terakhirnya dengan penyelesaian: regresi
+dalam-kelompok terkumpul, satu kemiringan bersama dengan perpotongan bebas.
+Terhadap peta HD: sudut hadap RMS **0,257 -> 0,086 deg**, simpangan ego RMS
+**0,050 -> 0,018 m**.
 
-**Dimensi kendaraan** (dari kotak deteksi, ~130 amatan per run): tinggi 1,507 m
-terhadap 1,490 m sebenarnya (**+1,1%**), lebar 1,642 terhadap 1,837 m (-10,6%),
-panjang 4,046 terhadap 4,892 m (-17,3%), keteramatan 0,028. Uraian batasnya di
-bagian 28.2.
+**Perbaikan 3 -- kisi kandidat berjangkar pada lebar nominal.**
+`LATERAL_OFFSETS` adalah magnitudo terhadap lajur nominal 3,5 m, tetapi
+dikurangi lebar lajur HASIL UKUR. Seluruh kisi kandidat karena itu bergeser
+sebesar galat ukur, dan **tidak ada satu pun kandidat yang jatuh di tengah lajur
+tujuan**. Bidikan planner di 2 detik: **0,042 -> 0,011 m**. Regresi yang masuk
+bersama bagian 28, saat lebar lajur berubah dari konstanta menjadi hasil ukur.
 
-### 29.5 Yang berubah, dan apa artinya
+**Empat dugaan yang gugur, dan kenapa itu layak ditulis:**
 
-| | Bagian 27 (Patrol, peta HD) | **Bagian 29 (MKZ, tanpa peta)** |
-|---|---|---|
-| Vonis vision | 10/10 | 10/10 |
-| Jarak min | 1,644 m | 1,802 m |
-| Durasi | 13,03 s | 12,19 s |
-| Galat prediksi @ 0,5 s | 0,0361 m | 0,0384 m |
-| Rasio vision/GT @ 0,5 s | 1,8x | 1,9x |
-| Tick tanpa kandidat | 33,8 | 36,2 |
-| Slack zona aman maks | 0,2525 | 0,1957 |
+| Dugaan | Bagaimana dibantah |
+|---|---|
+| `K_DEV` terlalu kecil | Disapu 20 -> 320, **16 kali**. Deviasi 0,087 / 0,090 / 0,089 -- tidak bergerak |
+| Galat tunak pengendali | MPC melacak acuannya sampai 0,0001 m; yang meleset bidikan planner |
+| Lup planner-MPC terbuka pada `dy0` | Sudah tertutup sejak lama; laju lateral rencana dan hasil ukur sepakat sampai **0,012 m/s** |
+| Kuantisasi kisi pencarian sudut | Memperhalus langkah 10 kali justru MEMBURUKKAN hasilnya |
 
-**Perbandingan ini TIDAK bersih** -- kendaraan target berganti di antara keduanya,
-jadi sebagian selisih berasal dari geometri yang berbeda, bukan dari perception.
-Yang bisa disimpulkan hanya yang kasar dan itu pun sudah cukup kuat:
-**menghapus peta HD dari jalur kendali tidak menurunkan tingkat keberhasilan,
-tidak menurunkan jarak aman, dan tidak menurunkan kualitas prediksi pengendali.**
+Dan satu kesalahan metodologis yang harus dicatat karena ironis: uraian galat
+yang sempat saya susun dibaca dari kolom `y_ref`, yaitu acuan pada langkah
+PERTAMA horizon, yang menurut konstruksi menempel di posisi ego. Angka itu hanya
+mengulang galatnya sendiri. **Itu jebakan nomor 1 di `TUNING_MPC.md` bagian 9,
+yang sudah ditulis di bagian 22.5 dokumen ini** -- dan tetap terjadi. Sasaran
+planner yang sah adalah `y_plan_20`.
 
-Untuk perbandingan yang bersih, satu-satunya cara adalah menjalankan konfigurasi
-lama dengan MKZ. Belum dikerjakan, dan harus dinyatakan bila selisih di tabel ini
-dikutip.
+**Yang akhirnya menyelesaikannya bukan dugaan kelima**, melainkan berhenti
+menebak dan menggambar bentuk galat terhadap waktu:
+
+| t (s) | Simpangan dari tengah lajur sebenarnya |
+|---|---|
+| 13,75 | -0,222 m (masih di sisi lajur salip) |
+| 14,50 | +0,166 m (menyeberang) |
+| 15,25 | **+0,300 m** (puncak lampauan) |
+| 16,75 | +0,252 m |
+| 18,25 | +0,173 m |
+| 19,75 | +0,153 m (masih turun saat run berakhir) |
+
+**Melampaui lalu meluruh** -- bukan galat tunak, bukan ayunan. Jendela 20 detik
+berakhir sebelum transiennya mengendap. Itu sebabnya metriknya harus dipisah per
+fase, dan itu sebabnya angka gabungan menyembunyikan perbaikan 4,3 kali pada
+fase yang benar-benar mengukur kualitas menjaga lajur.
+
+### 29.6 Yang belum
+
+1. **Perbandingan bagian 27 versus 29 tidak bersih** -- kendaraan target berganti
+   bersamaan dengan perombakan perception, jadi selisihnya memuat dua sebab.
+2. **Waktu solve maksimum harus diukur ulang di mesin senggang.**
+3. **Depth camera tetap ideal** -- tanpa derau, tanpa lubang, tanpa batas
+   jangkauan. Satu-satunya ketergantungan sensor yang tersisa, dan harus
+   dinyatakan di batasan masalah.
+4. **Transien kembali** memuncak 0,30 m dan butuh lebih dari 6 detik mengendap.
+   Belum ditelusuri; menuntut percobaan yang dirancang untuk itu, bukan dugaan
+   kelima.

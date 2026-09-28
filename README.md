@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 125 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 127 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -112,17 +112,23 @@ Hasil terakhir (MPC + GT perception, 16 Sep 2026), identik bit-per-bit antar-run
 | S1 | **BERHASIL** | 1,42 m | 0,015 m | 11,6 s | flying overtaking |
 | S3 | **BERHASIL** | 1,47 m | 0,018 m | 19,0 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
 
-Hasil S1 setelah perception tanpa peta HD (18 Sep 2026, `WRITING_SUMMARY.md`
+Hasil S1 setelah perception tanpa peta HD (28 Sep 2026, `WRITING_SUMMARY.md`
 bagian 29). Kendaraan yang disalip **Lincoln MKZ 2020**, render `quality-level=Low`:
 
 | Metrik | MPC + vision (10 run) | MPC + GT (5 run) |
 |---|---|---|
 | Vonis | **10/10 BERHASIL** | **5/5 BERHASIL** |
-| Jarak min antar bodi | 1,802 ± 0,007 m | 1,432 m (sd 0,000) |
-| Durasi manuver | 12,19 ± 0,11 s | 11,65 s |
-| Galat prediksi @ 0,5 s, RMS | 0,0384 m | 0,0203 m |
-| XTE ke lajur terdekat, RMS | 0,572 m | 0,535 m |
+| Jarak min antar bodi | 1,797 ± 0,017 m | 1,432 m (sd 0,000) |
+| Durasi manuver | 12,12 ± 0,05 s | 11,65 s |
+| **Deviasi lajur, SEBELUM manuver** | **0,0176 ± 0,0016 m** | **0,0000 m** |
+| Deviasi lajur, ekor SESUDAH manuver | 0,1303 ± 0,0012 m | 0,0286 m |
+| Galat prediksi @ 0,5 s, RMS | 0,0394 m | 0,0203 m |
+| XTE ke lajur terdekat, RMS | 0,570 m | 0,535 m |
 | Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
+
+Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
+seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian
+15.5 dan 29.1).
 
 Jalur GT tetap deterministik penuh: lima run identik bit-per-bit. Tabel S1/S3 di
 atas memakai kendaraan target LAMA (Nissan Patrol) dan belum diukur ulang.
@@ -194,10 +200,10 @@ diambil dari log run loop tertutup — bukan sapuan yang dirancang. Padahal di
 situlah `perception.koreksi_muka` bekerja paling keras, dan asumsi "ego dan
 target sehadap" melemah saat yaw ego mencapai 10,8°.
 
-### 7. 36,2 tick tanpa kandidat planner (vision) versus 4 (ground truth)
+### 7. 36,6 tick tanpa kandidat planner (vision) versus 4 (ground truth)
 Terurai jadi tiga sebab berbeda (`WRITING_SUMMARY.md` bagian 26.3). Sepuluh tick
 "halangan hantu" **sudah hilang** setelah perbaikan bagian 27, persis seperti
-diramalkan. Diukur ulang 18 Sep 2026 dengan MKZ: 36,2 ± 0,6. Sisanya:
+diramalkan. Diukur ulang 28 Sep 2026: 36,6 ± 0,9. Sisanya:
 
 | Sebab | Tick | Status |
 |---|---|---|
@@ -208,7 +214,7 @@ diramalkan. Diukur ulang 18 Sep 2026 dengan MKZ: 36,2 ± 0,6. Sisanya:
 Klaim lama "38-44 tick bertahan di seluruh sapuan, jadi ini geometri bukan
 tuning" benar untuk kelompok kedua, dan terbukti salah untuk kelompok ketiga.
 
-Tidak menurunkan keselamatan: jarak bodi 1,802 m terhadap syarat 1,0 m, karena
+Tidak menurunkan keselamatan: jarak bodi 1,797 m terhadap syarat 1,0 m, karena
 sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal bukan lagi
 kehilangan arah.
 
@@ -233,7 +239,22 @@ memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
   Hayward 1972, Flash & Hogan 1985, KITTI 2013) belum diputuskan. Lihat
   `WRITING_SUMMARY.md` bagian 16.
 
-### 10. Lain-lain
+### 10. Transien kembali ke lajur belum ditelusuri
+Setelah kembali, ego melampaui tengah lajur sampai **+0,30 m** dan butuh lebih
+dari 6 detik mengendap; jendela run 20 detik berakhir sebelum selesai
+(`WRITING_SUMMARY.md` bagian 29.5). Tidak menurunkan keselamatan dan tidak
+menggagalkan syarat lulus, tetapi ia yang mendominasi IAE dan ITAE.
+
+Menelusurinya menuntut percobaan yang dirancang untuk itu. Empat dugaan sudah
+gugur pada 28 Sep; jangan menambah dugaan kelima tanpa mengukur.
+
+### 11. Waktu solve maksimum perlu diukur di mesin senggang
+Terukur 36,18 ± 9,97 ms dengan satu run menyentuh **55,20 ms**, melewati anggaran
+tick 50 ms. Diambil saat mesin menjalankan 13 langkah beruntun, dan rata-ratanya
+justru turun ke 17,21 ms -- jadi kemungkinan besar kontensi, bukan regresi
+solver. Harus diulang sebelum dikutip.
+
+### 12. Lain-lain
 - Klaim real-time sudah diukur (`WRITING_SUMMARY.md` 21.3), tetapi mesin **tidak
   benar-benar senggang** saat pengukuran (load ~3-5). Angka di mesin sepi
   kemungkinan sedikit lebih baik, bukan lebih buruk.
