@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 98 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 127 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -68,6 +68,7 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python show_rig.py` | konfigurasi sensor ala KITTI: foto ego + skema berdimensi |
 | `python plot_concepts.py` | gambar konsep: rig, frame, skenario, pipeline, MPC (tanpa server) |
 | `python check_detection.py --lajur 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
+| `python check_lanes.py` | ketelitian geometri lajur (lebar, simpangan, sudut hadap) vs peta HD |
 
 ## Arsitektur
 
@@ -77,6 +78,7 @@ perception.py    GroundTruth + VisionPerception -> halangan dalam FRAME EGO
 overlay.py        overlay video: deteksi, kandidat planner, HUD  [butuh cv2]
 planning.py      quintic/quartic, local planner, BehaviorFSM      [tanpa carla]
 tracking.py      asosiasi dua tahap + Kalman filter halangan        [tanpa carla]
+lanes.py         masker lajur YOLOPX -> IPM -> kisi -> lebar & simpangan [tanpa carla]
 control.py       MPC CasADi + IPOPT, ThrottlePI, konversi kemudi  [tanpa carla]
 evaluation.py    sensor tabrakan + kriteria keberhasilan 11.2
 simulation.py    koneksi, mode sinkron, spawn, reference path
@@ -110,16 +112,26 @@ Hasil terakhir (MPC + GT perception, 16 Sep 2026), identik bit-per-bit antar-run
 | S1 | **BERHASIL** | 1,42 m | 0,015 m | 11,6 s | flying overtaking |
 | S3 | **BERHASIL** | 1,47 m | 0,018 m | 19,0 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
 
-Hasil jalur vision (MPC + YOLOPX, S1, 10 run, 17 Sep 2026) setelah perbaikan
-`WRITING_SUMMARY.md` bagian 27:
+Hasil S1 setelah perception tanpa peta HD (28 Sep 2026, `WRITING_SUMMARY.md`
+bagian 29). Kendaraan yang disalip **Lincoln MKZ 2020**, render `quality-level=Low`:
 
-| Metrik | Vision | GT (acuan) |
+| Metrik | MPC + vision (10 run) | MPC + GT (5 run) |
 |---|---|---|
-| Vonis | **10/10 BERHASIL** | 5/5 |
-| Jarak min antar bodi | 1,644 ± 0,009 m | 1,423 m |
-| Durasi manuver | 13,03 ± 0,05 s | 11,65 s |
-| Galat prediksi @ 0,5 s, RMS | 0,0361 m | 0,0204 m |
-| XTE ke lajur terdekat, RMS | 0,575 m | 0,535 m |
+| Vonis | **10/10 BERHASIL** | **5/5 BERHASIL** |
+| Jarak min antar bodi | 1,797 ± 0,017 m | 1,432 m (sd 0,000) |
+| Durasi manuver | 12,12 ± 0,05 s | 11,65 s |
+| **Deviasi lajur, SEBELUM manuver** | **0,0176 ± 0,0016 m** | **0,0000 m** |
+| Deviasi lajur, ekor SESUDAH manuver | 0,1303 ± 0,0012 m | 0,0286 m |
+| Galat prediksi @ 0,5 s, RMS | 0,0394 m | 0,0203 m |
+| XTE ke lajur terdekat, RMS | 0,570 m | 0,535 m |
+| Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
+
+Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
+seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian
+15.5 dan 29.1).
+
+Jalur GT tetap deterministik penuh: lima run identik bit-per-bit. Tabel S1/S3 di
+atas memakai kendaraan target LAMA (Nissan Patrol) dan belum diukur ulang.
 
 Angka GT di atas setelah perbaikan jangkar halangan 1,433 m (16 Sep). Sebelumnya
 1,43 / 1,51 m: zona aman dulu lebih konservatif daripada rancangannya.
@@ -167,17 +179,31 @@ kendaraan lajur tujuan mulai 10 m di belakang ego dan tidak pernah terlihat,
 sehingga gerbang `D_SAFE_BELAKANG` selalu lolos bukan karena aman melainkan
 karena tidak terlihat.
 
-### 4. Validasi perception saat berdampingan belum terkendali
+### 4. Perbandingan bagian 27 versus 29 tidak bersih
+Kendaraan target berganti (Nissan Patrol -> Lincoln MKZ 2020) **bersamaan** dengan
+perombakan jalur perception, jadi selisih angka antara `WRITING_SUMMARY.md`
+bagian 27 dan 29 memuat dua sebab sekaligus. Yang bisa disimpulkan hanya yang
+kasar: menghapus peta HD tidak menurunkan tingkat keberhasilan, jarak aman,
+maupun kualitas prediksi.
+
+Untuk perbandingan bersih, konfigurasi lama harus dijalankan dengan MKZ. Belum
+dikerjakan, dan harus dinyatakan bila selisihnya dikutip.
+
+### 5. Tabel hasil S1/S3 ground truth memakai kendaraan lama
+Baris S1 dan S3 di bagian Status masih Nissan Patrol; S3 belum pernah diukur ulang
+dengan MKZ sama sekali.
+
+### 6. Validasi perception saat berdampingan belum terkendali
 `check_estimation.py` menyapu 55 → 9 m tetapi seluruhnya di lajur ego dengan ego
 berjalan lurus. Angka untuk kasus berdampingan (bias +0,39 m, maks +2,41 m)
 diambil dari log run loop tertutup — bukan sapuan yang dirancang. Padahal di
 situlah `perception.koreksi_muka` bekerja paling keras, dan asumsi "ego dan
 target sehadap" melemah saat yaw ego mencapai 10,8°.
 
-### 5. 33,8 tick tanpa kandidat planner (vision) versus 4 (ground truth)
+### 7. 36,6 tick tanpa kandidat planner (vision) versus 4 (ground truth)
 Terurai jadi tiga sebab berbeda (`WRITING_SUMMARY.md` bagian 26.3). Sepuluh tick
 "halangan hantu" **sudah hilang** setelah perbaikan bagian 27, persis seperti
-diramalkan; 39,2 turun jadi 33,8. Sisanya:
+diramalkan. Diukur ulang 28 Sep 2026: 36,6 ± 0,9. Sisanya:
 
 | Sebab | Tick | Status |
 |---|---|---|
@@ -188,11 +214,11 @@ diramalkan; 39,2 turun jadi 33,8. Sisanya:
 Klaim lama "38-44 tick bertahan di seluruh sapuan, jadi ini geometri bukan
 tuning" benar untuk kelompok kedua, dan terbukti salah untuk kelompok ketiga.
 
-Tidak menurunkan keselamatan: jarak bodi 1,644 m terhadap syarat 1,0 m, karena
+Tidak menurunkan keselamatan: jarak bodi 1,797 m terhadap syarat 1,0 m, karena
 sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal bukan lagi
 kehilangan arah.
 
-### 6. Skrip rekam lama masih playback dan hardcode
+### 8. Skrip rekam lama masih playback dan hardcode
 `main.py --perception vision --rekam` sudah merekam **hasil kendali sungguhan**
 dengan overlay deteksi dan kandidat planner, jadi kebutuhan utamanya tertutupi.
 Yang tersisa: `record_maneuver.py` masih playback (physics mati, ego ditempel ke
@@ -203,7 +229,7 @@ belakang `-1.4329...` alih-alih membaca `out/vehicle_params.json`.
 `record_maneuver.py` memanggil ffmpeg, yang tidak terpasang. `overlay.py` sudah
 memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
 
-### 7. Sitasi
+### 9. Sitasi
 - **ByteTrack** — strateginya dipakai `tracking.py`, tapi sumbernya belum
   dibuka, jadi sengaja tidak ditulis sebagai entri pustaka. Terbit 2022, tepat
   di batas aturan empat tahun.
@@ -213,7 +239,22 @@ memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
   Hayward 1972, Flash & Hogan 1985, KITTI 2013) belum diputuskan. Lihat
   `WRITING_SUMMARY.md` bagian 16.
 
-### 8. Lain-lain
+### 10. Transien kembali ke lajur belum ditelusuri
+Setelah kembali, ego melampaui tengah lajur sampai **+0,30 m** dan butuh lebih
+dari 6 detik mengendap; jendela run 20 detik berakhir sebelum selesai
+(`WRITING_SUMMARY.md` bagian 29.5). Tidak menurunkan keselamatan dan tidak
+menggagalkan syarat lulus, tetapi ia yang mendominasi IAE dan ITAE.
+
+Menelusurinya menuntut percobaan yang dirancang untuk itu. Empat dugaan sudah
+gugur pada 28 Sep; jangan menambah dugaan kelima tanpa mengukur.
+
+### 11. Waktu solve maksimum perlu diukur di mesin senggang
+Terukur 36,18 ± 9,97 ms dengan satu run menyentuh **55,20 ms**, melewati anggaran
+tick 50 ms. Diambil saat mesin menjalankan 13 langkah beruntun, dan rata-ratanya
+justru turun ke 17,21 ms -- jadi kemungkinan besar kontensi, bukan regresi
+solver. Harus diulang sebelum dikutip.
+
+### 12. Lain-lain
 - Klaim real-time sudah diukur (`WRITING_SUMMARY.md` 21.3), tetapi mesin **tidak
   benar-benar senggang** saat pengukuran (load ~3-5). Angka di mesin sepi
   kemungkinan sedikit lebih baik, bukan lebih buruk.

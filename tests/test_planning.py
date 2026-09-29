@@ -158,6 +158,21 @@ def test_rencana_tidak_meledak_di_luar_durasinya():
         assert abs(traj.sample_at(traj.durasi() + lewat)[1] - akhir[0]) < 1e-6
 
 
+def test_kandidat_tengah_tepat_di_tengah_lajur():
+    """REGRESI bagian 29. Kisi kandidat harus memuat tengah lajur tujuan, berapa
+    pun lebar lajur yang DIUKUR. Sempat dikurangi lebar hasil ukur, sehingga
+    seluruh kisi bergeser sebesar galat ukur dan tidak ada kandidat yang jatuh di
+    tengah -- planner membidik 0,125 m dari tengah dan MPC mengikutinya dengan
+    tepat."""
+    import planning as P
+    for lebar_ukur in (3.2, 3.38, 3.5, 3.62):
+        traj, layak = P.plan_lane_change(0.0, 0.0, 0.0, 0.0, 13.4, 0.0, 13.4,
+                                         y_goal=0.0, lebar_lajur=lebar_ukur)
+        assert layak, lebar_ukur
+        akhir = [abs(t.states[1, -1]) for _, _, _, t in layak]
+        assert min(akhir) < 0.02, (lebar_ukur, min(akhir))
+
+
 if __name__ == '__main__':
     for nama, fn in sorted(globals().items()):
         if nama.startswith('test_'):

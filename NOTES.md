@@ -2185,9 +2185,14 @@ sama persis dengan yang dipakai eksperimen kendali.
 ### Segmentasi
 
 Dengan `best.pth` keluaran lajur rapi mengikuti marka, dan area jalan bersih.
-Dengan BDD, lajur pecah 7-8 komponen dan bahu kanan ikut dicat. Perlu dikonfirmasi
-ke anotasi: area jalan versi fine-tuned tidak mencakup lajur yang sedang ditempati
-ego.
+Dengan BDD, lajur pecah 7-8 komponen dan bahu kanan ikut dicat.
+
+**Ditutup 18 September 2026.** Kekhawatiran "area jalan tidak mencakup lajur yang
+sedang ditempati ego" ternyata **tidak terbukti**. Diukur dengan membalik-proyeksi
+petak jalan ke masker: lajur ego **100%** tertandai pada 6-12 m maupun 30-45 m,
+lajur salip juga 100%, sedangkan lajur di seberang pembatas hanya 5,8% -- dan itu
+memang seharusnya dikecualikan. Jadi masker area jalan aman dipakai memotong garis
+lajur di overlay (bagian 28).
 
 ---
 
@@ -2785,3 +2790,315 @@ pada -18,0 m versus -10,4 m milik GT.
 
 Ketiganya sisa dari rig **satu kamera depan**. Bukan tuning, bukan bobot.
 Pekerjaan belum selesai nomor 3.
+
+---
+
+## Perception Tanpa Peta HD — 18 September 2026
+
+Branch `perception-tanpa-gt`. Uraian lengkap dengan tabel: `WRITING_SUMMARY.md`
+bagian 28. Di sini yang dicatat jalan ceritanya — terutama percobaan yang gagal,
+karena itu yang tidak muat di tabel.
+
+### Persoalannya
+
+Audit 17 September mendaftar enam ketergantungan ground truth yang tersisa di
+jalur kendali vision. Penulis minta semuanya dibuang kecuali lokalisasi ego.
+
+### Bagaimana penggal marka menjadi satu garis lajur
+
+Ini pertanyaan yang paling sering muncul, dan jawabannya bukan di jaringan.
+YOLOPX cuma bilang "piksel ini cat marka" — tanpa identitas, tanpa nomor garis.
+
+Penyatuannya geometris: proyeksikan tiap piksel ke bidang jalan, lalu hitung
+`c = y - b*x`. Nilai `c` itu jarak melintang garis dari ego, dan SAMA untuk
+seluruh penggal milik satu garis, sejauh apa pun di depan. Histogram `c`
+memuncak sekali per garis lajur, dan puncak itulah identitasnya.
+
+Penggalnya tidak pernah disambung. Mereka cuma punya alamat melintang yang sama.
+
+### Kegagalan 1 — median jarak antar garis
+
+Rancangan pertama mengambil median jarak antar garis bersebelahan. Gagal telak:
+satu marka yang terlewat membuat celah ke tetangga berikutnya jadi DUA KALI
+lebar lajur. Lebar lajur RMS 1,550 m.
+
+Diganti pencocokan kisi — marka berjarak sama, seperti garis buku tulis, jadi
+cukup satu jarak dan satu fase. Garis yang hilang tinggal jadi lubang. RMS turun
+ke 0,074 m, 21 kali lebih baik.
+
+Yang meyakinkan: sudut hadap TIDAK berubah (0,259 → 0,257 deg). Ia memang
+ditentukan di lapis sebelumnya. Perbaikannya terisolasi dengan bersih ke tempat
+yang seharusnya.
+
+### Kegagalan 2 — jangkar arah sekali di awal
+
+Membuang jangkar peta itu sendiri mudah. Yang mengajarkan sesuatu kegagalannya.
+
+Arah jalan diukur sekali di akhir pemanasan, meleset 0,3 deg. Sekilas tak
+berarti. Tapi ego lalu mengikuti sumbu yang sedikit salah, dan galat arah TUMBUH
+sebanding jarak: 250 m × tan(0,3 deg) = 1,3 m. Ego benar-benar keluar dari tengah
+lajur, simpangan maks 0,871 m.
+
+Diganti penjejakan arah dengan tapis ~2,5 detik. Simpangan maks turun ke 0,297 m.
+
+Satu jebakan di dalamnya: frame TIDAK boleh sekadar diputar. Ego 250 m dari titik
+asal, jadi rotasi 0,3 deg melompatkan y-nya 1,3 m. Titik asalnya harus ikut
+digeser supaya (x, y) ego tetap.
+
+Pelajaran umum yang layak masuk pembahasan: **galat posisi diam, galat arah
+tumbuh.** Itu sebabnya sistem navigasi nyata tidak pernah mengukur arah sekali
+lalu pergi.
+
+### Kegagalan 3 — zona aman dari dimensi taksiran
+
+Awalnya zona aman diberi dimensi hasil ukur. Run GAGAL lane_departure — bias
+lebar 0,26 m saja sudah menggeser zona.
+
+Dipisah menurut apa yang dituntut: dimensi terukur untuk KETELITIAN
+(`koreksi_muka`), kendaraan desain PDGJ untuk KESELAMATAN (zona aman). Margin
+keselamatan tidak boleh bisa menyusut oleh galat penaksir.
+
+### Kegagalan 4 — mengukur dimensi di depth pusat bodi
+
+Saya geser pengukuran dimensi ke `d + dx`, dengan alasan yang sama yang
+melahirkan `koreksi_muka`. Keliru: tinggi terbentang di muka yang TERLIHAT, yang
+memang ada di depth `d`. Tinggi rusak dari +1,1% jadi +14,3%, lebar menabrak
+batas jepitnya, zona berubah, run gagal. Dikembalikan.
+
+Yang ditaksir di situ ukuran BENDA, bukan letak pusatnya. Dua hal berbeda yang
+kebetulan sama-sama menyangkut depth.
+
+### Kegagalan 5 — klaim saya sendiri soal setelan render
+
+Saya lihat nilai jangkar di Epic (-0,012 deg) versus Low (-0,300 deg) dan menyebut
+itu temuan besar. Keliru. Keduanya satu sampel dari sebaran ber-RMS 0,25 deg.
+Sapuan 320 frame menunjukkan perbaikannya sedang saja, dan maksimum sudut
+hadapnya justru MEMBURUK di Epic. Ditarik.
+
+Pola yang berulang: satu sampel bukan pengukuran.
+
+### Satu temuan tentang data, bukan tentang kode
+
+**Anotasi lajur menandai CAT, bukan batas lajur.** `dataset_recorder.py`
+mengambilnya dari kelas RoadLine kamera segmentasi semantik CARLA, yang melabeli
+cat yang benar-benar ada. Di celah antar-marka tidak ada cat, jadi tidak ada
+label. BDD100K sebaliknya: manusia menggambar polyline menerus — tafsiran.
+
+Model tidak cacat; ia mereproduksi persis apa yang diajarkan.
+
+Argumen yang lahir dari situ: **menyambungkan marka itu persoalan geometri,
+bukan persoalan segmentasi.** Jaringan hanya bisa melihat bukti; di celah tidak
+ada bukti. Yang menjembatani adalah batasan geometris. Sisa cocokan kisi 0,011 m
+membuktikannya, dan angka itu ditampilkan di HUD video supaya bisa diperiksa.
+
+Konsekuensinya menutup godaan melatih ulang dengan label menerus: itu justru
+melemahkan sistem, karena jaringan diajari mengarang cat yang tidak ada lalu
+karangannya dipercaya.
+
+### Koreksi untuk diri sendiri, di percakapan yang sama
+
+Saya sempat bilang label menandai penggal (benar), lalu menariknya berdasarkan
+jumlah komponen yang sedikit (keliru — komponennya sedikit hanya karena marka
+yang terlihat sedikit), lalu mengembalikannya setelah membuka gambar anotasinya.
+
+Yang menyelesaikan bukan hitungan, melainkan membuka berkasnya dan membaca skrip
+perekamnya. Hitungan agregat bisa menipu; gambar tidak.
+
+### Status
+
+Uji 91 → 125. Tiga run vision berturut BERHASIL. Ground truth tidak berubah.
+
+Yang belum: seluruh Tahap 9 harus diulang (kendaraan target berganti DAN jalur
+perception berubah), penilaian jalur vision masih di frame perception, dan depth
+camera tetap ideal.
+
+---
+
+## Tahap 9 Diukur Ulang, dan Satu Metrik yang Melonjak — 18 September 2026
+
+10 run vision + 5 run GT dengan konfigurasi baru: MKZ 2020, render Low, jangkar
+frame dari kamera, dimensi dan geometri lajur diukur sendiri. Angka lengkap di
+`WRITING_SUMMARY.md` bagian 29; bagian 21-27 diberi spanduk DIGANTIKAN.
+
+### Hasil pokoknya
+
+10/10 dan 5/5 BERHASIL. Nol kegagalan solver dari 6.000 panggilan. Jarak bodi
+minimum vision 1,802 m terhadap syarat 1,0 m. Ground truth tetap identik
+bit-per-bit antar run.
+
+Yang paling layak dikutip: **galat prediksi 0,5 detik vision 1,9 kali GT**
+(0,0384 versus 0,0203 m). Riwayatnya 3,7x sebelum perbaikan bagian 26-27, 1,8x
+sesudahnya, dan 1,9x setelah peta HD dibuang seluruhnya dari jalur kendali.
+
+**Membuang ground truth tidak memperburuk pengendali.** Itu kesimpulan utamanya.
+
+### Metrik yang melonjak, dan itu justru benar
+
+IAE lateral saat LANE_KEEPING: 0,143 (GT) versus **1,036 m·s** (vision). Bagian
+27 melaporkan 0,137 untuk metrik yang sama. Lonjakan tujuh kali lipat.
+
+Bukan pengendalinya memburuk — **alat ukurnya diperbaiki.** Sampai bagian 28.3,
+XTE dihitung dari `y` di frame yang dijangkarkan kamera. Frame itu ikut bergeser
+bersama keyakinan kamera, jadi sebagian simpangan ego lenyap bersamanya.
+Sekarang XTE memakai kolom `y_peta`, yaitu posisi ego di frame peta.
+
+Dan selisih kedua frame ternyata jauh lebih besar daripada perkiraan saya: saya
+sempat bilang "~0,05 m terhadap ambang 0,5 m". Diukur satu run penuh, selisihnya
+mencapai **0,324 m** — dua pertiga ambang lulus. Vonisnya memang tidak berubah,
+tetapi marginnya jauh lebih tipis daripada yang saya klaim.
+
+Pola yang sama dengan bagian 22.5 (galat lacak 0,0017 m) dan bagian 26 (halangan
+hantu): **metrik yang diukur terhadap acuan yang ikut bergerak bersama yang
+diukur akan selalu tampak bagus.** Ini kali ketiga pola itu muncul, dan tiap kali
+penyebabnya berbeda.
+
+### Yang tidak bisa disimpulkan
+
+Kendaraan target berganti BERSAMAAN dengan perombakan perception. Jadi selisih
+angka antara bagian 27 dan 29 memuat dua sebab sekaligus dan tidak bisa
+diatribusikan. Yang bisa dikatakan cuma yang kasar — dan itu pun sudah cukup:
+tingkat keberhasilan, jarak aman, dan kualitas prediksi tidak turun.
+
+Untuk perbandingan bersih, konfigurasi lama harus dijalankan dengan MKZ. Saya
+catat sebagai pekerjaan belum selesai, bukan saya diamkan.
+
+### Satu pertanyaan lama ditutup
+
+Catatan Tahap 8 menyimpan kekhawatiran "area jalan versi fine-tuned tidak
+mencakup lajur yang sedang ditempati ego". Diukur dengan membalik-proyeksi petak
+jalan ke maskernya: lajur ego 100% tertandai di 6-12 m maupun 30-45 m, lajur
+salip juga 100%, lajur di seberang pembatas 5,8% — dan yang terakhir memang
+seharusnya dikecualikan. Tidak terbukti, dan maskernya aman dipakai.
+
+---
+
+## Menyetel Setelah Peta Dibuang — 28 September 2026
+
+Lanjutan bagian 28. Satu pertanyaan, seharian: **kenapa ego duduk 0,24 m dari
+tengah lajur?** Angka lengkap di `WRITING_SUMMARY.md` bagian 29.
+
+Empat dugaan saya gugur sebelum jawabannya ketemu. Itu yang dicatat di sini,
+karena tabel hasil tidak bisa menyimpannya.
+
+### Dugaan 1 — `K_DEV` terlalu kecil. Gugur.
+
+Bobot simpangan terminal planner disapu 20 → 80 → 320, **16 kali lipat**.
+Deviasi: 0,087 / 0,090 / 0,089. **Tidak bergerak sama sekali.**
+
+Itu menutup seluruh kelas penjelasan "pertukaran bobot" dalam satu sapuan. Yang
+tersisa hanya lantai keras — sesuatu yang tidak bisa ditawar bobot.
+
+### Dugaan 2 — galat tunak pengendali. Gugur, dan cara gugurnya memalukan.
+
+Saya urai galatnya: *"planner membidik +0,1249, MPC meleset +0,0001"*. Rapi
+sekali, dan **tidak sah**.
+
+Saya membacanya dari kolom `y_ref`, yaitu acuan pada langkah PERTAMA horizon —
+yang menurut konstruksi menempel di posisi ego. Angka itu cuma mengulang
+galatnya sendiri.
+
+**Itu jebakan nomor 1 di `TUNING_MPC.md` bagian 9, yang sudah saya tulis sendiri
+di bagian 22.5 dokumen ini.** Ditulis, lalu dilanggar. Sasaran planner yang sah
+`y_plan_20`, acuan di ujung horizon.
+
+Kali keempat pola ini muncul di proyek: galat lacak 0,0017 m, halangan hantu,
+XTE di frame perception, dan sekarang ini.
+
+### Dugaan 3 — lup planner-MPC terbuka pada `dy0`. Gugur.
+
+Komentar di `main.py` bilang lupnya masih terbuka. **Komentarnya basi** — baris
+di bawahnya sudah lama mengambil `dy` dari rencana.
+
+Dan saya verifikasi, bukan sekadar membaca: laju lateral menurut rencana versus
+hasil ukur **sepakat sampai 0,012 m/s**.
+
+### Dugaan 4 — kuantisasi kisi pencarian sudut. Gugur, tapi menunjuk jalan.
+
+Angkanya menggoda: langkah 0,005 memberi resolusi 0,2865°, dan galat maksimum
+terukur 0,289°. Cocok sempurna.
+
+Diuji: memperhalus langkah 10 kali justru **memburukkan** RMS, 0,210 → 0,261°.
+Kalau kuantisasi penyebabnya, memperhalus harus menolong.
+
+Tapi uji itu memberi sesuatu yang lebih berharga: saya mengukurnya pada masker
+**sintetis** — garis lurus sempurna, kamera sempurna, tanpa derau — dan galatnya
+tetap 0,210° RMS. **Itu membuktikan galatnya lahir di dalam algoritma**, bukan
+dari sensor atau dari dunia. Tidak ada kalibrasi yang bisa menyentuhnya.
+
+Sehari sebelumnya saya sempat mengusulkan "kalibrasi ekstrinsik kamera" untuk
+bias ini. Keliru: di CARLA kamera dipasang dengan rotasi **nol persis**. Tidak
+ada yang bisa dikalibrasi.
+
+### Yang benar: berhenti mencari, mulai menyelesaikan
+
+`_kemiringan_bersama` memilih argmax histogram pada bin 0,10 m. Bin selebar itu
+membuat puncaknya **rata**, dan puncak rata letaknya tidak presisi — seberapa
+rapat pun dicari.
+
+Diganti penyelesaian: tugaskan tiap titik ke garis terdekat, lalu satu kemiringan
+bersama dari regresi dalam-kelompok terkumpul. Argmax tetap dipakai untuk masuk
+ke lembah yang benar; yang diganti hanya langkah terakhirnya.
+
+Terhadap peta HD: sudut hadap RMS **0,257 → 0,086°**, simpangan ego RMS
+**0,050 → 0,018 m**.
+
+### Dua perbaikan lain, keduanya soal "di mana", bukan "berapa"
+
+**Tengah lajur ditapis.** FSM menyalin hasil ukur mentah, `y_goal` melompat 0,147 m
+antar replan. Tapis pertama saya taruh di pemanggil dan itu **memperburuk**
+(0,693 m): tapisnya ikut berjalan selama manuver, ketika `dev_lajur` mengacu ke
+lajur SALIP. Harus di balik gerbang state yang sama dengan latch-nya. Lompatan
+turun ke 0,0094 m.
+
+**Kisi kandidat berjangkar pada lebar nominal.** `LATERAL_OFFSETS` magnitudo
+terhadap 3,5 m, tapi saya kurangi lebar lajur HASIL UKUR. Kisinya bergeser
+sebesar galat ukur, dan tidak ada kandidat yang jatuh di tengah lajur. Bidikan
+planner 0,042 → 0,011 m. Regresi yang saya bawa sendiri lewat bagian 28.
+
+Pola kedua perbaikan ini sama: bukan nilainya yang salah, melainkan **tempat**
+perhitungannya.
+
+### Jawabannya, dan cara menemukannya
+
+Bukan dugaan kelima. Saya berhenti menebak dan **menggambar galat terhadap
+waktu**:
+
+```
+13,75  -0,222   masih di sisi lajur salip
+14,50  +0,166   menyeberang
+15,25  +0,300   puncak lampauan
+16,75  +0,252
+18,25  +0,173
+19,75  +0,153   masih turun saat run berakhir
+```
+
+**Melampaui lalu meluruh.** Bukan galat tunak, bukan ayunan. Runnya berakhir
+sebelum transiennya mengendap.
+
+Dan itu berarti metriknya salah baca sejak awal. Dipisah per fase, terhadap
+tengah lajur SEBENARNYA: **0,008 m sebelum manuver versus 0,271 m sesudahnya.**
+Pengendaliannya baik; yang 0,24 m itu ekor.
+
+Jebakan yang sama sudah tercatat di bagian 15.5 untuk jalur GT — dan
+`experiment.py` belum memisahkannya, padahal itu angka utama di tabel hasil.
+Sekarang dipisah.
+
+### Hasil
+
+10/10 vision dan 5/5 GT berhasil. Deviasi lajur SEBELUM manuver **0,0176 m**
+(GT: 0,0000). IAE lateral saat LANE_KEEPING **1,036 → 0,662 m·s** dalam satu
+hari. Galat prediksi 0,5 detik tetap 1,9 kali GT — **memangkas ground truth
+tidak memperburuk pengendali.**
+
+Uji 91 → 127.
+
+### Pelajaran yang paling mahal
+
+Empat dugaan gugur karena saya menebak sebelum mengukur. Yang menyelesaikannya
+dua hal murah yang seharusnya dilakukan lebih dulu:
+
+1. **Uji pada masukan sintetis yang sempurna.** Kalau galatnya bertahan di situ,
+   ia milik algoritma, dan seluruh penjelasan berbasis sensor gugur sekaligus.
+2. **Gambar besarannya terhadap waktu.** Bentuk membedakan tunak, berayun, dan
+   meluruh — dan ketiganya menuntut perbaikan yang sama sekali berbeda. Satu
+   angka rata-rata tidak bisa membedakannya.

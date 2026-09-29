@@ -64,6 +64,18 @@ def kecepatan(actor, v, yaw_deg=None):
         actor.id, carla.Vector3D(v * math.cos(yaw), v * math.sin(yaw), 0.0))
 
 
+def pose(actor, x, y, z, yaw_deg):
+    """Perintah tempatkan aktor di pose tertentu (frame CARLA, derajat).
+
+    Dipakai skrip validasi perception yang perlu pose TERKENDALI, bukan hasil
+    fisika: `check_lanes.py` menggeser ego melintang untuk menguji simpangan yang
+    diukur. Bukan untuk loop kendali -- di situ pose harus datang dari fisika.
+    """
+    return carla.command.ApplyTransform(
+        actor.id, carla.Transform(carla.Location(x=float(x), y=float(y), z=float(z)),
+                                  carla.Rotation(yaw=float(yaw_deg))))
+
+
 @contextlib.contextmanager
 def ego_vehicle(world):
     """Spawn point tetap, bukan acak (bagian 11.1)."""

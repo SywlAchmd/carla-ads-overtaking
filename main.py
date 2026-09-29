@@ -30,7 +30,13 @@ import simulation
 KOLOM = ['t', 'x', 'y', 'yaw', 'v', 'y_ref', 'y_goal', 'dev_lajur', 'a_cmd',
          'delta_cmd', 'steer', 'throttle', 'brake', 'solve_ms', 'solver_ok',
          'n_layak', 'offset', 'x_tgt', 'y_tgt', 'v_goal', 'x_est', 'y_est',
-         'iterasi', 't_plan', 'eps', 'eps_lat', 'y_plan_05', 'y_plan_20']
+         'iterasi', 't_plan', 'eps', 'eps_lat', 'y_plan_05', 'y_plan_20',
+         # Posisi ego di frame PETA, hanya untuk PENILAIAN. Sejak jangkar peta
+         # dibuang (bagian 28.3), `x`/`y` di atas ada di frame yang dijangkarkan
+         # KAMERA -- itu benar untuk kendali, tetapi menilai "kembali ke lajur"
+         # dengannya berarti bertanya apakah ego kembali ke lajur yang DIYAKININYA
+         # sendiri. Alat ukur harus terpisah dari yang diukur.
+         'x_peta', 'y_peta']
 
 
 def to_carla(cmd):
@@ -72,7 +78,7 @@ def spawn_kendaraan(world, ref, ego_x, jarak, lajur):
     loc = carla.Location(x=float(np.interp(s_t, s, x)) - d * math.sin(p),
                          y=-(float(np.interp(s_t, s, y)) + d * math.cos(p)),
                          z=float(np.interp(s_t, s, z)) + 0.3)
-    bp = world.get_blueprint_library().find('vehicle.nissan.patrol')
+    bp = world.get_blueprint_library().find(config.LAIN_BP)
     return world.spawn_actor(bp, carla.Transform(loc, carla.Rotation(yaw=-math.degrees(p))))
 
 
@@ -91,7 +97,10 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
 
     `rig` terisi -> perception berbasis vision; None -> ground truth.
     """
-    frame = localization.PathFrame(ref_rh)
+    # Frame PETA. Dipakai untuk menempatkan kendaraan skenario, menggambar overlay,
+    # dan sebagai pembanding -- bukan untuk kendali di jalur vision (bagian 28.4).
+    frame_peta = localization.PathFrame(ref_rh)
+    frame = frame_peta
     loc = localization.CarlaGTLocalization(ego_actor, params['rear_axle_offset_x'])
     lihat = (perception.VisionPerception(net, rig) if rig
              else perception.GroundTruthPerception(world, ego_actor))
@@ -100,6 +109,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
 
     dt = config.FIXED_DELTA_SECONDS
     traj, t_traj, v_prev = None, 0.0, None
+    psi_jalan = None              # arah jalan hasil ukur, ditapis (None = jalur GT)
     a_filt, a_cmd_prev = 0.0, 0.0
     n_layak, offset_pilih, layak_akhir = 0, 0.0, []
     t_plan = float('nan')
@@ -112,19 +122,49 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
         if k == 0:
             # Kendaraan lain baru di-spawn setelah transien reda, relatif posisi
             # ego yang SEBENARNYA -- bukan relatif titik spawn.
-            ego_x = frame.ego(loc.update()).x
+            ego_x = frame_peta.ego(loc.update()).x
             aktor = [spawn_kendaraan(world, ref5, ego_x, jarak, lajur)
                      for jarak, lajur, _ in kendaraan]
         # Searah JALAN, bukan arah hadap aktor: hanya kecepatan yang dipaksa, jadi
         # gaya ban memutar arah hadap dan kendaraan bergeser lateral. Terukur di
         # S3: penghalang bergeser -3,50 -> -2,83 m, jarak bodi ke ego 0,87 m
         # padahal ego diam di lajurnya.
-        kirim += [simulation.kecepatan(a, v, -math.degrees(frame.psi0))
+        kirim += [simulation.kecepatan(a, v, -math.degrees(frame_peta.psi0))
                   for a, (_, _, v) in zip(aktor, kendaraan)]
         simulation.tick(world, kirim)
         t = k * dt
 
-        ego = frame.ego(loc.update())                        # 20 Hz
+        if k == -1 and rig is not None and getattr(lihat, 'lajur', None) is not None:
+            # JANGKAR PETA DIBUANG (bagian 28.4). Arah jalan dan letak sumbu lajur
+            # diambil dari kepala segmentasi, bukan dari `world.get_map()`. s = 0
+            # tetap disamakan dengan frame peta -- itu konvensi, bukan geometri --
+            # supaya log kedua jalur bisa dibandingkan angka per angka.
+            g0, e0 = lihat.lajur, loc.update()
+            if g0.lebar_lajur is not None:
+                frame = localization.PathFrame.dari_perception(
+                    e0, g0, x0=frame_peta.ego(e0).x)
+                p_peta, p_lihat = frame_peta.ego(e0), frame.ego(e0)
+                if perekam is not None:
+                    perekam.pf = frame     # lintasan planner kini di frame kendali
+                psi_jalan = frame.psi0
+                print(f'jangkar dari perception: arah jalan '
+                      f'{math.degrees(localization.wrap(frame.psi0 - frame_peta.psi0)):+.3f} deg '
+                      f'terhadap peta, sumbu lajur {p_lihat.y - p_peta.y:+.3f} m')
+
+        st_rh = loc.update()
+        ego = frame.ego(st_rh)                               # 20 Hz
+        ego_peta = frame_peta.ego(st_rh)                     # hanya untuk penilaian
+        # JEJAK arah jalan, jangan dibekukan. Titik asal digeser bersamaan supaya
+        # (x, y) ego tidak melompat: yang dikoreksi hanya arah ke depan.
+        geo_f = getattr(lihat, 'lajur', None)
+        if psi_jalan is not None and geo_f is not None and geo_f.lebar_lajur is not None:
+            psi_jalan = localization.wrap(
+                psi_jalan + config.ALPHA_ARAH_JALAN
+                * localization.wrap(st_rh.yaw - geo_f.yaw - psi_jalan))
+            frame = localization.PathFrame.dari_pose(st_rh, psi_jalan, ego.x, ego.y)
+            if perekam is not None:
+                perekam.pf = frame
+            ego = frame.ego(st_rh)
         a_mentah = 0.0 if v_prev is None else (ego.v - v_prev) / dt
         v_prev = ego.v
         # potong lonjakan non-fisik lalu haluskan; mentahnya terlalu berderau
@@ -140,26 +180,53 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
             lihat.update(citra, dt, ego.v, a_filt, ego.yaw_rate) if rig
             else lihat.update(), ego)
 
+        # Geometri lajur & dimensi kendaraan dari perception, bukan dari peta HD
+        # maupun bounding box simulator (bagian 28). None selama jalur GT atau
+        # selama masker lajur belum terbaca -- pemakainya jatuh ke konstanta peta.
+        lajur = zona = lebar_lajur = None
+        geo = getattr(lihat, 'lajur', None)
+        if geo is not None and geo.lebar_lajur is not None:
+            # dev_lajur positif = ego di KIRI tengah lajur, sama seperti frame jalan.
+            # Mentah di sini; penapisannya di `BehaviorFSM`, di tempat yang sama
+            # dengan latch-nya. Sempat ditapis di sini dan itu KELIRU: tapisnya
+            # ikut berjalan selama manuver, ketika `dev_lajur` mengacu ke lajur
+            # SALIP, sehingga saat kembali ia membawa nilai yang sudah tertarik ke
+            # lajur seberang -- lompatan `y_goal` justru naik 0,147 -> 0,693 m.
+            lajur = (ego.y - geo.dev_lajur, geo.lebar_lajur)
+            lebar_lajur = geo.lebar_lajur
+        if getattr(lihat, 'dimensi', None) is not None:
+            # Zona aman memakai KENDARAAN DESAIN, bukan taksiran per-frame.
+            # Taksiran dimensi dipakai untuk KETELITIAN (`koreksi_muka`), zona aman
+            # untuk KESELAMATAN, dan keduanya menuntut hal yang berbeda: bias
+            # perception sebesar 0,26 m pada lebar sudah cukup menggeser zona dan
+            # menggagalkan run. Margin keselamatan tidak boleh bisa menyusut oleh
+            # galat penaksir. Kendaraan desain PDGJ 2021 lebih besar daripada target
+            # mana pun di skenario, jadi zonanya konservatif dengan sendirinya.
+            zona = config.zona_dari_dimensi(config.PRIOR_PANJANG, config.PRIOR_LEBAR,
+                                            lebar_lajur)
+
         if k % 2 == 0:                                       # 10 Hz
             obs_rel = obs.copy()
             if len(obs_rel):
                 obs_rel[:, 0] -= ego.x        # FSM memakai x relatif terhadap ego
             # Laju lateral awal planner dari RENCANA, sama alasannya dengan ddy
-            # di bawah (bagian 15.3 baru memperbaiki ddy0; dy0 masih hasil ukur
-            # dan lupnya tetap terbuka -- bagian 19.9). Hasil ukur dipakai hanya
-            # saat belum ada rencana sama sekali.
+            # di bawah. Hasil ukur dipakai hanya saat belum ada rencana sama
+            # sekali. Komentar lama di sini mengatakan lup dy0 masih terbuka --
+            # itu sudah TIDAK benar sejak baris di bawah mengambil dari `traj`,
+            # dan diverifikasi 28 Sep 2026: laju lateral rencana dan hasil ukur
+            # sepakat sampai 0,012 m/s saat LANE_KEEPING.
             dy_ukur = ego.v * math.sin(ego.yaw)
             dy = dy_ukur if traj is None else float(traj.lateral_at(t - t_traj)[1])
-            fsm.update(t, ego.y, ego.v, obs_rel, dy_ukur)
+            fsm.update(t, ego.y, ego.v, obs_rel, dy_ukur, lajur=lajur)
             # Percepatan awal lateral (y'') dan longitudinal (a0) dari RENCANA/
             # PERINTAH, bukan hasil ukur. Hasil ukur menutup lup planner-MPC: MPC
             # mengikuti kelengkungan awal rencana, percepatan itu terukur, lalu
             # jadi syarat awal rencana berikutnya. Di S3 satu tendangan kecil
             # tumbuh jadi simpangan 2,3 m keluar lajur (TUNING_MPC.md 13).
             ddy = 0.0 if traj is None else float(traj.lateral_at(t - t_traj)[2])
-            traj_baru, layak = planning.plan_lane_change(ego.y, dy, ddy, ego.x, ego.v,
-                                                         a_cmd_prev, fsm.v_goal,
-                                                         obstacles=obs, y_goal=fsm.y_goal)
+            traj_baru, layak = planning.plan_lane_change(
+                ego.y, dy, ddy, ego.x, ego.v, a_cmd_prev, fsm.v_goal,
+                obstacles=obs, y_goal=fsm.y_goal, zona=zona, lebar_lajur=lebar_lajur)
             # KOMITMEN: replan yang gagal tidak membuang rencana yang sedang
             # berjalan (bagian 19.14). Menyeberang itu balapan antara kemajuan
             # lateral dan celah yang menutup, dan celah minimum yang dibutuhkan
@@ -185,7 +252,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
         # dibandingkan dengan posisi SEBENARNYA 0,5 dan 2,0 detik kemudian.
         y_plan_05 = float(xref[1, int(0.5 / config.MPC_DT)])
         y_plan_20 = float(xref[1, config.MPC_N])
-        cmd = mpc.compute(ego.as_vector(), xref, a_filt, obs)  # 20 Hz
+        cmd = mpc.compute(ego.as_vector(), xref, a_filt, obs, zona=zona)  # 20 Hz
         kirim = [carla.command.ApplyVehicleControl(ego_actor.id, to_carla(cmd))]
         a_cmd_prev = cmd.accel_cmd
         if perekam is not None and k >= 0:
@@ -196,7 +263,8 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
                 [f't = {t:5.2f} s', f'{fsm.state}', f'{ego.v * 3.6:.1f} km/jam',
                  f'kandidat lolos {n_layak}/9, offset {offset_pilih:.1f} m',
                  f'solve {cmd.solve_time_ms:.0f} ms'],
-                ego.v)
+                ego.v, masker=getattr(lihat, 'masker', None),
+                lajur=getattr(lihat, 'lajur', None))
         if not cmd.solver_ok:
             print(f'  solver gagal t={t:5.2f}s  state={fsm.state:<22} '
                   f'{mpc.last_status}  ({cmd.solve_time_ms:.0f} ms)')
@@ -229,9 +297,29 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_detik, kendaraan, r
                         float(cmd.solver_ok), float(n_layak), offset_pilih, tx, ty,
                         fsm.v_goal, x_est, y_est,
                         float(mpc.last_iter), t_plan, mpc.last_eps, mpc.last_eps_lat,
-                        y_plan_05, y_plan_20])
+                        y_plan_05, y_plan_20, ego_peta.x, ego_peta.y])
             states.append(fsm.state)
             posisi.append(pos)
+
+    # Dimensi & geometri lajur yang DITAKSIR perception, disandingkan dengan
+    # bounding box simulator dan peta -- keduanya alat ukur di sini, bukan masukan.
+    dim = getattr(lihat, 'dimensi', None)
+    if dim is not None and dim.n_amatan:
+        pj, lb = dim.ukuran()
+        tg = dim.tinggi
+        print(f'\ndimensi kendaraan lain, DITAKSIR dari kotak deteksi '
+              f'({dim.n_amatan} amatan, teramati {dim.teramati:.3f}):')
+        print(f'  panjang {pj:6.3f} m   benar {config.LAIN_PANJANG:.3f}   '
+              f'galat {pj - config.LAIN_PANJANG:+.3f}')
+        print(f'  lebar   {lb:6.3f} m   benar {config.LAIN_LEBAR:.3f}   '
+              f'galat {lb - config.LAIN_LEBAR:+.3f}')
+        if tg is not None:
+            print(f'  tinggi  {tg:6.3f} m   benar {config.LAIN_TINGGI:.3f}   '
+                  f'galat {tg - config.LAIN_TINGGI:+.3f}')
+    geo = getattr(lihat, 'lajur', None)
+    if geo is not None and geo.lebar_lajur is not None:
+        print(f'lebar lajur ditaksir {geo.lebar_lajur:.3f} m   '
+              f'peta {config.LANE_WIDTH:.3f}   galat {geo.lebar_lajur - config.LANE_WIDTH:+.3f}')
 
     return np.array(log), np.array(states), aktor, np.array(posisi)
 
@@ -314,7 +402,10 @@ def main():
     berhasil, kategori, rincian = evaluation.nilai_run(
         log[:, k['t']], log[:, k['x']], log[:, k['y']], states,
         log[:, k['x_tgt']], log[:, k['y_tgt']], monitor.tabrakan, dim_ego, dims[0], lain,
-        yaw=log[:, k['yaw']], yaw_tgt=posisi[:, 0, 2])
+        yaw=log[:, k['yaw']], yaw_tgt=posisi[:, 0, 2],
+        # Jarak antar bodi tidak bergantung frame -- ia selisih dua titik. Syarat
+        # LAJUR bergantung, jadi ia dan hanya ia dinilai di frame peta.
+        y_lajur=log[:, k['y_peta']])
     print()
     print(evaluation.ringkas_penilaian(berhasil, kategori, rincian))
     if perekam is not None:

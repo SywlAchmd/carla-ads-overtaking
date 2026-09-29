@@ -1353,11 +1353,9 @@ menuntut perubahan rancangan, bukan bobot.
 
 ## 21. Tahap 9 — eksperimen penuh S1 (matriks bagian 11.4)
 
-> **Angka kolom vision di bagian ini diukur SEBELUM perbaikan bagian 27.**
-> Dipertahankan sebagai riwayat, bukan sebagai hasil. Yang berlaku untuk
-> skripsi ada di **bagian 27**. Kolom ground truth tetap berlaku: jalur itu
-> tidak tersentuh perbaikan, dan lima run ulang menghasilkan log yang identik
-> bit-per-bit.
+> **DIGANTIKAN. Angka di bagian ini diukur dengan kendaraan target lama (Nissan
+> Patrol) dan jalur perception lama.** Dipertahankan sebagai riwayat, bukan
+> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 29**.
 
 
 16 September 2026, `experiment.py`. Server CARLA **direstart tepat sebelum
@@ -1565,11 +1563,9 @@ mobil boleh berisik.
 
 ## 23. Hasil Tahap 9 lengkap, per layer dan per fase (S1)
 
-> **Angka kolom vision di bagian ini diukur SEBELUM perbaikan bagian 27.**
-> Dipertahankan sebagai riwayat, bukan sebagai hasil. Yang berlaku untuk
-> skripsi ada di **bagian 27**. Kolom ground truth tetap berlaku: jalur itu
-> tidak tersentuh perbaikan, dan lima run ulang menghasilkan log yang identik
-> bit-per-bit.
+> **DIGANTIKAN. Angka di bagian ini diukur dengan kendaraan target lama (Nissan
+> Patrol) dan jalur perception lama.** Dipertahankan sebagai riwayat, bukan
+> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 29**.
 
 
 16 September 2026, `experiment.py` + `metrics.py --layer --eksperimen`.
@@ -1725,11 +1721,9 @@ belakang ego). Itu keterbatasan yang dinyatakan, bukan gambar yang tertinggal.
 
 ## 25. Metrik galat: XTE, IAE, dan galat prediksi (S1)
 
-> **Angka kolom vision di bagian ini diukur SEBELUM perbaikan bagian 27.**
-> Dipertahankan sebagai riwayat, bukan sebagai hasil. Yang berlaku untuk
-> skripsi ada di **bagian 27**. Kolom ground truth tetap berlaku: jalur itu
-> tidak tersentuh perbaikan, dan lima run ulang menghasilkan log yang identik
-> bit-per-bit.
+> **DIGANTIKAN. Angka di bagian ini diukur dengan kendaraan target lama (Nissan
+> Patrol) dan jalur perception lama.** Dipertahankan sebagai riwayat, bukan
+> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 29**.
 
 
 17 September 2026. Menjawab janji proposal soal XTE dan IAE, dengan definisi
@@ -1981,6 +1975,10 @@ terbuka dan akan menutup sisa yang dicatat di bagian 27.7.
 
 ## 27. Perbaikan kedua cacat bagian 26, dan hasil ulang (17 September 2026)
 
+> **DIGANTIKAN untuk ANGKANYA. Kendaraan target masih Nissan Patrol di sini, dan
+> peta HD masih dipakai.** Metodenya tetap berlaku dan penting; angkanya sudah
+> digantikan **bagian 29**.
+
 **Bagian 26 mendiagnosis, bagian ini memperbaiki.** Keduanya dikerjakan, lalu
 seluruh jalur vision diukur ulang: 10 run Tahap 9 plus satu run rekaman video.
 Jalur ground truth diukur ulang juga (5 run) dan hasilnya **identik bit-per-bit**
@@ -2170,3 +2168,482 @@ seluruh angka jalur ground truth di bagian 23 dan 25 tetap berlaku.**
 
 Ketiganya bermuara pada satu hal yang sama, dan sudah tercatat sebagai pekerjaan
 belum selesai nomor 3: **rig satu kamera depan**.
+
+---
+
+## 28. Perception tanpa peta HD (branch `perception-tanpa-gt`, 18 September 2026)
+
+> **PERINGATAN ANGKA.** Bagian ini menjelaskan METODE dan hasil validasi
+> per-modul. Angka Tahap 9 di bagian 21-27 diukur **sebelum** perubahan di sini
+> dan **sebelum** kendaraan target diganti, jadi tidak lagi menggambarkan kode di
+> branch ini. Eksperimen penuh harus diulang sebelum apa pun dibandingkan.
+
+### 28.0 Persoalannya
+
+Audit 17 September mendaftar enam tempat di jalur kendali vision yang masih
+meminta data langsung ke simulator, di luar lokalisasi ego yang memang
+dikecualikan. Tiga di antaranya diselesaikan di sini, satu dinyatakan sebagai
+batasan, dan dua sisanya memang bukan ketergantungan.
+
+| Sebelum | Sesudah |
+|---|---|
+| Dimensi kendaraan lain dari `bounding_box` simulator | diukur dari kotak deteksi |
+| Zona aman dari dimensi itu | dari kendaraan desain PDGJ 2021 |
+| Lebar & tengah lajur dari `LANE_WIDTH` dan peta | diukur dari kepala segmentasi |
+| Arah jalan & jangkar frame dari `world.get_map()` | diukur, lalu dijejak |
+| Kepala segmentasi lajur **dihitung lalu dibuang** (`kotak, _, _`) | dipakai |
+| Depth camera eksak tanpa derau | **tetap** -- masuk batasan masalah |
+
+Yang tersisa di jalur kendali: depth ideal, lokalisasi ego, dan `LANE_WIDTH`
+sebagai nilai cadangan yang -- terukur -- tidak pernah aktif setelah frame
+pertama. Peta HD masih dipakai untuk menempatkan kendaraan skenario dan sebagai
+pembanding penilaian; keduanya alat ukur, bukan masukan kendali.
+
+### 28.1 Geometri lajur: tiga lapis, dan yang tengah adalah kuncinya
+
+**Lapis 1 -- piksel menjadi meter (IPM).** Kamera terpasang 1,65 m di atas jalan
+dengan pitch nol, jadi baris `v` di bawah horizon memotong permukaan pada
+
+    x = f * z / (v - c_v)        y = -x * (u - c_u) / f
+
+Masukannya hanya tinggi pemasangan, intrinsik kamera, dan asumsi jalan datar.
+Di kendaraan sungguhan ketiganya datang dari pemasangan dan kalibrasi papan
+catur -- bukan dari API simulator. Balik-proyeksi lewat IPM dipilih, bukan lewat
+depth, supaya lapisan ini tidak menambah ketergantungan pada sensor kedua.
+
+**Lapis 2 -- bagaimana penggal marka menjadi SATU garis lajur.** Ini pertanyaan
+yang paling sering muncul, dan jawabannya bukan di jaringan.
+
+YOLOPX hanya mengeluarkan masker biner: tiap piksel dijawab "cat marka" atau
+"bukan". **Tidak ada identitas, tidak ada nomor garis, tidak ada pengelompokan.**
+Jaringan tidak tahu ada berapa garis lajur di depannya.
+
+Penyatuan terjadi secara geometris. Di jalan lurus seluruh marka sejajar, jadi
+mereka berbagi satu kemiringan `b`. Untuk tiap titik hitung
+
+    c = y - b * x
+
+`c` adalah **jarak melintang garis itu dari ego**, dan nilainya SAMA untuk
+seluruh penggal milik satu garis lajur, sejauh apa pun penggal itu di depan.
+Histogram `c` karena itu memuncak sekali per garis lajur -- dan **puncak itulah
+identitas garisnya**. Penggalnya tidak pernah disambung; mereka hanya kebetulan
+punya alamat melintang yang sama.
+
+Kemiringan bersamanya sendiri dicari dengan menyapu calon `b` dan mengambil yang
+histogramnya paling tajam (jumlah kuadrat cacah maksimum). Satu parameter dicari
+dari ribuan piksel sekaligus, bukan satu garis dicocokkan dari serpihan.
+
+**Lapis 3 -- kisi.** Marka lajur berjarak sama, seperti garis buku tulis, jadi
+yang dicari cukup satu jarak `w` dan satu fase. Dicocokkan lewat rerata
+melingkar: tiap offset dipetakan ke sudut `2*pi*c/w`, dan `w` terbaik
+memaksimalkan panjang resultannya.
+
+Lapis ini tidak ada di rancangan pertama, dan alasannya layak ditulis:
+
+| Terhadap peta HD (320 frame) | Median jarak antar garis | **Kisi** |
+|---|---|---|
+| Lebar lajur, bias | +0,705 m | **-0,051 m** |
+| Lebar lajur, RMS | 1,550 m | **0,074 m** |
+| Lebar lajur, maks | 3,444 m | **0,500 m** |
+| Simpangan ego, bias | +0,467 m | **+0,017 m** |
+| Simpangan ego, RMS | 0,888 m | **0,051 m** |
+| Simpangan ego, maks | 1,795 m | **0,101 m** |
+| Sudut hadap, RMS | 0,259 deg | 0,257 deg |
+
+**21 kali pada lebar lajur, 17 kali pada simpangan.** Median gagal karena satu
+marka yang terlewat membuat celah ke tetangga berikutnya menjadi DUA KALI lebar
+lajur, dan seluruh hitungan ikut melar. Pada kisi, marka yang hilang hanya
+menyisakan lubang: jaraknya tetap ditentukan garis-garis lain.
+
+Perhatikan sudut hadap **tidak berubah** -- ia sudah ditentukan di lapis 2, dan
+lapis 3 memang tidak menyentuhnya. Itu memisahkan dengan bersih mana perbaikan
+yang datang dari mana.
+
+**Validasi.** `check_lanes.py`, 320 frame, pose ego DITETAPKAN dan disapu sengaja
+(simpangan +-1,2 m, sudut hadap +-6 deg) supaya `dev_lajur` yang selalu
+mengembalikan nol pun tidak lolos. Terbaca 100% frame. Peta HD di situ alat ukur,
+bukan masukan.
+
+### 28.2 Dimensi kendaraan dari kotak deteksi
+
+**Tinggi terukur langsung** dan tidak bergantung sudut pandang sama sekali:
+`H = h_piksel * d / f`.
+
+**Panjang dan lebar tidak bisa dipisahkan dari satu kotak.** Yang terukur lebar
+siluet, dan pada sudut pandang `theta`
+
+    W(theta) = L * |sin theta| + W * |cos theta|
+
+Satu persamaan, dua anu. Diselesaikan kuadrat terkecil terbobot yang tumbuh tiap
+frame selagi `theta` menyapu, dengan prior kendaraan desain sebagai regularisasi.
+
+**Batas yang tidak bisa dilanggar, dan harus ditulis apa adanya.** Pada
+`theta` = 0 target tepat di depan, `sin theta` = 0, dan panjang **tidak
+menyumbang satu piksel pun**. Bukan kekurangan algoritma -- informasinya tidak
+ada di citra, dan tidak ada metode apa pun yang bisa mengambilnya dari satu kotak
+tampak-belakang. Padahal justru di situ `koreksi_muka` memakai `panjang/2`
+sepenuhnya.
+
+Karena itu prior tidak bisa dihilangkan; yang bisa dipilih hanya **apa dasarnya**.
+Dipakai kendaraan desain Toyota Hiace (PDGJ 2021 Tabel 5-9), sumber yang sama
+yang menjustifikasi kendaraan uji di bagian 3 -- **bukan** bounding box
+simulator. Itu pernyataan tentang jalan yang harus ditampung, bukan tentang mobil
+yang kebetulan ada di depan.
+
+Di manuver sungguhan target keluar dari fov 90 deg sebelum sudutnya menyapu jauh;
+keteramatan tercatat **0,028**. Hasilnya jujur terbelah (Lincoln MKZ 2020,
+~130 amatan per run):
+
+| | Ditaksir | Sebenarnya | Galat |
+|---|---|---|---|
+| **Tinggi** | 1,507 m | 1,490 m | **+1,1%** |
+| Lebar | 1,642 m | 1,837 m | -10,6% |
+| Panjang | 4,046 m | 4,892 m | -17,3% |
+
+**Tinggi sama sekali tidak punya prior**, dan itulah yang membuatnya jadi bukti:
+kendaraan target diganti dari Nissan Patrol (SUV, 1,855 m) ke Lincoln MKZ 2020
+(sedan, 1,490 m), dan penaksir melaporkan 1,507 m untuk mobil yang belum pernah
+dilihatnya. Penaksir yang hanya mengembalikan priornya tidak akan bergerak.
+
+**Pemisahan tugas yang lahir dari kegagalan.** Percobaan pertama memberi zona aman
+dimensi hasil taksiran. Runnya **gagal lane_departure**: bias lebar 0,26 m sudah
+cukup menggeser zona. Jadi keduanya dipisah menurut apa yang dituntut
+masing-masing:
+
+- **`koreksi_muka` memakai dimensi terukur** -- yang dituntut KETELITIAN.
+- **Zona aman memakai kendaraan desain** -- yang dituntut KESELAMATAN, dan margin
+  keselamatan tidak boleh bisa MENYUSUT oleh galat penaksir.
+
+Keduanya tetap bebas dari bounding box simulator.
+
+Satu percobaan lain yang gagal dan sudah dikembalikan: mengukur dimensi pada
+depth PUSAT bodi (`d + dx`) alih-alih depth permukaan, dengan alasan yang sama
+yang melahirkan `koreksi_muka`. **Keliru** -- tinggi terbentang di muka yang
+terlihat, yang memang ada di depth `d`. Tinggi rusak dari +1,1% menjadi +14,3%,
+lebar menabrak batas jepitnya, zona ikut berubah, dan run gagal. Yang ditaksir di
+sini ukuran BENDA, bukan letak pusatnya.
+
+### 28.3 Jangkar frame jalan: galat arah TUMBUH, galat posisi tidak
+
+Titik asal dan arah frame jalan dulu dari `world.get_map()`. Sekarang keduanya
+dari kepala segmentasi:
+
+    arah jalan    = yaw ego - yaw ego terhadap lajur
+    sumbu lajur   = posisi ego digeser sejauh simpangan terukur
+
+`s = 0` tetap disamakan dengan frame peta. Itu **konvensi, bukan geometri** --
+tidak ada besaran fisik yang bergantung pada di mana nol longitudinal
+diletakkan -- dan menyamakannya membuat log kedua jalur bisa dibandingkan angka
+per angka.
+
+**TEMUAN: menjangkar sekali tidak cukup, dan alasannya berlaku umum.**
+
+Percobaan pertama mengukur arah jalan sekali di akhir pemanasan lalu memakainya
+seterusnya. Galat ukurnya 0,3 deg -- sekilas tak berarti. Tetapi arah yang
+dibekukan membuat ego mengikuti sumbu yang sedikit salah, dan **galat arah tumbuh
+linear terhadap jarak tempuh**: 250 m dikali tan(0,3 deg) = 1,3 m.
+
+Dan ini bukan artefak frame yang miring. Ego **benar-benar** keluar dari tengah
+lajur, karena ia dengan patuh melacak sumbu frame, bukan jalan:
+
+| | Jangkar sekali | **Arah dijejak** |
+|---|---|---|
+| Simpangan lateral | -4,06 .. **+1,20 m** | -4,39 .. **-0,00 m** |
+| Simpangan dari tengah lajur, maks | **0,871 m** | **0,297 m** |
+
+Perbaikannya menjejak arah jalan dengan tapis tetapan waktu ~2,5 detik
+(`config.ALPHA_ARAH_JALAN`). Satu detail tidak boleh dilewat: **frame tidak boleh
+sekadar diputar.** Ego berada ~250 m dari titik asal, jadi rotasi 0,3 deg
+melompatkan `y`-nya 1,3 m. Titik asalnya ikut digeser supaya `(x, y)` ego tetap;
+yang dikoreksi hanya arah ke depan (`PathFrame.dari_pose`).
+
+Kalimat siap pakai untuk pembahasan:
+
+> Galat posisi diam di tempat; galat arah tumbuh sebanding jarak tempuh. Sistem
+> yang menjangkar arahnya sekali di awal karena itu akan selalu melenceng, berapa
+> pun telitinya pengukuran awal tersebut.
+
+### 28.4 Anotasi lajur menandai CAT, bukan batas lajur
+
+`dataset_recorder.py` membangkitkan label lajur dari kamera segmentasi
+semantik CARLA:
+
+```python
+ll = np.where(self.color_mask(seg, LL_COLOR), 255, 0)
+```
+
+`LL_COLOR` adalah kelas RoadLine, yang melabeli **cat yang benar-benar ada di
+aspal**, piksel per piksel. Di antara dua penggal marka tidak ada cat, jadi tidak
+ada label. BDD100K sebaliknya: anotator manusia menggambar **polyline menerus**
+menyusuri batas lajur, termasuk di tempat yang tidak bercat -- itu tafsiran.
+
+Jadi model tidak cacat. Ia mereproduksi persis apa yang diajarkan.
+
+Dari situ lahir argumen yang paling kuat di bagian ini:
+
+> **Menyambungkan marka adalah persoalan geometri, bukan persoalan segmentasi.**
+> Jaringan hanya dapat melihat bukti di piksel, dan di celah antar-marka tidak
+> ada bukti apa pun untuk dilihat. Yang mampu menjembatani celah itu adalah
+> batasan geometris -- bahwa marka lajur lurus, sejajar, dan berjarak sama.
+
+Bukti bahwa pembagian tugas itu benar: **sisa cocokan kisi 0,011 m** di ruas
+lurus, ditampilkan langsung di HUD video supaya bisa diperiksa, bukan dipercaya.
+
+Konsekuensi praktisnya tajam, dan menutup godaan yang wajar: melatih ulang dengan
+label menerus justru **melemahkan** sistem secara metodologis. Jaringan akan
+diajari mengarang cat yang tidak ada, lalu karangannya dipercaya -- padahal
+besaran yang sama dapat dihitung secara tertutup dengan galat 11 mm.
+
+### 28.5 Setelan render adalah parameter eksperimen
+
+Diuji `-quality-level=Low` versus `Epic` dengan sapuan `check_lanes.py` yang
+sama, 320 frame:
+
+| Terhadap peta HD | Low | Epic |
+|---|---|---|
+| Lebar lajur, RMS | 0,074 m | 0,073 m |
+| Simpangan ego, RMS | 0,051 m | **0,038 m** |
+| Sudut hadap, RMS | 0,257 deg | **0,212 deg** |
+| Sudut hadap, **maks** | **0,289 deg** | 0,573 deg |
+
+Perbaikannya **sedang**, dan maksimum sudut hadapnya justru **memburuk**. Epic
+tidak seragam lebih baik.
+
+Yang layak ditulis: **setelan render memengaruhi ketelitian perception, jadi ia
+bagian dari konfigurasi lingkungan uji** -- sederajat dengan resolusi kamera dan
+fov, dan harus dinyatakan di bab 3. Seluruh angka wajib berasal dari satu setelan
+yang sama. Dipilih **Low** (keputusan penulis, 18 September 2026).
+
+**Koreksi.** Temuan ini sempat saya laporkan jauh lebih besar daripada
+sebenarnya, berdasarkan nilai jangkar satu run: -0,012 deg di Epic versus
+-0,300 deg di Low. Itu **keliru dan ditarik**. Keduanya satu sampel dari sebaran
+ber-RMS 0,25 deg; -0,300 deg sama sekali tidak istimewa dan -0,012 deg kebetulan
+beruntung. Yang berlaku adalah sapuan 320 frame di atas.
+
+### 28.6 Hasil loop tertutup dan status
+
+Konfigurasi baru (MKZ 2020, kualitas Low, jangkar dari kamera), tiga run berturut:
+
+| | Vision | GT (acuan) |
+|---|---|---|
+| Vonis | **3/3 BERHASIL** | BERHASIL |
+| Durasi manuver | 10,9 / 12,1 / 12,4 s | 11,6 s |
+| Jarak min antar bodi | 1,80 / 1,81 / 1,81 m | 1,43 m |
+| Simpangan lateral terjauh | -4,39 .. -4,51 m | -3,89 m |
+
+Uji otomatis naik 91 -> **125**. Zona aman berubah menjadi 7,758 / 3,180 m
+(dari 7,709 / 3,204) semata karena dimensi kendaraan target berganti.
+
+**Yang belum, dan harus dikerjakan sebelum bab 4 ditulis:**
+
+1. **Seluruh Tahap 9 harus diulang.** Kendaraan target berganti DAN jalur
+   perception berubah; `experiment_s1_*.npz` yang ada diukur sebelum keduanya.
+2. **Penilaian jalur vision masih memakai frame hasil perception**, jadi syarat
+   `|y| < 0,5 m` menilai "kembali ke lajur yang DIYAKINI kamera". Selisih kedua
+   frame ~0,05 m terhadap ambang 0,5 m sehingga vonisnya tidak berubah, tetapi
+   pemisahannya ke frame peta menuntut dua kolom log tambahan dan harus dilakukan
+   sebelum pengukuran ulang.
+3. **Depth camera tetap ideal** -- tanpa derau, tanpa lubang, tanpa batas
+   jangkauan. Satu-satunya ketergantungan sensor yang tersisa, dan harus
+   dinyatakan di batasan masalah: yang diuji adalah perencanaan dan kendali di
+   bawah persepsi berbasis citra, bukan sistem persepsi lengkap.
+
+---
+
+## 29. Hasil Tahap 9 setelah perception tanpa peta HD (28 September 2026)
+
+**Ini angka yang berlaku untuk bab 4.** Bagian 21-27 diukur dengan kendaraan
+target lama (Nissan Patrol) dan jalur perception lama; bagian itu dipertahankan
+sebagai riwayat, bukan sebagai hasil.
+
+Konfigurasi: Lincoln MKZ 2020 sebagai kendaraan yang disalip, render
+`-quality-level=Low`, jangkar frame jalan dari kamera, arah jalan dijejak,
+tengah lajur ditapis, dimensi kendaraan diukur, kisi kandidat planner berjangkar
+pada lebar lajur nominal. 10 run vision, 5 run GT.
+
+### 29.1 Vonis dan metrik end-to-end
+
+| Metrik | MPC + vision (10 run) | MPC + GT (5 run) |
+|---|---|---|
+| **Vonis** | **10/10 BERHASIL** | **5/5 BERHASIL** |
+| Jarak min antar bodi (syarat > 1,0 m) | **1,797 ± 0,017 m** | **1,432 m** (sd 0,000) |
+| Durasi manuver (syarat <= 20 s) | 12,12 ± 0,05 s | 11,65 s |
+| Simpangan lateral terjauh (tepi lajur -5,25 m) | -4,415 ± 0,008 m | -3,879 m |
+| **Deviasi lajur, SEBELUM manuver** | **0,0176 ± 0,0016 m** | **0,0000 m** |
+| Deviasi lajur, ekor SESUDAH manuver | 0,1303 ± 0,0012 m | 0,0286 m |
+| Tick tanpa kandidat planner | 36,6 ± 0,9 | 4,0 |
+| Solve rata-rata | 17,21 ± 0,09 ms | 18,21 ms |
+| Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
+| Tabrakan | tidak ada | tidak ada |
+
+**Jalur ground truth tetap deterministik penuh**: lima run identik bit-per-bit di
+luar kolom waktu.
+
+**Baris deviasi lajur DIPISAH sebelum/sesudah manuver, dan itu bukan kosmetik.**
+Digabung, angkanya hampir seluruhnya berisi ekor transien setelah kembali ke
+lajur -- jebakan yang sudah tercatat di bagian 15.5 untuk jalur GT, dan menggigit
+jauh lebih keras di jalur vision. Diukur terhadap tengah lajur SEBENARNYA
+(kolom `y_peta`): **0,008 m sebelum manuver versus 0,271 m sesudahnya**.
+
+Angka yang menjawab "seberapa baik sistem ini menjaga lajur" adalah yang
+pertama. Yang kedua menjawab "berapa lama transien kembali mengendap", dan itu
+pertanyaan lain.
+
+**Catatan waktu solve maksimum.** Terukur 36,18 ± 9,97 ms dengan satu run
+menyentuh 55,20 ms, melewati anggaran tick 50 ms. Pengukuran diambil saat mesin
+menjalankan 13 langkah beruntun, jadi kemungkinan besar itu kontensi dan bukan
+regresi solver -- rata-ratanya justru turun ke 17,21 ms. **Harus diukur ulang di
+mesin senggang sebelum dikutip.**
+
+### 29.2 Metrik per layer
+
+| Metrik | Vision | GT |
+|---|---|---|
+| **Galat prediksi @ 0,5 s, RMS** | **0,0394 ± 0,0006 m** | **0,0203 m** |
+| Galat prediksi @ 2,0 s, RMS | 0,3170 ± 0,0017 m | 0,2872 m |
+| Galat lacak lateral RMS | 0,0142 ± 0,0003 m | 0,0017 m |
+| Slack zona aman maks (0 = patuh) | 0,2046 ± 0,0041 | 0,00015 |
+| Slack batas lateral maks | 0,0303 ± 0,0009 | 0,00100 |
+| Sudut hadap maks | 7,50 ± 0,07 deg | 6,42 deg |
+| Jerk lateral RMS | 4,064 ± 0,061 m/s³ | 1,326 m/s³ |
+| Jitter kemudi total | 0,466 ± 0,003 | 0,270 |
+| Zona aman `g` minimum (>=1 aman) | 1,069 ± 0,002 | 1,022 |
+| Kandidat lolos per replan (dari 9) | 7,55 ± 0,01 | 8,02 |
+| Replan tanpa kandidat | 9,15 ± 0,23 % | 1,00 % |
+
+**Galat prediksi 0,5 detik: vision 1,9 kali GT.** Riwayatnya 3,7x sebelum
+perbaikan bagian 26-27, 1,8x sesudahnya, dan tetap 1,9x setelah peta HD dibuang
+seluruhnya dari jalur kendali. **Memangkas ground truth tidak memperburuk
+pengendali** -- itu temuan utama bagian 28 dan 29.
+
+`g` minimum 1,069 berarti zona aman **tidak pernah dilanggar** oleh geometri
+sesungguhnya di seluruh 10 run.
+
+### 29.3 Metrik galat: XTE, IAE, ISE, ITAE
+
+**Diukur di frame PETA**, bukan di frame yang dijangkarkan kamera (bagian 28.3,
+kolom `y_peta`). Jadi yang dijawab "seberapa jauh ego dari lajur yang
+SEBENARNYA", bukan "dari lajur yang diyakininya sendiri".
+
+| Metrik | Vision | GT |
+|---|---|---|
+| XTE ke lajur terdekat, RMS | 0,5696 ± 0,0013 m | 0,5353 m |
+| XTE ke lajur terdekat, maks | 1,746 ± 0,003 m | 1,735 m |
+| IAE lateral | 7,598 ± 0,015 m·s | 5,877 m·s |
+| ISE lateral | 6,490 ± 0,029 m²·s | 5,730 m²·s |
+| ITAE lateral | 52,02 ± 0,18 m·s² | 35,28 m·s² |
+| **IAE lateral saat LANE_KEEPING** | **0,662 ± 0,014 m·s** | 0,143 m·s |
+| IAE kecepatan | 4,841 ± 0,234 m | 4,551 m |
+
+XTE maksimum 1,746 m tetap mendekati setengah lebar lajur (1,75 m), yang
+memvalidasi definisinya: nilai terbesar terjadi tepat saat ego di tengah antara
+dua lajur, dan secara geometris tidak mungkin lebih besar.
+
+**XTE dan IAE total praktis tidak bisa diperbaiki lagi lewat perception**, dan
+alasannya struktural: keduanya **didominasi manuvernya sendiri**. Menyeberang
+lajur adalah simpangan 3,5 m selama 12 detik; kedutan 0,1 m saat menjaga lajur
+nyaris tidak menyumbang. Selisih terhadap GT (0,570 versus 0,535) sebagian besar
+berasal dari ekor transien kembali, bukan dari derau perception.
+
+Yang BISA diperbaiki, dan sudah: **IAE lateral saat LANE_KEEPING turun
+1,036 -> 0,662 m·s** dalam satu hari, lewat tiga perbaikan yang berbeda
+(bagian 29.5).
+
+### 29.4 Ketelitian perception
+
+**Geometri lajur** (`check_lanes.py`, 320 frame, pose disapu +-1,2 m dan +-6 deg,
+terbaca 100%):
+
+| | Bias | RMS | Maks |
+|---|---|---|---|
+| Sudut hadap | -0,062 deg | **0,086 deg** | 0,189 deg |
+| Simpangan ego dari tengah | -0,004 m | **0,018 m** | 0,050 m |
+| Lebar lajur | -0,053 m | 0,076 m | 0,500 m |
+
+**Jarak dan kecepatan halangan** (`check_estimation.py`, sapuan 53 -> 9 m,
+terdeteksi 111 dari 140 tick, deteksi pertama **44,0 m**):
+
+| | Bias | RMS | Maks |
+|---|---|---|---|
+| x memanjang | +0,321 m | 0,323 m | 0,496 m |
+| y melintang | +0,014 m | 0,018 m | 0,039 m |
+| vx | +0,002 m/s | 0,021 m/s | 0,158 m/s |
+
+**Dimensi kendaraan** (dari kotak deteksi): tinggi 1,507 m terhadap 1,490 m
+sebenarnya (**+1,1%**), lebar 1,642 terhadap 1,837 m (-10,6%), panjang 4,046
+terhadap 4,892 m (-17,3%), keteramatan 0,028. Batasnya diuraikan di bagian 28.2.
+
+### 29.5 Tiga perbaikan yang membawa angka ini, dan empat dugaan yang gugur
+
+Bagian 28 menutup jalur kendali dari peta HD. Bagian ini mencatat penyetelan
+sesudahnya, yang seluruhnya lahir dari satu pertanyaan: **kenapa ego duduk 0,24 m
+dari tengah lajur?**
+
+**Perbaikan 1 -- tengah lajur ditapis.** FSM menyalin hasil ukur mentah tiap tick,
+sehingga `y_goal` melompat sampai 0,147 m antar replan dan MPC mengejar acuan
+yang bergerigi. Tapisnya harus berada di balik gerbang state yang SAMA dengan
+latch-nya: ditapis di pemanggil, ia ikut berjalan selama manuver -- ketika
+`dev_lajur` mengacu ke lajur SALIP -- dan lompatannya justru naik ke 0,693 m.
+Di tempat yang benar, lompatan turun ke **0,0094 m**.
+
+**Perbaikan 2 -- kemiringan lajur diselesaikan, bukan dicari.**
+`_kemiringan_bersama` memilih argmax histogram pada bin 0,10 m. Pada masker
+SINTETIS -- garis lurus sempurna, kamera sempurna, tanpa derau -- galatnya tetap
+0,210 deg RMS. Itu membuktikan galatnya lahir di dalam algoritma. Memperhalus
+langkah pencarian tidak menolong (0,005 -> 0,0005 memberi 0,210 -> 0,261).
+Yang menolong mengganti langkah terakhirnya dengan penyelesaian: regresi
+dalam-kelompok terkumpul, satu kemiringan bersama dengan perpotongan bebas.
+Terhadap peta HD: sudut hadap RMS **0,257 -> 0,086 deg**, simpangan ego RMS
+**0,050 -> 0,018 m**.
+
+**Perbaikan 3 -- kisi kandidat berjangkar pada lebar nominal.**
+`LATERAL_OFFSETS` adalah magnitudo terhadap lajur nominal 3,5 m, tetapi
+dikurangi lebar lajur HASIL UKUR. Seluruh kisi kandidat karena itu bergeser
+sebesar galat ukur, dan **tidak ada satu pun kandidat yang jatuh di tengah lajur
+tujuan**. Bidikan planner di 2 detik: **0,042 -> 0,011 m**. Regresi yang masuk
+bersama bagian 28, saat lebar lajur berubah dari konstanta menjadi hasil ukur.
+
+**Empat dugaan yang gugur, dan kenapa itu layak ditulis:**
+
+| Dugaan | Bagaimana dibantah |
+|---|---|
+| `K_DEV` terlalu kecil | Disapu 20 -> 320, **16 kali**. Deviasi 0,087 / 0,090 / 0,089 -- tidak bergerak |
+| Galat tunak pengendali | MPC melacak acuannya sampai 0,0001 m; yang meleset bidikan planner |
+| Lup planner-MPC terbuka pada `dy0` | Sudah tertutup sejak lama; laju lateral rencana dan hasil ukur sepakat sampai **0,012 m/s** |
+| Kuantisasi kisi pencarian sudut | Memperhalus langkah 10 kali justru MEMBURUKKAN hasilnya |
+
+Dan satu kesalahan metodologis yang harus dicatat karena ironis: uraian galat
+yang sempat saya susun dibaca dari kolom `y_ref`, yaitu acuan pada langkah
+PERTAMA horizon, yang menurut konstruksi menempel di posisi ego. Angka itu hanya
+mengulang galatnya sendiri. **Itu jebakan nomor 1 di `TUNING_MPC.md` bagian 9,
+yang sudah ditulis di bagian 22.5 dokumen ini** -- dan tetap terjadi. Sasaran
+planner yang sah adalah `y_plan_20`.
+
+**Yang akhirnya menyelesaikannya bukan dugaan kelima**, melainkan berhenti
+menebak dan menggambar bentuk galat terhadap waktu:
+
+| t (s) | Simpangan dari tengah lajur sebenarnya |
+|---|---|
+| 13,75 | -0,222 m (masih di sisi lajur salip) |
+| 14,50 | +0,166 m (menyeberang) |
+| 15,25 | **+0,300 m** (puncak lampauan) |
+| 16,75 | +0,252 m |
+| 18,25 | +0,173 m |
+| 19,75 | +0,153 m (masih turun saat run berakhir) |
+
+**Melampaui lalu meluruh** -- bukan galat tunak, bukan ayunan. Jendela 20 detik
+berakhir sebelum transiennya mengendap. Itu sebabnya metriknya harus dipisah per
+fase, dan itu sebabnya angka gabungan menyembunyikan perbaikan 4,3 kali pada
+fase yang benar-benar mengukur kualitas menjaga lajur.
+
+### 29.6 Yang belum
+
+1. **Perbandingan bagian 27 versus 29 tidak bersih** -- kendaraan target berganti
+   bersamaan dengan perombakan perception, jadi selisihnya memuat dua sebab.
+2. **Waktu solve maksimum harus diukur ulang di mesin senggang.**
+3. **Depth camera tetap ideal** -- tanpa derau, tanpa lubang, tanpa batas
+   jangkauan. Satu-satunya ketergantungan sensor yang tersisa, dan harus
+   dinyatakan di batasan masalah.
+4. **Transien kembali** memuncak 0,30 m dan butuh lebih dari 6 detik mengendap.
+   Belum ditelusuri; menuntut percobaan yang dirancang untuk itu, bukan dugaan
+   kelima.
