@@ -116,9 +116,89 @@ def panel_resolusi(ax):
                  fontsize=10, color=GARIS)
 
 
+BEV_X = (6.0, 46.0)          # m di depan yang dipetakan
+BEV_Y = (-11.0, 11.0)        # m melintang
+BEV_PX = 22                  # piksel per meter
+
+
+def luruskan(bgr):
+    """Regangkan seluruh piksel jalan jadi pandangan dari atas (warp IPM penuh).
+
+    Ini bentuk IPM yang lazim ditampilkan. `lanes.py` TIDAK melakukannya --
+    ia membalik-proyeksikan piksel masker lajur saja, yang jumlahnya ribuan,
+    bukan sejuta. Transformasinya identik; yang berbeda cuma berapa piksel yang
+    dikenai. Warp penuh di sini murni untuk penjelasan.
+
+    Dikerjakan sebagai pemetaan BALIK: untuk tiap sel keluaran (x, y) dalam meter,
+    cari piksel sumbernya lewat `lanes.ke_piksel`, lalu ambil warnanya. Arah maju
+    menghindari lubang di keluaran.
+    """
+    tinggi = int((BEV_X[1] - BEV_X[0]) * BEV_PX)
+    lebar = int((BEV_Y[1] - BEV_Y[0]) * BEV_PX)
+    x = np.linspace(BEV_X[1], BEV_X[0], tinggi)          # baris atas = paling jauh
+    y = np.linspace(BEV_Y[1], BEV_Y[0], lebar)           # kolom kiri = y positif
+    X, Y = np.meshgrid(x, y, indexing='ij')
+    u, v = lanes.ke_piksel(X, Y)
+    sah = (u >= 0) & (u < bgr.shape[1]) & (v >= 0) & (v < bgr.shape[0])
+    keluar = cv2.remap(bgr, u.astype(np.float32), v.astype(np.float32),
+                       cv2.INTER_LINEAR, borderValue=(0, 0, 0))
+    keluar[~sah] = 0
+    return keluar
+
+
+def _ke_bev_px(x, y):
+    """Titik frame ego (m) -> piksel pada kanvas BEV."""
+    return ((BEV_Y[1] - np.asarray(y)) * BEV_PX,
+            (BEV_X[1] - np.asarray(x)) * BEV_PX)
+
+
+def gambar_birdseye(bgr, ll, keluar):
+    """Tiga panel: citra asli, hasil pelurusan IPM, dan lajur yang tercocok."""
+    bev = luruskan(bgr)
+    g = lanes.dari_masker(ll, bgr.shape)
+    titik = lanes.titik_lajur(ll, bgr.shape)
+
+    bev2 = bev.copy()
+    tx, ty = _ke_bev_px(titik[:, 0], titik[:, 1])
+    for a, b in zip(tx.astype(int), ty.astype(int)):
+        if 0 <= b < bev2.shape[0] and 0 <= a < bev2.shape[1]:
+            cv2.circle(bev2, (a, b), 2, (60, 200, 60), -1)
+    if g is not None and g.lebar_lajur:
+        for gx, gy in g.garis(jangkauan=BEV_X, n=60):
+            px, py = _ke_bev_px(gx, gy)
+            p = np.column_stack([px, py]).astype(np.int32)
+            for i in range(0, len(p) - 1, 2):            # putus-putus, gaya lazim
+                cv2.line(bev2, tuple(p[i]), tuple(p[i + 1]), (40, 40, 235), 2,
+                         cv2.LINE_AA)
+
+    fig, ax = plt.subplots(1, 3, figsize=(13.5, 6.4),
+                           gridspec_kw=dict(width_ratios=(1.55, 1.0, 1.0)))
+    ax[0].imshow(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+    ax[0].set_title('Original camera image', fontsize=10, color=GARIS)
+    for a, img, judul in ((ax[1], bev, 'After IPM — bird\'s eye'),
+                          (ax[2], bev2, 'Lane pixels + fitted lattice')):
+        a.imshow(cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
+                 extent=(BEV_Y[1], BEV_Y[0], BEV_X[0], BEV_X[1]), aspect='equal')
+        a.set_title(judul, fontsize=10, color=GARIS)
+        a.set_xlabel('lateral y (m)')
+    ax[1].set_ylabel('forward x (m)')
+    ax[0].set_xticks([]); ax[0].set_yticks([])
+    for a in ax[1:]:
+        a.tick_params(colors=GARIS, labelsize=8)
+        a.xaxis.label.set_color(GARIS); a.yaxis.label.set_color(GARIS)
+    for a in ax:
+        for sp in a.spines.values():
+            sp.set_color(REDUP)
+    fig.suptitle('The full IPM warp — every road pixel straightened onto the ground '
+                 'plane', fontsize=12, color=GARIS)
+    fig.tight_layout(rect=(0, 0, 1, 0.94))
+    fig.savefig(keluar, dpi=150)
+
+
 def main_():
     ap = argparse.ArgumentParser()
     ap.add_argument('--frame', default=f'{config.OUT_DIR}/sensor_rgb.png')
+    ap.add_argument('--weight', default=None, help='checkpoint YOLOPX lain')
     args = ap.parse_args()
     bgr = cv2.imread(args.frame)
 
@@ -144,6 +224,13 @@ def main_():
     keluar = f'{config.OUT_DIR}/ipm_explained.png'
     fig.savefig(keluar, dpi=150)
     print(keluar)
+
+    import yolopx
+    net = yolopx.YOLOPX(args.weight)
+    _, _, ll = net.infer(cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB))
+    keluar2 = f'{config.OUT_DIR}/ipm_birdseye.png'
+    gambar_birdseye(bgr, ll, keluar2)
+    print(keluar2)
 
 
 if __name__ == '__main__':
