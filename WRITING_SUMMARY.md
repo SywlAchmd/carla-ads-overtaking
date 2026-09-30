@@ -2647,3 +2647,251 @@ fase yang benar-benar mengukur kualitas menjaga lajur.
 4. **Transien kembali** memuncak 0,30 m dan butuh lebih dari 6 detik mengendap.
    Belum ditelusuri; menuntut percobaan yang dirancang untuk itu, bukan dugaan
    kelima.
+
+---
+
+## 30. Geometri lajur: pembuktian, dan pemilihan anotasi (30 September 2026)
+
+Bagian 28 memakai `lanes.py` untuk membuang peta HD; bagian ini **membuktikan**
+tahap-tahapnya dan **memilih** anotasi latih yang memberinya masukan terbaik.
+Seluruhnya bisa dibangkitkan ulang: `check_ipm.py`, `plot_ipm.py`,
+`plot_lane_fit.py`, `plot_lane_pipeline.py`.
+
+### 30.1 Turunan IPM
+
+Model lubang jarum. Titik di frame kamera `(Xc, Yc, Zc)` -- `Zc` ke depan
+sepanjang sumbu optik, `Xc` ke kanan, `Yc` ke bawah -- jatuh di piksel
+
+    u = c_u + f * Xc / Zc                                              (1)
+    v = c_v + f * Yc / Zc                                              (2)
+
+Panjang fokus dari sudut buka mendatar: setengah lebar sensor `W/2` memandang
+sudut `fov/2`, jadi
+
+    tan(fov / 2) = (W / 2) / f      ->      f = W / (2 tan(fov / 2))    (3)
+
+Kamera setinggi `h` di atas jalan, menghadap lurus (pitch nol). Untuk titik **di
+permukaan jalan** sejauh `x` di depan: `Zc = x`, `Yc = h`, `Xc = -y` (frame ego,
+`y` positif ke kiri). Masukkan ke (2) lalu (1):
+
+    x = f * h / (v - c_v)                                              (4)
+    y = -x * (u - c_u) / f                                             (5)
+
+(4) dan (5) itulah `lanes.ipm`. Baris `v = c_v` memberi pembagian nol: berkas
+lewat titik hilang sejajar jalan dan tidak pernah memotongnya.
+
+**Masukannya tiga, dan ketiganya dari pemasangan kamera, bukan dari simulator:**
+tinggi pemasangan, intrinsik kamera, dan asumsi jalan datar. Di kendaraan
+sungguhan ketiganya didapat saat memasang dan mengalibrasi.
+
+### 30.2 Empat verifikasi numerik
+
+`check_ipm.py`, berlapis dari yang paling ketat ke yang paling independen.
+
+| # | Yang diuji | Hasil |
+|---|---|---|
+| 1 | `f` dari sudut buka, persamaan (3) | 640,000000 px, selisih **0** |
+| 2 | Bolak-balik `ipm(ke_piksel(x, y))` | galat **6,4 x 10⁻¹⁴ m** |
+| 3 | Proyeksi (1)-(2) versus matriks kamera CARLA | selisih **0,0001 px** |
+| 4 | Jarak (4) versus **kamera depth** | -0,22% sampai -1,95% |
+
+Nomor 1 aritmetika: fov 90 deg membuat `tan 45 deg = 1` tepat, jadi `f = W/2`.
+Nomor 2 batas presisi float, bukan galat model. Nomor 3 memastikan konvensi
+frame saya sama dengan CARLA.
+
+**Nomor 4 yang paling berarti**, karena kamera depth tidak berbagi satu pun
+asumsi dengan IPM: ia membaca z-buffer GPU, tidak tahu tinggi kamera, tidak
+memakai panjang fokus, dan tidak mengandaikan jalan datar.
+
+| Baris `v` | `x` rumus (4) | depth ukur | galat |
+|---|---|---|---|
+| 580 | 4,800 m | 4,790 m | -0,22% |
+| 520 | 6,600 m | 6,580 m | -0,30% |
+| 470 | 9,600 m | 9,558 m | -0,44% |
+| 430 | 15,086 m | 14,981 m | -0,69% |
+| 400 | 26,400 m | 26,078 m | -1,22% |
+| 385 | 42,240 m | 41,417 m | -1,95% |
+
+**Uji yang lebih tajam: balik rumusnya.** Dari tiap bacaan depth hitung
+`h = x * dv / f`. Kalau modelnya benar, hasilnya harus konstan.
+
+    h efektif = 1,6368 +- 0,0101 m      (dikonfigurasi 1,6500 m)
+
+Tetap dalam +-10 mm sepanjang 4,8 sampai 42 m. **Kalau model (4) salah** --
+depth ternyata radial, misalnya, atau proyeksinya keliru -- **`h` efektif akan
+melayang sistematis mengikuti jarak.** Ia tidak melayang.
+
+### 30.3 Dua sisa yang diukur, bukan diasumsikan
+
+**(a) Simpangan tetap 13,2 mm.** Nominal 1,650 m, efektif 1,637 m. Ego duduk di
+suspensi, jadi kameranya memang sedikit lebih rendah. Bisa dikalibrasi keluar;
+belum dilakukan, dan selisih 0,8% itu masuk ke seluruh jarak memanjang.
+
+**(b) `h` efektif merayap +28,6 mm** dari 4,8 ke 42 m, menurun searah -- bukan
+derau melainkan **kemiringan jalan ~0,076%**.
+
+Poin (b) berharga karena **inilah ongkos asumsi jalan datar, dan besarnya kini
+terukur: ~0,73 m galat jarak pada 42 m.** Selama ini "asumsi jalan datar" hanya
+disebut sebagai batasan tanpa angka.
+
+**Catatan tambahan yang ikut ketahuan:** tiga baris citra paling bawah meleset
+-62%, dan itu bukan cacat. Kamera dipasang 1,68 m di depan sumbu belakang
+sementara bodinya 5,01 m, jadi **moncong ego menutupi jalan lebih dekat dari
+~4,8 m**. Yang terbaca kap mesin sendiri. `check_ipm.py` mengecualikannya dan
+mencetak alasannya.
+
+### 30.4 Kemiringan bersama adalah sebuah SHEAR
+
+`c = y - b*x` bukan rumus abstrak: ia **pergeseran miring** pada bidang jalan.
+Di jalan lurus semua marka sejajar, jadi ADA satu `b` yang menegakkan semuanya
+sekaligus. Setelah digeser dengan `b` yang benar, tiap garis lajur jatuh pada
+satu nilai `c`, dan meruntuhkan gambar ke sumbu mendatar memberi histogram yang
+memuncak tajam.
+
+Terukur pada frame ruas lurus (`plot_lane_fit.py`):
+
+| | Shear salah (`b = -0,10`) | Shear tercocok (`b = +0,0008`) |
+|---|---|---|
+| Ketajaman histogram | 0,61 x 10⁵ | **1,53 x 10⁵** |
+| Bentuk puncak | gundukan melebar | paku |
+
+**2,5 kali lebih tajam.** Itu yang dicari `_kemiringan_bersama`: sapu calon `b`,
+ambil yang paling memuncak. Satu parameter dicari dari 1.840 titik sekaligus --
+bukan satu garis dicocokkan dari serpihan marka.
+
+Langkah terakhirnya diganti penyelesaian kuadrat terkecil, bukan argmax; alasan
+dan angkanya di bagian 28.1 (RMS 0,257 -> 0,086 deg).
+
+### 30.5 Pencocokan kisi, dan kenapa median gagal
+
+Puncak-puncak itu tidak sembarang letaknya: marka lajur **berjarak sama**. Jadi
+yang dicari cukup satu jarak `w` dan satu fase.
+
+Diperlihatkan dengan data frame ruas lurus:
+
+```
+Tiga garis terdeteksi:  c = -5,35 | -1,78 | +1,79
+Jarak antar tetangga:      3,58      3,57      ->  lebar lajur 3,570 m   BENAR
+
+Hapus marka tengah (tertutup kendaraan / tidak terdeteksi):
+Dua garis tersisa:      c = -5,35 | +1,79
+Jarak antar tetangga:      7,14                 <- DUA lebar lajur
+  cara naif (median)  ->  lebar lajur 7,140 m   SALAH
+  cara kisi           ->  lebar lajur 3,570 m   BENAR
+```
+
+Kisi tahu 7,14 = 2 x 3,57 -- **kelipatan bulat**, jadi celah itu terbaca sebagai
+**lubang**, bukan sebagai lajur yang melebar. Analoginya buku tulis bergaris:
+kalau satu garis pudar, Anda tetap tahu di mana ia seharusnya.
+
+Itulah yang menjelaskan perbaikan 21 kali di bagian 28.1.
+
+**Batasnya juga terukur, dan harus ditulis.** Satu frame dengan ego menyudut 6 deg
+memberi puncak di `c` = -10,97 / -4,73 / +1,58, berjarak 6,23 dan 6,31 m -- dua
+lebar lajur, karena marka tengahnya tidak terdeteksi dan yang terjauh kemungkinan
+pagar pengaman. Kisi membaca celah itu sebagai dua langkah (benar), tetapi dengan
+hanya tiga sisa yang jaraknya tidak teratur ia mendarat di **3,140 m terhadap
+3,50 m sebenarnya**.
+
+> **Pencocokan kisi bertahan terhadap SATU marka yang hilang. Ia tidak bertahan
+> kalau sebagian besarnya hilang.**
+
+### 30.6 Penyaringan yang bekerja
+
+Pada frame ruas lurus, dari **1.840 titik** hasil IPM:
+
+| | |
+|---|---|
+| Diangkat jadi garis lajur | **3 puncak**, bobot 569 / 289 / 199 piksel |
+| **Ditolak** | **768 piksel** (42%), tersebar di `c` = -14 sampai +27 m |
+| Ambang | 25% dari puncak tertinggi |
+
+Yang ditolak: pagar pengaman, bahu jalan, serpihan tepi. Titik hijau yang tidak
+menjadi garis merah **bukan kegagalan** -- itu penyaringan, dan porsinya hampir
+separuh menunjukkan penyaringan itu mengerjakan sesuatu yang berat.
+
+### 30.7 Anotasi marka versus menerus -- DIPILIH `marking`
+
+Penulis melatih dua checkpoint dari data yang sama, berbeda anotasi lajurnya:
+`yolopx-marking.pt` menandai tiap penggal marka, `yolopx-continuous.pt` menandai
+batas lajur menerus. Keduanya diuji pada sapuan yang sama.
+
+**Ketelitian geometri lajur (`check_lanes.py`, 320 frame):**
+
+| Terhadap peta HD | **marking** | continuous |
+|---|---|---|
+| Lebar lajur, bias | **-0,050 m** | -0,166 m |
+| Lebar lajur, RMS | **0,076 m** | 0,181 m |
+| Simpangan ego, RMS | **0,020 m** | 0,039 m |
+| Sudut hadap, RMS | **0,100 deg** | 0,195 deg |
+| Garis terdeteksi (modus) | 4 (2-5) | **5 (4-7)** |
+| Piksel masker per frame | 1.731 | 6.314 |
+
+**Marking menang dua kali lipat di semua metrik -- dengan piksel 3,6 kali lebih
+sedikit.** Baris terakhir menjelaskan sebabnya: `continuous` mendeteksi lebih
+banyak garis daripada yang ada di jalan.
+
+**Sebabnya terlihat langsung.** Pada satu frame, masker `continuous` menarik
+garis lajur **di atas rel kereta** di bahu kanan -- bantalan rel berjarak teratur
+dan bergaris, jadi bagi jaringan yang dilatih melihat "garis menerus" ia tampak
+persis seperti marka. Garis palsu itu lalu mencemari kisi:
+
+| Satu frame yang sama | marking | continuous |
+|---|---|---|
+| Garis terdeteksi | 3 | 5 |
+| Lebar lajur | 3,570 m | 3,440 m |
+| **Sisa kisi** | **0,003 m** | **0,166 m** |
+
+Sisa kisi **55 kali lebih besar**.
+
+**Loop tertutup, satu run masing-masing:**
+
+| | marking | continuous |
+|---|---|---|
+| Vonis | BERHASIL | BERHASIL |
+| Lebar lajur ditaksir | **3,530 m** (+0,030) | 3,370 m (-0,130) |
+| Simpangan dari lajur SEBENARNYA, fase menjaga lajur | **0,0101 m** | 0,0685 m |
+
+**6,8 kali lebih baik.** Galat lebar lajur 0,13 m itu bukan kosmetik: `y_goal`
+saat menyalip dihitung sebagai tengah lajur ditambah lebar lajur, jadi sasarannya
+ikut meleset 0,13 m.
+
+**Yang harus disebut adil:** `continuous` lebih baik di DETEKSI -- jangkauan
+46,5 m versus 42,0 m, dan 119 versus 105 tick terdeteksi dari 140. Tetapi itu
+tidak mengubah perilaku: pemicu menyalip bekerja di celah ~32 m dan horizon MPC
+27 m, keduanya jauh di dalam 42 m. Galat geometri lajur sebaliknya masuk
+**langsung** ke kendali.
+
+**Kesimpulan yang agak berlawanan dengan intuisi, dan itu justru nilainya:**
+
+> Anotasi yang lebih "lengkap" menghasilkan pengukuran yang lebih buruk, karena
+> ia mengajari jaringan menebak di tempat yang tidak ada buktinya -- dan tebakan
+> itu mendarat di rel kereta. Kelebihan piksel bukan informasi tambahan
+> melainkan **kebisingan berstruktur**, jenis yang paling merusak karena tampak
+> seperti garis sungguhan.
+
+Ini sekaligus menutup godaan melatih ulang dengan label menerus yang dibahas di
+bagian 28.4: pilihan itu bukan hanya lemah secara metodologis, ia **terukur lebih
+buruk**.
+
+### 30.8 Gambar yang tersedia
+
+| Berkas | Menjelaskan |
+|---|---|
+| `out/ipm_explained.png` | kisi meter di citra, horizon, kurva meter-per-piksel |
+| `out/ipm_birdseye.png` | warp IPM penuh -- bentuk yang lazim ditampilkan |
+| `out/lane_fit_explained.png` | shear salah versus tercocok, plus kisi |
+| `out/lane_pipeline.png` | tiga tahap, dua model anotasi berdampingan |
+| `out/banding_anotasi_lajur.png` | dua model pada satu frame, dengan sisa kisi |
+| `out/town04_test_section.png` | letak ruas uji di peta Town04 |
+
+**Panel ketiga `ipm_explained.png` layak dikutip sendiri.** Ia memuat kurva
+meter-per-piksel: 0,09 m/px di 10 m, **1,84 m/px di 44 m**. Garis putus
+vertikalnya adalah 44,0 m, yaitu jarak deteksi pertama yang diukur
+`check_estimation.py`.
+
+Selama ini batas 44 m dijelaskan sebagai keterbatasan detektor (data latih kurang
+kendaraan jauh, bagian 18). Kurva itu menunjukkan **geometrinya juga habis di
+tempat yang sama**: pada 44 m satu piksel sudah bernilai 1,84 m, jadi deteksi
+yang sempurna pun jaraknya tidak akan teliti. Dua sebab yang kebetulan bertemu di
+angka yang sama -- dan itu lebih jujur daripada menyalahkan detektornya saja.

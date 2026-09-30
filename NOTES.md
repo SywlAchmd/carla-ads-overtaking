@@ -3102,3 +3102,133 @@ dua hal murah yang seharusnya dilakukan lebih dulu:
 2. **Gambar besarannya terhadap waktu.** Bentuk membedakan tunak, berayun, dan
    meluruh — dan ketiganya menuntut perbaikan yang sama sekali berbeda. Satu
    angka rata-rata tidak bisa membedakannya.
+
+---
+
+## Membuktikan IPM, dan Memilih Anotasi — 30 September 2026
+
+Dua pekerjaan yang berangkat dari pertanyaan penulis: "ada perhitungan pikselnya
+gak, buktikan secara matematis" dan "dua model anotasi ini, prefer yang mana".
+Angka lengkap: `WRITING_SUMMARY.md` bagian 30.
+
+### Membuktikan IPM: empat lapis, dari aritmetika ke sensor lain
+
+Turunannya sendiri pendek — model lubang jarum plus perpotongan berkas dengan
+bidang datar. Yang berharga cara memverifikasinya, karena tiap lapis menutup
+kelas kesalahan yang berbeda:
+
+| Lapis | Menutup kemungkinan |
+|---|---|
+| `f` dari fov, selisih 0 | salah hitung panjang fokus |
+| Bolak-balik, 6,4e-14 m | salah aljabar saat membalik rumus |
+| Versus matriks CARLA, 0,0001 px | salah konvensi frame (kidal/kanan, sumbu) |
+| **Versus kamera depth, <2%** | salah model — dan ini yang tidak bisa dibantah |
+
+Lapis keempat berbeda jenis dari tiga lainnya. Tiga yang pertama menguji kode
+terhadap dirinya sendiri; yang keempat menguji **model** terhadap sensor yang
+tidak berbagi satu pun asumsi dengannya. Depth membaca z-buffer GPU: ia tidak
+tahu tinggi kamera, tidak memakai panjang fokus, tidak mengandaikan jalan datar.
+
+### Trik yang membuat lapis keempat menggigit
+
+Membandingkan jarak saja tidak cukup tajam — galat 1,95% di 42 m bisa berarti
+banyak hal. Yang menajamkannya: **balik rumusnya** dan selesaikan untuk tinggi
+kamera, `h = x·dv/f`.
+
+    h efektif = 1,6368 ± 0,0101 m      (dikonfigurasi 1,6500)
+
+Kalau modelnya salah, `h` akan melayang sistematis mengikuti jarak. Ia tetap
+dalam ±10 mm sepanjang 4,8 sampai 42 m. Itu argumen yang jauh lebih kuat
+daripada "galatnya kecil".
+
+Pelajarannya umum: **kalau sebuah model punya parameter yang seharusnya
+konstan, balik rumusnya dan periksa apakah parameter itu memang konstan.**
+Sebaran parameter lebih informatif daripada sisa galat.
+
+### Dua sisa yang justru jadi hasil
+
+`h` efektif 13,2 mm di bawah nominal — ego duduk di suspensi. Bisa dikalibrasi,
+belum dilakukan.
+
+Dan `h` masih merayap 28,6 mm dari 4,8 ke 42 m, menurun searah. Bukan derau:
+kemiringan jalan ~0,076%. **Itu ongkos asumsi jalan datar, dan sekarang ada
+angkanya — ~0,73 m galat jarak di 42 m.** Selama ini "asumsi jalan datar" cuma
+kalimat di batasan masalah.
+
+Sisa yang diukur lebih berguna daripada sisa yang dirapikan.
+
+### Anotasi: yang lebih "lengkap" ternyata lebih buruk
+
+Penulis melatih dua model dari data yang sama: satu menandai tiap penggal marka,
+satu menandai batas lajur menerus. Intuisi bilang yang menerus lebih baik —
+lebih banyak piksel, garisnya sudah tersambung dari jaringan.
+
+Diuji, dan kebalikannya:
+
+| Terhadap peta HD, 320 frame | marking | continuous |
+|---|---|---|
+| Lebar lajur RMS | **0,076 m** | 0,181 m |
+| Simpangan ego RMS | **0,020 m** | 0,039 m |
+| Sudut hadap RMS | **0,100°** | 0,195° |
+| Piksel per frame | 1.731 | 6.314 |
+
+Dua kali lebih baik dengan piksel 3,6 kali lebih sedikit.
+
+Sebabnya terlihat di satu frame: masker `continuous` menarik garis lajur **di
+atas rel kereta**. Bantalan rel berjarak teratur dan bergaris — bagi jaringan
+yang diajari melihat "garis menerus", itu tampak persis seperti marka. Sisa kisi
+melonjak 0,003 → 0,166 m, 55 kali.
+
+> Kelebihan piksel itu bukan informasi tambahan melainkan **kebisingan
+> berstruktur** — jenis yang paling merusak, karena tampak seperti garis
+> sungguhan dan lolos setiap penyaring yang berbasis kepadatan.
+
+Ini juga menutup pertanyaan yang sempat menggantung di bagian 28.4: melatih
+ulang dengan label menerus bukan cuma lemah secara metodologis, ia **terukur
+lebih buruk**.
+
+### Satu kesalahpahaman saya sendiri yang perlu dicatat
+
+Penulis sempat bertanya: kalau modelnya sudah memberi garis menerus, bukankah
+pencocokan kisi jadi mubazir?
+
+Saya baru sadar itu belum pernah saya sampaikan jelas: **masker `continuous`
+juga cuma piksel.** Ia tidak punya satuan meter, tidak tahu ada berapa lajur,
+tidak tahu ego di sebelah mana. `lanes.py` tetap dijalankan penuh. Angka
+`continuous` yang saya laporkan SUDAH hasil pencocokan kisi.
+
+Jadi memilih `continuous` bukan melewati tahap pencocokan — hanya memberinya
+masukan yang lebih kotor.
+
+### Batas kisi, ketemu saat membuat gambar
+
+Untuk memperagakan shear saya perlu frame dengan ego menyudut, jadi saya ambil
+satu di yaw 6°. Hasilnya lebar lajur **3,140 m** terhadap 3,50 — meleset 0,36 m,
+jauh lebih buruk daripada RMS 0,076 m sapuan terkendali.
+
+Diperiksa: puncaknya di c = −10,97 / −4,73 / +1,58, berjarak 6,23 dan 6,31 m.
+Dua lebar lajur. Marka tengahnya tidak terdeteksi, dan yang terjauh kemungkinan
+pagar. Kisinya membaca celah itu sebagai dua langkah — **benar** — tapi dengan
+hanya tiga sisa yang tidak teratur ia mendarat di kompromi.
+
+> Pencocokan kisi bertahan terhadap SATU marka yang hilang. Ia tidak bertahan
+> kalau sebagian besarnya hilang.
+
+Frame itu disimpan (`out/sensor_rgb_yaw.png`), bukan dibuang karena hasilnya
+tidak enak dilihat. Untuk gambar penjelasan saya pakai frame lurus dengan shear
+**sengaja salah** di kolom kiri, supaya satu-satunya yang berubah antara kedua
+kolom adalah kemiringannya sendiri.
+
+### Batas jangkauan punya DUA sebab, bukan satu
+
+Kurva meter-per-piksel memberi ini: 0,09 m/px di 10 m, **1,84 m/px di 44 m**.
+
+Dan 44,0 m adalah jarak deteksi pertama yang diukur `check_estimation.py`.
+
+Selama ini batas itu dijelaskan sebagai keterbatasan detektor — data latih
+kurang kendaraan jauh (bagian 18). Kurva itu menunjukkan **geometrinya juga
+habis di tempat yang sama**: pada 44 m satu piksel sudah bernilai 1,84 m, jadi
+deteksi yang sempurna pun jaraknya tidak akan teliti.
+
+Dua sebab yang kebetulan bertemu di angka yang sama. Lebih jujur ditulis begitu
+daripada menyalahkan detektornya saja.

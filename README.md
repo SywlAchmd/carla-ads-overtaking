@@ -69,6 +69,17 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python plot_concepts.py` | gambar konsep: rig, frame, skenario, pipeline, MPC (tanpa server) |
 | `python check_detection.py --lajur 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
 | `python check_lanes.py` | ketelitian geometri lajur (lebar, simpangan, sudut hadap) vs peta HD |
+| `python check_lanes.py --weight ~/sawal/model/yolopx-continuous.pt` | sapuan yang sama pakai checkpoint lain (bagian 30.7) |
+| `python check_ipm.py` | pembuktian IPM: f, bolak-balik, matriks CARLA, kamera depth |
+| `python plot_ipm.py` | IPM dijelaskan di atas frame kamera + warp pandangan atas |
+| `python plot_lane_fit.py` | shear salah vs tercocok, plus pencocokan kisi |
+| `python plot_lane_pipeline.py` | tiga tahap lanes.py, dua model anotasi berdampingan |
+
+**Checkpoint YOLOPX.** Dipakai `yolopx-marking.pt` (anotasi per-marka). Varian
+`yolopx-continuous.pt` (anotasi batas lajur menerus) diuji dan **ditolak**: ia
+menarik garis lajur di tempat yang tidak ada markanya -- termasuk di atas rel
+kereta -- dan ketelitian geometri lajurnya dua kali lebih buruk meski pikselnya
+3,6 kali lebih banyak. Angka lengkap `WRITING_SUMMARY.md` bagian 30.7.
 
 ## Arsitektur
 
@@ -79,6 +90,7 @@ overlay.py        overlay video: deteksi, kandidat planner, HUD  [butuh cv2]
 planning.py      quintic/quartic, local planner, BehaviorFSM      [tanpa carla]
 tracking.py      asosiasi dua tahap + Kalman filter halangan        [tanpa carla]
 lanes.py         masker lajur YOLOPX -> IPM -> kisi -> lebar & simpangan [tanpa carla]
+                 (IPM dibuktikan check_ipm.py; digambar plot_ipm.py)
 control.py       MPC CasADi + IPOPT, ThrottlePI, konversi kemudi  [tanpa carla]
 evaluation.py    sensor tabrakan + kriteria keberhasilan 11.2
 simulation.py    koneksi, mode sinkron, spawn, reference path
@@ -254,7 +266,16 @@ tick 50 ms. Diambil saat mesin menjalankan 13 langkah beruntun, dan rata-ratanya
 justru turun ke 17,21 ms -- jadi kemungkinan besar kontensi, bukan regresi
 solver. Harus diulang sebelum dikutip.
 
-### 12. Lain-lain
+### 12. Kalibrasi tinggi kamera belum dilakukan
+`check_ipm.py` mengukur tinggi kamera efektif **1,6368 m** terhadap 1,6500 m yang
+dikonfigurasi -- ego duduk di suspensi. Selisih 0,8% itu masuk ke seluruh jarak
+memanjang dan bisa dikalibrasi keluar dengan satu konstanta. Belum dikerjakan.
+
+Terukur juga: asumsi jalan datar berbiaya **~0,73 m galat jarak di 42 m**
+(kemiringan jalan ~0,076%). Itu bukan cacat melainkan harga asumsinya, dan kini
+ada angkanya untuk ditulis di batasan masalah.
+
+### 13. Lain-lain
 - Klaim real-time sudah diukur (`WRITING_SUMMARY.md` 21.3), tetapi mesin **tidak
   benar-benar senggang** saat pengukuran (load ~3-5). Angka di mesin sepi
   kemungkinan sedikit lebih baik, bukan lebih buruk.
