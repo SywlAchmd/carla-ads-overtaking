@@ -9,6 +9,7 @@ pembanding yang sama supaya acuannya sendiri ikut terverifikasi.
 
     python check_estimation.py
 """
+import argparse
 import json
 import math
 
@@ -37,8 +38,11 @@ def relatif(ego, lain):
 
 
 def main_():
+    ap = argparse.ArgumentParser()
+    ap.add_argument('--weight', default=None, help='checkpoint YOLOPX lain (bagian 30)')
+    args = ap.parse_args()
     params = json.load(open(config.VEHICLE_PARAMS_JSON))
-    net = yolopx.YOLOPX()
+    net = yolopx.YOLOPX(args.weight)
     dt = config.FIXED_DELTA_SECONDS
     print(f'YOLOPX epoch {net.epoch}, {net.device}, half={net.half}')
 

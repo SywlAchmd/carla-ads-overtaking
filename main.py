@@ -331,6 +331,9 @@ def main():
     ap.add_argument('--perception', default='gt', choices=('gt', 'vision'))
     ap.add_argument('--rekam', action='store_true',
                     help='video kamera + deteksi + kandidat planner (butuh --perception vision)')
+    ap.add_argument('--weight', default=None,
+                    help='checkpoint YOLOPX lain, mis. membandingkan anotasi lajur '
+                         'marka versus menerus (bagian 30)')
     ap.add_argument('--akhiran', default='',
                     help='akhiran nama berkas keluaran, mis. _sesudah -- supaya rekaman '
                          'dan log pembanding tidak saling menimpa')
@@ -350,7 +353,7 @@ def main():
             rig = net = perekam = None
             if args.perception == 'vision':
                 import yolopx
-                net = yolopx.YOLOPX()
+                net = yolopx.YOLOPX(args.weight)
                 rig = sensors.RigKamera(world, ego, params)
                 print(f'vision: YOLOPX epoch {net.epoch}, {net.device}')
                 if args.rekam:

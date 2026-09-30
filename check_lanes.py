@@ -47,10 +47,13 @@ def _ringkas(nama, galat, satuan='m'):
 def main_():
     ap = argparse.ArgumentParser()
     ap.add_argument('--detik', type=float, default=16.0)
+    ap.add_argument('--weight', default=None,
+                    help='checkpoint YOLOPX lain, mis. membandingkan anotasi lajur '
+                         'marka versus menerus (bagian 30)')
     args = ap.parse_args()
 
     params = json.load(open(config.VEHICLE_PARAMS_JSON))
-    net = yolopx.YOLOPX()
+    net = yolopx.YOLOPX(args.weight)
     dt = config.FIXED_DELTA_SECONDS
     print(f'YOLOPX epoch {net.epoch}, {net.device}, half={net.half}')
     print(f'lebar lajur menurut peta: {config.LANE_WIDTH:.2f} m')
