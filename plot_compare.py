@@ -15,29 +15,29 @@ import numpy as np
 import config
 import evaluation
 
-GAYA = {'gt': dict(color='tab:blue', lw=2.0, label='MPC + ground truth'),
+STYLE = {'gt': dict(color='tab:blue', lw=2.0, label='MPC + ground truth'),
         'vision': dict(color='tab:red', lw=1.8, ls='--', label='MPC + vision')}
 
 
-def muat(sk, mode):
+def load_run(sk, mode):
     f = np.load(os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{mode}.npz'))
-    k = {n: i for i, n in enumerate(f['kolom'])}
-    L, pos = f['log'], f['posisi_kendaraan']
+    k = {n: i for i, n in enumerate(f['columns'])}
+    L, pos = f['log'], f['vehicle_positions']
     yaw = L[:, k['yaw']]
-    xc = L[:, k['x']] + config.SUMBU_KE_PUSAT * np.cos(yaw)
-    yc = L[:, k['y']] + config.SUMBU_KE_PUSAT * np.sin(yaw)
-    jarak = evaluation.jarak_kotak(pos[:, 0, 0] - xc, pos[:, 0, 1] - yc,
-                                   f['dim_ego'], f['dim_kendaraan'][0], yaw, pos[:, 0, 2])
-    return dict(t=L[:, k['t']], y=L[:, k['y']], v=L[:, k['v']] * 3.6, jarak=jarak,
-                n_layak=L[:, k['n_layak']], st=f['fsm_state'])
+    xc = L[:, k['x']] + config.AXLE_TO_CENTER * np.cos(yaw)
+    yc = L[:, k['y']] + config.AXLE_TO_CENTER * np.sin(yaw)
+    dist = evaluation.box_distance(pos[:, 0, 0] - xc, pos[:, 0, 1] - yc,
+                                   f['dim_ego'], f['vehicle_dims'][0], yaw, pos[:, 0, 2])
+    return dict(t=L[:, k['t']], y=L[:, k['y']], v=L[:, k['v']] * 3.6, dist=dist,
+                n_feasible=L[:, k['n_feasible']], st=f['fsm_state'])
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--skenario', default='S1', choices=list(config.SKENARIO))
+    ap.add_argument('--scenario', default='S1', choices=list(config.SCENARIOS))
     args = ap.parse_args()
-    sk = args.skenario.lower()
-    d = {m: muat(sk, m) for m in ('gt', 'vision')}
+    sk = args.scenario.lower()
+    d = {m: load_run(sk, m) for m in ('gt', 'vision')}
 
     fig, ax = plt.subplots(4, 1, figsize=(10, 11), sharex=True)
     for a in ax:
@@ -47,15 +47,15 @@ def main():
     # terbaca dari gambar, bukan cuma dari angka.
     ax[0].axhline(0, color='0.5', lw=.8)
     ax[0].axhline(config.SIDE_SIGN * config.LANE_WIDTH, color='0.5', lw=.8)
-    for tepi in (0.5, -0.5, -1.5):
-        ax[0].axhline(tepi * config.LANE_WIDTH, color='0.75', ls=':', lw=.8)
+    for edges in (0.5, -0.5, -1.5):
+        ax[0].axhline(edges * config.LANE_WIDTH, color='0.75', ls=':', lw=.8)
     ax[0].set_ylabel('lateral deviation (m)')
 
     ax[1].axhline(config.V_MAX * 3.6, color='crimson', ls=':', lw=1, label='limit 50 km/h')
     ax[1].set_ylabel('speed (km/h)')
 
-    ax[2].axhline(config.JARAK_AMAN, color='crimson', ls=':', lw=1.2,
-                  label=f'pass criterion {config.JARAK_AMAN:.0f} m')
+    ax[2].axhline(config.SAFE_DISTANCE, color='crimson', ls=':', lw=1.2,
+                  label=f'pass criterion {config.SAFE_DISTANCE:.0f} m')
     ax[2].set_ylabel('body-to-body distance (m)')
     # Dipotong ke 12 m: yang perlu terbaca adalah daerah kritis dekat syarat
     # 1,0 m, bukan 68 m saat kedua kendaraan masih berjauhan.
@@ -65,33 +65,33 @@ def main():
     ax[3].set_xlabel('t (s)')
     ax[3].set_ylim(-0.4, 9.6)
 
-    for m, g in GAYA.items():
+    for m, g in STYLE.items():
         x = d[m]
         ax[0].plot(x['t'], x['y'], **g)
         ax[1].plot(x['t'], x['v'], **g)
-        ax[2].plot(x['t'], x['jarak'], **g)
-        ax[3].plot(x['t'], x['n_layak'], **g)
+        ax[2].plot(x['t'], x['dist'], **g)
+        ax[3].plot(x['t'], x['n_feasible'], **g)
 
-    for m, warna, xy in (('gt', 'tab:blue', (-64, 26)), ('vision', 'tab:red', (16, -6))):
+    for m, color, xy in (('gt', 'tab:blue', (-64, 26)), ('vision', 'tab:red', (16, -6))):
         x = d[m]
-        i = int(np.argmin(x['jarak']))
-        ax[2].annotate(f"minimum {x['jarak'][i]:.2f} m", (x['t'][i], x['jarak'][i]),
-                       textcoords='offset points', xytext=xy, color=warna,
+        i = int(np.argmin(x['dist']))
+        ax[2].annotate(f"minimum {x['dist'][i]:.2f} m", (x['t'][i], x['dist'][i]),
+                       textcoords='offset points', xytext=xy, color=color,
                        fontsize=9, fontweight='bold',
-                       arrowprops=dict(arrowstyle='->', color=warna, lw=1))
-        nol = int((x['n_layak'] == 0).sum())
-        ax[3].annotate(f'{nol} ticks with no candidate', (0.99, 0.30 + 0.16 * (m == 'gt')),
-                       xycoords='axes fraction', ha='right', color=warna, fontsize=9)
+                       arrowprops=dict(arrowstyle='->', color=color, lw=1))
+        zero = int((x['n_feasible'] == 0).sum())
+        ax[3].annotate(f'{zero} ticks with no candidate', (0.99, 0.30 + 0.16 * (m == 'gt')),
+                       xycoords='axes fraction', ha='right', color=color, fontsize=9)
 
     ax[0].legend(loc='upper right', fontsize=9)
     for a in ax[1:3]:
         a.legend(loc='upper right', fontsize=8)
-    fig.suptitle(f'Scenario {args.skenario} — effect of the perception source on control',
+    fig.suptitle(f'Scenario {args.scenario} — effect of the perception source on control',
                  y=0.985)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    keluar = os.path.join(config.OUT_DIR, f'compare_{sk}.png')
-    fig.savefig(keluar, dpi=150)
-    print(f'Grafik: {keluar}')
+    out = os.path.join(config.OUT_DIR, f'compare_{sk}.png')
+    fig.savefig(out, dpi=150)
+    print(f'Plot: {out}')
 
 
 if __name__ == '__main__':

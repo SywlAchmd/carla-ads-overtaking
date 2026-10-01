@@ -5,7 +5,7 @@ kecepatan RELATIF terhadap ego, satuan meter dan m/s.
 
 Frame ego dipilih karena itu satu-satunya yang bisa dihasilkan kamera: dia
 melihat kotak di gambar dan menghitung jaraknya, tanpa tahu dirinya berada di
-mana. Konversi ke frame jalan dilakukan `localization.halangan_ego_ke_jalan`.
+mana. Konversi ke frame jalan dilakukan `localization.obstacles_ego_to_road`.
 
 `GroundTruthPerception` sengaja melaporkan besaran yang SAMA dengan yang nanti
 dihasilkan `VisionPerception`, supaya perbandingan keduanya di bagian 11.4
@@ -20,13 +20,13 @@ import lanes
 import sensors
 import tracking
 
-JANGKAUAN = 80.0        # m ke depan; di luar ini tidak relevan untuk horizon 2 detik
-BELAKANG = 15.0         # m ke belakang; untuk memeriksa lajur tujuan
+RANGE = 80.0        # m ke depan; di luar ini tidak relevan untuk horizon 2 detik
+REAR = 15.0         # m ke belakang; untuk memeriksa lajur tujuan
 
 
 class GroundTruthPerception:
-    def __init__(self, world, ego, jangkauan=JANGKAUAN):
-        self.world, self.ego, self.jangkauan = world, ego, jangkauan
+    def __init__(self, world, ego, reach=RANGE):
+        self.world, self.ego, self.reach = world, ego, reach
 
     def update(self):
         tf = self.ego.get_transform()
@@ -36,7 +36,7 @@ class GroundTruthPerception:
         # kecepatan ego di frame CARLA, untuk mengubah absolut -> relatif
         vx_e, vy_e = v.x, v.y
 
-        keluar = []
+        out = []
         for a in self.world.get_actors().filter('vehicle.*'):
             if a.id == self.ego.id:
                 continue
@@ -45,22 +45,22 @@ class GroundTruthPerception:
             # putar ke frame ego, lalu balik tanda y (CARLA left-handed -> RH)
             x = c * dx + s * dy
             y = -(-s * dx + c * dy)
-            if not (-BELAKANG < x < self.jangkauan):
+            if not (-REAR < x < self.reach):
                 continue
             dvx, dvy = vel.x - vx_e, vel.y - vy_e
-            keluar.append([x, y, c * dvx + s * dvy, -(-s * dvx + c * dvy)])
-        return np.array(keluar) if keluar else np.empty((0, 4))
+            out.append([x, y, c * dvx + s * dvy, -(-s * dvx + c * dvy)])
+        return np.array(out) if out else np.empty((0, 4))
 
 
-F_PIKSEL = config.KAMERA_LEBAR / (2.0 * math.tan(math.radians(config.KAMERA_FOV) / 2.0))
+F_PIXEL = config.CAMERA_WIDTH / (2.0 * math.tan(math.radians(config.CAMERA_FOV) / 2.0))
 
 
-def koreksi_muka(theta, panjang=config.LAIN_PANJANG, lebar=config.LAIN_LEBAR):
+def face_correction(theta, length=config.OTHER_LENGTH, width=config.OTHER_WIDTH):
     """Geseran dari permukaan yang TERLIHAT ke pusat bodi -> (dx memanjang, dy melintang).
 
     `theta` = sudut garis pandang ke target, radian, 0 = tepat di depan.
-    `panjang`, `lebar` = dimensi target. Bawaannya dimensi bounding box simulator;
-    jalur vision memasok dimensi yang DIUKUR sendiri (`DimensiKendaraan`).
+    `length`, `width` = dimensi target. Bawaannya dimensi bounding box simulator;
+    jalur vision memasok dimensi yang DIUKUR sendiri (`VehicleDimensions`).
 
     Depth membaca permukaan terdekat yang terlihat (bagian 18.4), dan permukaan
     itu berganti selama manuver: saat target di depan yang terlihat muka
@@ -70,7 +70,7 @@ def koreksi_muka(theta, panjang=config.LAIN_PANJANG, lebar=config.LAIN_LEBAR):
 
     Versi kedua membedakannya dari rasio lebar/tinggi kotak. Itu GAGAL justru saat
     berdampingan: kotak terpotong tepi citra, rasionya menyusut, dan koreksi
-    melintang praktis tidak diterapkan -- galat -1,06 m ~ LAIN_LEBAR/2 = 0,966 m
+    melintang praktis tidak diterapkan -- galat -1,06 m ~ OTHER_WIDTH/2 = 0,966 m
     tepat ke arah ego, yang membuat MPC menghindari halangan yang tidak pernah ada
     (bagian 26.2).
 
@@ -89,13 +89,13 @@ def koreksi_muka(theta, panjang=config.LAIN_PANJANG, lebar=config.LAIN_LEBAR):
     sehadap jalan (sudah di batasan masalah). Kalau skenario nanti memuat
     kendaraan beragam, dimensi ini harus datang dari kelas deteksi.
     """
-    sisi = panjang * abs(math.sin(theta))
-    belakang = lebar * abs(math.cos(theta))
-    f = sisi / max(sisi + belakang, 1e-9)
-    return (1.0 - f) * panjang / 2.0, f * lebar / 2.0
+    side = length * abs(math.sin(theta))
+    rear = width * abs(math.cos(theta))
+    f = side / max(side + rear, 1e-9)
+    return (1.0 - f) * length / 2.0, f * width / 2.0
 
 
-class DimensiKendaraan:
+class VehicleDimensions:
     """Panjang, lebar, dan tinggi kendaraan lain, DIUKUR dari kotak deteksi.
 
     Sampai bagian 28 dimensi ini konstanta dari bounding box simulator -- satu
@@ -122,46 +122,46 @@ class DimensiKendaraan:
     masalah. Kendaraan beragam menuntut satu penaksir per track.
     """
 
-    def __init__(self, panjang0=None, lebar0=None, bobot0=None):
-        p0 = config.PRIOR_PANJANG if panjang0 is None else panjang0
-        l0 = config.PRIOR_LEBAR if lebar0 is None else lebar0
-        w0 = config.PRIOR_BOBOT if bobot0 is None else bobot0
+    def __init__(self, length0=None, width0=None, weight0=None):
+        p0 = config.PRIOR_LENGTH if length0 is None else length0
+        l0 = config.PRIOR_WIDTH if width0 is None else width0
+        w0 = config.PRIOR_WEIGHT if weight0 is None else weight0
         # persamaan normal 2x2 dengan prior sebagai regularisasi Tikhonov
-        self._A0 = w0 * np.eye(2)          # prior, dipisah supaya `teramati` jujur
+        self._A0 = w0 * np.eye(2)          # prior, dipisah supaya `observed` jujur
         self._A = self._A0.copy()
         self._b = w0 * np.array([p0, l0], dtype=float)
-        self._h_jum = self._h_bobot = 0.0
-        self.n_amatan = 0
+        self._h_sum = self._h_weight = 0.0
+        self.n_observations = 0
 
-    def amati(self, kotak, d, theta):
-        """Satu deteksi. `kotak` piksel citra asli, `d` depth planar, `theta` radian.
+    def observe(self, box, d, theta):
+        """Satu deteksi. `box` piksel citra asli, `d` depth planar, `theta` radian.
 
         Kotak yang menyentuh tepi citra DIABAIKAN: lebarnya terpotong, dan justru
         itu yang terjadi saat ego berdampingan -- kasus yang paling dibutuhkan.
         Memakainya akan menarik taksiran panjang ke bawah persis di sudut pandang
         yang paling informatif.
         """
-        x1, y1, x2, y2 = (float(v) for v in kotak[:4])
-        if x1 <= 1.0 or x2 >= config.KAMERA_LEBAR - 2.0:
+        x1, y1, x2, y2 = (float(v) for v in box[:4])
+        if x1 <= 1.0 or x2 >= config.CAMERA_WIDTH - 2.0:
             return False
-        if not 1.0 < d < JANGKAUAN:
+        if not 1.0 < d < RANGE:
             return False
-        lebar_siluet = (x2 - x1) * d / F_PIKSEL
-        if not 0.5 < lebar_siluet < 12.0:
+        silhouette_width = (x2 - x1) * d / F_PIXEL
+        if not 0.5 < silhouette_width < 12.0:
             return False
         # Bobot turun dengan jarak: satu piksel bernilai d/f meter, jadi kotak
         # jauh mengukur dimensi jauh lebih kasar daripada kotak dekat.
         w = 1.0 / (1.0 + (d / 20.0) ** 2)
-        baris = np.array([abs(math.sin(theta)), abs(math.cos(theta))])
-        self._A += w * np.outer(baris, baris)
-        self._b += w * baris * lebar_siluet
-        self.n_amatan += 1
-        if y1 > 1.0 and y2 < config.KAMERA_TINGGI - 2.0:
-            self._h_jum += w * (y2 - y1) * d / F_PIKSEL
-            self._h_bobot += w
+        rows = np.array([abs(math.sin(theta)), abs(math.cos(theta))])
+        self._A += w * np.outer(rows, rows)
+        self._b += w * rows * silhouette_width
+        self.n_observations += 1
+        if y1 > 1.0 and y2 < config.CAMERA_HEIGHT - 2.0:
+            self._h_sum += w * (y2 - y1) * d / F_PIXEL
+            self._h_weight += w
         return True
 
-    def ukuran(self):
+    def size(self):
         """(panjang, lebar) meter. Selalu terdefinisi -- prior menanggung awalnya."""
         pj, lb = np.linalg.solve(self._A, self._b)
         # Jepit ke rentang kendaraan yang mungkin: sistem yang nyaris singular
@@ -171,14 +171,14 @@ class DimensiKendaraan:
         return float(np.clip(pj, 3.0, 12.0)), float(np.clip(lb, 1.4, 2.1))
 
     @property
-    def tinggi(self):
+    def height(self):
         """Meter, atau None bila belum ada kotak yang utuh secara vertikal."""
-        if self._h_bobot <= 0.0:
+        if self._h_weight <= 0.0:
             return None
-        return float(self._h_jum / self._h_bobot)
+        return float(self._h_sum / self._h_weight)
 
     @property
-    def teramati(self):
+    def observed(self):
         """Seberapa jauh sudut pandang sudah menyapu -- 0 berarti masih prior.
 
         Angka kondisi persamaan normal: selama target hanya terlihat dari
@@ -189,15 +189,15 @@ class DimensiKendaraan:
         tampak terkondisi baik -- prior itu kelipatan identitas, jadi ia
         menyembunyikan persis kekurangan yang ingin diukur.
         """
-        nilai = np.linalg.eigvalsh(self._A - self._A0)
-        return float(max(nilai.min(), 0.0) / max(nilai.max(), 1e-9))
+        value = np.linalg.eigvalsh(self._A - self._A0)
+        return float(max(value.min(), 0.0) / max(value.max(), 1e-9))
 
     def __repr__(self):
-        pj, lb = self.ukuran()
-        tg = self.tinggi
-        return (f'DimensiKendaraan(p={pj:.2f} l={lb:.2f} '
+        pj, lb = self.size()
+        tg = self.height
+        return (f'VehicleDimensions(p={pj:.2f} l={lb:.2f} '
                 f't={"?" if tg is None else f"{tg:.2f}"} m, '
-                f'n={self.n_amatan}, teramati={self.teramati:.3f})')
+                f'n={self.n_observations}, observed={self.observed:.3f})')
 
 
 class VisionPerception:
@@ -205,17 +205,17 @@ class VisionPerception:
 
     Depth CARLA terukur **planar** (sepanjang sumbu optik), jadi balik-proyeksinya
     langsung tanpa faktor sinar: Z = depth, y = -Z*du/f. Depth membaca permukaan
-    yang terlihat, bukan pusat bodi; koreksinya di `koreksi_muka`.
+    yang terlihat, bukan pusat bodi; koreksinya di `face_correction`.
     Dimensi kendaraan lain dianggap tetap -- masuk batasan masalah.
     """
 
-    def __init__(self, net, rig, ukur_dimensi=True):
+    def __init__(self, net, rig, measure_dimensions=True):
         self.net, self.rig = net, rig
-        self.pelacak = tracking.Pelacak()
+        self.tracker = tracking.Tracker()
         # None = pakai konstanta bounding box simulator (perilaku sebelum bagian 28)
-        self.dimensi = DimensiKendaraan() if ukur_dimensi else None
-        self.lajur = None                  # GeometriLajur frame terakhir, atau None
-        self.masker = None                 # (area jalan, garis lajur) frame terakhir
+        self.dimensions = VehicleDimensions() if measure_dimensions else None
+        self.lane = None                  # LaneGeometry frame terakhir, atau None
+        self.mask = None                 # (area jalan, garis lajur) frame terakhir
 
     def update(self, frame, dt, ego_v=0.0, ego_a=0.0, ego_w=0.0):
         depth = sensors.depth_meter(frame['depth'])
@@ -223,19 +223,19 @@ class VisionPerception:
         # Kepala segmentasi lajur ikut dipakai, bukan dibuang seperti sebelum
         # bagian 28. Inferensinya sudah berjalan tiap tick; yang ditambahkan
         # hanya balik-proyeksi maskernya, ~1 ms.
-        kotak, da, ll = self.net.infer(rgb, conf=config.TRACK_CONF_RENDAH)
-        self.lajur = lanes.dari_masker(ll, rgb.shape)
-        self.masker = (da, ll)        # untuk overlay video; kendali tidak memakainya
-        pakai, z, R = [], [], []
-        for b in kotak:
+        box, da, ll = self.net.infer(rgb, conf=config.TRACK_CONF_LOW)
+        self.lane = lanes.from_mask(ll, rgb.shape)
+        self.mask = (da, ll)        # untuk overlay video; kendali tidak memakainya
+        use, z, R = [], [], []
+        for b in box:
             u, v = int((b[0] + b[2]) / 2), int((b[1] + b[3]) / 2)
             # ponytail: median petak 7x7 di pusat kotak -- terukur tepat di bagian
             # 18.4 sampai 50 m. Ganti kalau kotak pernah lebih kecil dari 7 px.
             d = float(np.median(depth[max(v - 3, 0):v + 4, max(u - 3, 0):u + 4]))
-            if not 0.5 < d < JANGKAUAN:
+            if not 0.5 < d < RANGE:
                 continue
-            pakai.append(b)
-            y = -d * (u - config.KAMERA_LEBAR / 2.0) / F_PIKSEL
+            use.append(b)
+            y = -d * (u - config.CAMERA_WIDTH / 2.0) / F_PIXEL
             # Sudut pandang dihitung ke pusat kotak, bukan ke pusat bodi -- selisihnya
             # orde kedua pada jarak kerja dan hilang di derau kuantisasi kotak.
             theta = math.atan2(y, d)
@@ -243,26 +243,26 @@ class VisionPerception:
             # frame-frame sebelumnya. Dimensi kendaraan tidak berubah, jadi
             # keterlambatan satu frame tidak berarti apa-apa -- sedangkan memakai
             # hasil ukur frame ini untuk mengoreksi frame ini sendiri menutup lup.
-            if self.dimensi is not None:
+            if self.dimensions is not None:
                 # Diukur pada depth PERMUKAAN, bukan pusat bodi. Sempat saya geser
-                # ke d + dx dengan alasan yang sama seperti `koreksi_muka`, dan itu
+                # ke d + dx dengan alasan yang sama seperti `face_correction`, dan itu
                 # KELIRU: tinggi terbentang di muka yang terlihat, yang memang ada
                 # di depth d. Menggesernya merusak tinggi dari galat +1,1% menjadi
                 # +14,3% dan membuat lebar menabrak batas jepitnya, sehingga zona
                 # aman ikut berubah dan run gagal lane_departure. Yang ditaksir di
                 # sini ukuran BENDA, bukan letak pusatnya.
-                self.dimensi.amati(b, d, theta)
-                dx, dy = koreksi_muka(theta, *self.dimensi.ukuran())
+                self.dimensions.observe(b, d, theta)
+                dx, dy = face_correction(theta, *self.dimensions.size())
             else:
-                dx, dy = koreksi_muka(theta)
+                dx, dy = face_correction(theta)
             # koreksi melintang menjauhi ego: pusat bodi ada di BALIK sisi yang terlihat
             z.append([d + self.rig.x + dx, y + math.copysign(dy, y)])
             # derau melintang tumbuh dengan jarak: kuantisasi kotak x d/f
             R.append(np.diag([config.TRACK_SIGMA_D ** 2,
-                              (config.TRACK_SIGMA_PIKSEL * d / F_PIKSEL) ** 2]))
-        if not pakai:
-            return self.pelacak.update(np.empty((0, 4)), [], np.empty((0, 2)),
+                              (config.TRACK_SIGMA_PIXEL * d / F_PIXEL) ** 2]))
+        if not use:
+            return self.tracker.update(np.empty((0, 4)), [], np.empty((0, 2)),
                                        np.empty((0, 2, 2)), dt, ego_v, ego_a, ego_w)
-        pakai = np.array(pakai)
-        return self.pelacak.update(pakai[:, :4], pakai[:, 4], z, R,
+        use = np.array(use)
+        return self.tracker.update(use[:, :4], use[:, 4], z, R,
                                    dt, ego_v, ego_a, ego_w)

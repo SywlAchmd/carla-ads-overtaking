@@ -36,9 +36,9 @@ def to_rh_rear_axle(tf, vel, rear_offset_x):
     return x, -y_c, -yaw_c, v_long
 
 
-def wrap(sudut):
+def wrap(angle):
     """Sudut -> (-pi, pi]. Jangan pernah mengurangi dua sudut tanpa ini."""
-    return (sudut + math.pi) % (2 * math.pi) - math.pi
+    return (angle + math.pi) % (2 * math.pi) - math.pi
 
 
 def carla_xy_yaw_to_rh(location, yaw_deg):
@@ -60,10 +60,10 @@ class PathFrame:
         self._c, self._s = math.cos(self.psi0), math.sin(self.psi0)
 
     @classmethod
-    def dari_perception(cls, ego_rh, lajur, x0=0.0):
+    def from_perception(cls, ego_rh, lane, x0=0.0):
         """Frame jalan dari APA YANG DILIHAT, bukan dari `world.get_map()`.
 
-        `ego_rh` = EgoState frame dunia right-handed, `lajur` = `lanes.GeometriLajur`
+        `ego_rh` = EgoState frame dunia right-handed, `lane` = `lanes.LaneGeometry`
         frame terakhir. Dua besaran yang dipakai keduanya hasil ukur kamera:
 
           * arah jalan  = yaw ego dunia dikurangi yaw ego terhadap lajur;
@@ -73,20 +73,20 @@ class PathFrame:
         tidak ada besaran fisik yang bergantung padanya -- dan disamakan dengan
         frame peta supaya log kedua jalur bisa dibandingkan langsung.
         """
-        psi0 = wrap(ego_rh.yaw - lajur.yaw)
+        psi0 = wrap(ego_rh.yaw - lane.yaw)
         c, s_ = math.cos(psi0), math.sin(psi0)
-        dev = lajur.dev_lajur
+        dev = lane.lane_dev
         # titik di sumbu lajur, sejajar ego; lalu mundur x0 supaya ego.x = x0
         ox = ego_rh.x + dev * s_ - x0 * c
         oy = ego_rh.y - dev * c - x0 * s_
-        diri = cls.__new__(cls)
-        diri.origin = np.array([ox, oy], dtype=float)
-        diri.psi0 = float(psi0)
-        diri._c, diri._s = c, s_
-        return diri
+        obj = cls.__new__(cls)
+        obj.origin = np.array([ox, oy], dtype=float)
+        obj.psi0 = float(psi0)
+        obj._c, obj._s = c, s_
+        return obj
 
     @classmethod
-    def dari_pose(cls, ego_rh, psi0, x0, y0):
+    def from_pose(cls, ego_rh, psi0, x0, y0):
         """Frame berarah `psi0` yang menempatkan ego tepat di (x0, y0).
 
         Untuk MENJEJAK arah jalan tanpa memindahkan apa pun: jangkar sekali di
@@ -97,23 +97,23 @@ class PathFrame:
         1,3 m. Titik asalnya karena itu ikut digeser supaya (x0, y0) tetap.
         """
         c, s_ = math.cos(psi0), math.sin(psi0)
-        diri = cls.__new__(cls)
-        diri.origin = np.array([ego_rh.x - (x0 * c - y0 * s_),
+        obj = cls.__new__(cls)
+        obj.origin = np.array([ego_rh.x - (x0 * c - y0 * s_),
                                 ego_rh.y - (x0 * s_ + y0 * c)], dtype=float)
-        diri.psi0 = float(psi0)
-        diri._c, diri._s = c, s_
-        return diri
+        obj.psi0 = float(psi0)
+        obj._c, obj._s = c, s_
+        return obj
 
     def _xy(self, x, y):
         dx, dy = x - self.origin[0], y - self.origin[1]
         return self._c * dx + self._s * dy, -self._s * dx + self._c * dy
 
-    def titik(self, x_rh, y_rh):
+    def points(self, x_rh, y_rh):
         """Titik frame right-handed -> frame jalan. Untuk pencatatan ground truth."""
         return self._xy(x_rh, y_rh)
 
-    def ke_rh(self, px, py):
-        """Kebalikan `titik`: frame jalan -> right-handed. Untuk menggambar
+    def to_rh(self, px, py):
+        """Kebalikan `points`: frame jalan -> right-handed. Untuk menggambar
         lintasan planner di atas citra kamera."""
         px, py = np.asarray(px, dtype=float), np.asarray(py, dtype=float)
         return (self.origin[0] + self._c * px - self._s * py,
@@ -130,7 +130,7 @@ class PathFrame:
         return [px, py, self._c * vx + self._s * vy, -self._s * vx + self._c * vy]
 
 
-def halangan_ego_ke_jalan(obs_rel, ego):
+def obstacles_ego_to_road(obs_rel, ego):
     """Halangan frame ego -> frame jalan. obs_rel = (M, 4) [x, y, vx, vy].
 
     Perception melaporkan apa yang DILIHAT: posisi relatif terhadap ego dan
@@ -150,12 +150,12 @@ def halangan_ego_ke_jalan(obs_rel, ego):
     #
     # Satu perbaikan di sini membenarkan KEDUA pemakainya, karena masing-masing
     # sudah menuliskan acuannya sendiri: zona planner & MPC menggeser ego ke
-    # pusat bodi (`+ SUMBU_KE_PUSAT`) lalu mengurangkan posisi halangan, jadi
+    # pusat bodi (`+ AXLE_TO_CENTER`) lalu mengurangkan posisi halangan, jadi
     # keduanya kini pusat-ke-pusat; sementara main.py mengurangkan `ego.x` untuk
-    # FSM, jadi `depan[0]` kini sumbu belakang -> pusat bodi, persis yang
-    # didokumentasikan `planning._v_ikut`.
-    xc = ego.x + config.SUMBU_KE_PUSAT * c
-    yc = ego.y + config.SUMBU_KE_PUSAT * s
+    # FSM, jadi `front[0]` kini sumbu belakang -> pusat bodi, persis yang
+    # didokumentasikan `planning._v_follow`.
+    xc = ego.x + config.AXLE_TO_CENTER * c
+    yc = ego.y + config.AXLE_TO_CENTER * s
     x, y, vx, vy = o[:, 0], o[:, 1], o[:, 2], o[:, 3]
     return np.column_stack([
         xc + c * x - s * y,

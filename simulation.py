@@ -8,16 +8,16 @@ import numpy as np
 import config
 import localization
 
-_klien = None           # diisi carla_world(), dipakai tick()
+_client = None           # diisi carla_world(), dipakai tick()
 
 
 @contextlib.contextmanager
 def carla_world():
     """Mode sinkron dipaksa aktif; setting dunia dikembalikan saat keluar."""
-    global _klien
+    global _client
     client = carla.Client(config.CARLA_HOST, config.CARLA_PORT)
     client.set_timeout(config.CARLA_TIMEOUT)
-    _klien = client
+    _client = client
 
     world = client.get_world()
     if not world.get_map().name.endswith(config.TOWN):
@@ -36,7 +36,7 @@ def carla_world():
         world.apply_settings(original)
 
 
-def tick(world, perintah=()):
+def tick(world, commands=()):
     """Terapkan perintah aktor, BARU tick. Semua perintah aktor wajib lewat sini.
 
     `apply_control`, `set_target_velocity`, dan `set_transform` dikirim tanpa
@@ -49,14 +49,14 @@ def tick(world, perintah=()):
     `apply_batch_sync` baru kembali setelah perintah diterapkan, jadi urutannya
     terjamin: tiga run identik bit-per-bit. Ditegakkan tests/test_architecture.py.
     """
-    if perintah:
-        for r in _klien.apply_batch_sync(list(perintah), False):
+    if commands:
+        for r in _client.apply_batch_sync(list(commands), False):
             if r.has_error():
-                raise RuntimeError(f'perintah ke aktor {r.actor_id} gagal: {r.error}')
+                raise RuntimeError(f'command to actor {r.actor_id} failed: {r.error}')
     return world.tick()
 
 
-def kecepatan(actor, v, yaw_deg=None):
+def velocity(actor, v, yaw_deg=None):
     """Perintah kecepatan bodi `v` m/s searah `yaw_deg` (derajat, frame CARLA);
     bawaan = arah hadap aktor saat ini."""
     yaw = math.radians(actor.get_transform().rotation.yaw if yaw_deg is None else yaw_deg)
@@ -115,21 +115,21 @@ def reference_path(world, location, length_m=300.0, step=1.0, max_drift_deg=5.0)
     """
     wp = world.get_map().get_waypoint(location, project_to_road=True,
                                       lane_type=carla.LaneType.Driving)
-    jalan = list(walk_lane(wp, length_m, step))
+    road = list(walk_lane(wp, length_m, step))
     pts = [localization.carla_xy_yaw_to_rh(p.transform.location, p.transform.rotation.yaw)
-           for p in jalan]
+           for p in road]
 
     covered = (len(pts) - 1) * step
     if covered < length_m * 0.99:
-        raise RuntimeError(f'Lajur habis setelah {covered:.0f} m dari {length_m:.0f} m yang '
-                           f'diminta (percabangan atau ujung jalan). Pilih SPAWN_IDX lain.')
+        raise RuntimeError(f'Lane ended after {covered:.0f} m of the {length_m:.0f} m '
+                           f'requested (fork or end of road). Pick another SPAWN_IDX.')
 
     x, y, psi = np.array(pts).T
     psi = np.unwrap(psi)        # tanpa ini psi_ref melompat 2pi dan error MPC meledak
 
     drift = np.degrees(np.abs(psi - psi[0]).max())
     if drift > max_drift_deg:
-        raise RuntimeError(f'Path menyimpang {drift:.1f}° dari lurus sepanjang {length_m:.0f} m '
-                           f'(batas {max_drift_deg:.0f}°). Seluruh skripsi mengasumsikan ruas '
-                           f'lurus -- perpendek length_m atau pilih SPAWN_IDX lain.')
-    return np.vstack([x, y, psi, [p.transform.location.z for p in jalan]])
+        raise RuntimeError(f'Path deviates {drift:.1f}° from straight over {length_m:.0f} m '
+                           f'(limit {max_drift_deg:.0f}°). The whole thesis assumes a straight '
+                           f'section -- shorten length_m or pick another SPAWN_IDX.')
+    return np.vstack([x, y, psi, [p.transform.location.z for p in road]])

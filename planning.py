@@ -67,7 +67,7 @@ class Trajectory:
         grid = np.arange(self.states.shape[1]) * self.dt
         return np.array([np.interp(t, grid, row) for row in self.states])
 
-    def durasi(self):
+    def duration(self):
         """Lama rencana, detik."""
         return (self.states.shape[1] - 1) * self.dt
 
@@ -81,7 +81,7 @@ class Trajectory:
         # selangnya, dan sejak rencana dipertahankan saat replan gagal
         # (bagian 19.14) `t` memang bisa melewatinya. `sample_at` sudah aman
         # sendiri karena memakai np.interp.
-        t = min(max(float(t), 0.0), self.durasi())
+        t = min(max(float(t), 0.0), self.duration())
         return (_val(self.cy, t), _val(_deriv(self.cy), t), _val(_deriv(self.cy, 2), t))
 
 
@@ -104,7 +104,7 @@ def _curvature(dx, dy, ddx, ddy):
     return np.abs(dx * ddy - dy * ddx) / np.maximum(speed**3, 1e-6)
 
 
-def zona_aman(dx, dy, A=None, B=None):
+def safety_zone(dx, dy, A=None, B=None):
     """g >= 1 berarti aman. dx, dy = pusat bodi ego ke pusat kendaraan lain.
 
     Elips-super ((dx/A)^p + (dy/B)^p)^(1/p); dipakai bersama planner (numpy) dan
@@ -121,7 +121,7 @@ def zona_aman(dx, dy, A=None, B=None):
     return ((dx / A) ** p + (dy / B) ** p + 1e-12) ** (1.0 / p)
 
 
-def _ellipse_g(states, obstacles, zona=None):
+def _ellipse_g(states, obstacles, zone=None):
     """g_j untuk tiap obstacle di tiap sampel. g >= 1 berarti aman (bagian 7.2)."""
     if obstacles is None or len(obstacles) == 0:
         return None
@@ -131,9 +131,9 @@ def _ellipse_g(states, obstacles, zona=None):
     xj = obs[:, 0:1] + obs[:, 2:3] * k                # prediksi kecepatan konstan
     yj = obs[:, 1:2] + obs[:, 3:4] * k
     # states = sumbu belakang; zona diukur dari pusat bodi
-    xc = states[0] + config.SUMBU_KE_PUSAT * np.cos(states[2])
-    yc = states[1] + config.SUMBU_KE_PUSAT * np.sin(states[2])
-    return zona_aman(xc - xj, yc - yj, *(zona or (None, None)))
+    xc = states[0] + config.AXLE_TO_CENTER * np.cos(states[2])
+    yc = states[1] + config.AXLE_TO_CENTER * np.sin(states[2])
+    return safety_zone(xc - xj, yc - yj, *(zone or (None, None)))
 
 
 def _cost(t, states, ddy, T, y_lane_center, v_desired, cy, cx, g):
@@ -147,7 +147,7 @@ def _cost(t, states, ddy, T, y_lane_center, v_desired, cy, cx, g):
 
 
 def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
-                     side_sign=None, dt=None, y_goal=None, zona=None, lebar_lajur=None):
+                     side_sign=None, dt=None, y_goal=None, zone=None, lane_width=None):
     """Bangkitkan kandidat, saring yang tidak layak, kembalikan (terbaik, semua_layak).
 
     Mengembalikan (None, []) bila tidak ada kandidat yang lolos -- FSM harus
@@ -157,11 +157,11 @@ def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
     dt = config.PLANNER_DT if dt is None else dt
     # Lebar lajur hasil ukur bila jalur vision memasoknya (bagian 28.3); kalau
     # tidak, konstanta peta seperti sebelumnya.
-    lw = config.LANE_WIDTH if lebar_lajur is None else lebar_lajur
+    lw = config.LANE_WIDTH if lane_width is None else lane_width
     # y_goal = tengah lajur tujuan (absolut). Diperlukan untuk manuver kembali,
     # yang targetnya 0 dan tidak bisa dinyatakan sebagai side_sign * LANE_WIDTH.
     y_lane_center = side_sign * lw if y_goal is None else y_goal
-    arah = 1.0 if y_lane_center >= y0 else -1.0
+    direction = 1.0 if y_lane_center >= y0 else -1.0
     kappa_max = 1.0 / config.MIN_TURN_RADIUS
 
     feasible = []
@@ -174,7 +174,7 @@ def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
         # terukur planner membidik 0,125 m dari tengah, dan MPC mengikutinya dengan
         # tepat (galat lacak 0,0001 m). Regresi yang masuk bersama bagian 28, saat
         # lebar lajur berubah dari konstanta menjadi hasil ukur.
-        y_target = y_lane_center + arah * (offset - config.LANE_WIDTH)
+        y_target = y_lane_center + direction * (offset - config.LANE_WIDTH)
         for T in config.MANEUVER_TIMES:
             if peak_lateral_accel(y_target - y0, T) > config.MAX_LATERAL_ACCEL:
                 continue                                  # saringan analitik, murah
@@ -187,7 +187,7 @@ def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
                 continue
             if _curvature(dx, dy, ddx, ddy).max() > kappa_max:
                 continue
-            g = _ellipse_g(states, obstacles, zona)
+            g = _ellipse_g(states, obstacles, zone)
             if g is not None and g.min() < 1.0:
                 continue                                  # bertabrakan
 
@@ -208,45 +208,45 @@ OVERTAKING = 'OVERTAKING'
 LANE_CHANGE_RETURN = 'LANE_CHANGE_RETURN'
 
 
-def _di_lajur(obstacles, y_lajur, lebar=None):
-    """Halangan yang pusatnya berada di dalam lajur y_lajur."""
+def _in_lane(obstacles, y_lane, width=None):
+    """Halangan yang pusatnya berada di dalam lajur y_lane."""
     if obstacles is None or len(obstacles) == 0:
         return np.empty((0, 4))
     obs = np.asarray(obstacles, dtype=float)
-    w = config.LANE_WIDTH if lebar is None else lebar
-    return obs[np.abs(obs[:, 1] - y_lajur) < w / 2.0]
+    w = config.LANE_WIDTH if width is None else width
+    return obs[np.abs(obs[:, 1] - y_lane) < w / 2.0]
 
 
-def _ttc(depan, v_ego):
+def _ttc(front, v_ego):
     """Waktu sampai menyusul kendaraan depan. inf bila tidak sedang mendekat."""
-    dv = v_ego - depan[2]
-    return depan[0] / dv if dv > 1e-3 else float('inf')
+    dv = v_ego - front[2]
+    return front[0] / dv if dv > 1e-3 else float('inf')
 
 
-def _terdepan(obs):
+def _leading(obs):
     """Halangan terdekat di depan (x > 0), atau None."""
-    depan = obs[obs[:, 0] > 0.0]
-    return depan[np.argmin(depan[:, 0])] if len(depan) else None
+    front = obs[obs[:, 0] > 0.0]
+    return front[np.argmin(front[:, 0])] if len(front) else None
 
 
-def _v_ikut(depan):
+def _v_follow(front):
     """Kecepatan acuan untuk mengikuti kendaraan depan pada jarak ikut d*.
 
-    d* = ELLIPSE_A + SUMBU_KE_PUSAT + WAKTU_IKUT·v_depan (kebijakan jarak
+    d* = ELLIPSE_A + AXLE_TO_CENTER + FOLLOW_TIME·v_front (kebijakan jarak
     waktu-tetap; celah diukur dari sumbu belakang ego). Menjamin jarak pusat ke
     pusat >= ELLIPSE_A: posisi mengikuti tidak melanggar zona aman MPC sendiri.
 
-    v = v_depan + 2e/T, e = celah - d*, T = max(MANEUVER_TIMES). Diturunkan dari
+    v = v_front + 2e/T, e = celah - d*, T = max(MANEUVER_TIMES). Diturunkan dari
     planner: quartic longitudinal mengubah kecepatan secara halus selama T, jadi
     menutup selisih dv menempuh jarak relatif dv·T/2; agar tidak melampaui e,
     dv <= 2e/T. Hukum akar dv = sqrt(2ae) sempat dipakai dan kebablasan di S3
     karena mengabaikan jeda itu: celah 14,3 m (d* 17,5), ego mundur ke 4,7 m/s.
-    e < 0 (terlalu dekat) memberi kecepatan di bawah v_depan: mundur ke d*.
+    e < 0 (terlalu dekat) memberi kecepatan di bawah v_front: mundur ke d*.
     """
-    v_depan = max(float(depan[2]), 0.0)
-    e = float(depan[0]) - (config.ELLIPSE_A + config.SUMBU_KE_PUSAT
-                           + config.WAKTU_IKUT * v_depan)
-    return float(np.clip(v_depan + 2.0 * e / max(config.MANEUVER_TIMES), 0.0, config.V_REF))
+    v_front = max(float(front[2]), 0.0)
+    e = float(front[0]) - (config.ELLIPSE_A + config.AXLE_TO_CENTER
+                           + config.FOLLOW_TIME * v_front)
+    return float(np.clip(v_front + 2.0 * e / max(config.MANEUVER_TIMES), 0.0, config.V_REF))
 
 
 class BehaviorFSM:
@@ -261,61 +261,61 @@ class BehaviorFSM:
     def __init__(self, side_sign=None):
         self.side_sign = config.SIDE_SIGN if side_sign is None else side_sign
         self.state = LANE_KEEPING
-        self._calon = None            # (state tujuan, waktu permintaan pertama)
-        self.abort_terakhir = None    # untuk logging bagian 11.5
-        self._lewat = None            # (t, x, v_lain) lajur asal terakhir TERLIHAT
+        self._pending = None            # (state tujuan, waktu permintaan pertama)
+        self.last_abort = None    # untuk logging bagian 11.5
+        self._passed = None            # (t, x, v_other) lajur asal terakhir TERLIHAT
         # (y tengah lajur ego di frame jalan, lebar lajur) hasil UKUR, atau None
         # untuk memakai konstanta peta seperti sebelum bagian 28.
-        self._lajur = None
+        self._lane = None
         self._v_target = None         # laju target saat KEPUTUSAN menyalip diambil
-        self.v_goal = config.V_REF    # kecepatan acuan untuk planner, lihat _v_ikut
+        self.v_goal = config.V_REF    # kecepatan acuan untuk planner, lihat _v_follow
 
     @property
-    def lebar_lajur(self):
-        return config.LANE_WIDTH if self._lajur is None else self._lajur[1]
+    def lane_width(self):
+        return config.LANE_WIDTH if self._lane is None else self._lane[1]
 
     @property
-    def y_asal(self):
+    def y_origin(self):
         """Tengah lajur asal di frame jalan. 0 bila memakai konstanta peta."""
-        return 0.0 if self._lajur is None else self._lajur[0]
+        return 0.0 if self._lane is None else self._lane[0]
 
     @property
     def y_goal(self):
         """Tengah lajur yang sedang dituju -- diteruskan ke plan_lane_change."""
-        menyalip = self.state in (LANE_CHANGE_OVERTAKE, OVERTAKING)
-        return self.y_asal + (self.side_sign * self.lebar_lajur if menyalip else 0.0)
+        overtaking = self.state in (LANE_CHANGE_OVERTAKE, OVERTAKING)
+        return self.y_origin + (self.side_sign * self.lane_width if overtaking else 0.0)
 
-    def _minta(self, tujuan, t):
+    def _request(self, target, t):
         """Transisi baru dieksekusi setelah diminta terus-menerus selama dwell."""
-        if self._calon is None or self._calon[0] != tujuan:
-            self._calon = (tujuan, t)
+        if self._pending is None or self._pending[0] != target:
+            self._pending = (target, t)
             return False
-        if t - self._calon[1] >= config.FSM_DWELL:
-            self.state, self._calon = tujuan, None
+        if t - self._pending[1] >= config.FSM_DWELL:
+            self.state, self._pending = target, None
             return True
         return False
 
-    def _langsung(self, tujuan):
+    def _immediate(self, target):
         """Abort tidak menunggu dwell -- menunda 0,3 s justru menambah risiko."""
-        self.state, self._calon = tujuan, None
+        self.state, self._pending = target, None
 
-    def update(self, t, d, v_ego, obstacles, dd=0.0, lajur=None):
+    def update(self, t, d, v_ego, obstacles, dd=0.0, lane=None):
         """Satu langkah FSM. `obstacles` = (M,4) [x, y, vx, vy], x relatif ego.
 
         `d` = y ego di frame jalan; simpangan terhadap lajur asal dihitung DI SINI
         terhadap tengah lajur hasil ukur, bukan terhadap centerline peta. Sebelum
-        18 Sep 2026 `d` dipakai apa adanya, jadi ambang `LATERAL_MASUK` dan
-        `LATERAL_SELESAI` masih diukur dari peta HD sementara `y_goal` sudah dari
+        18 Sep 2026 `d` dipakai apa adanya, jadi ambang `LATERAL_ENTER` dan
+        `LATERAL_DONE` masih diukur dari peta HD sementara `y_goal` sudah dari
         hasil ukur -- dua acuan berbeda di satu mesin keputusan. `dd` = laju
         lateral (m/s).
-        `lajur` = (y tengah lajur ego di frame jalan, lebar lajur) hasil UKUR dari
+        `lane` = (y tengah lajur ego di frame jalan, lebar lajur) hasil UKUR dari
         kepala segmentasi YOLOPX; None berarti memakai konstanta peta seperti
         sebelum bagian 28. Kembalikan nama state.
         """
-        # `lajur` = (y tengah lajur ego di frame jalan, lebar) hasil ukur, atau None.
+        # `lane` = (y tengah lajur ego di frame jalan, lebar) hasil ukur, atau None.
         #
         # HANYA disegarkan saat LANE_KEEPING, lalu DIKUNCI sepanjang manuver.
-        # Alasannya keras: `dev_lajur` mengukur simpangan dari lajur TERDEKAT,
+        # Alasannya keras: `lane_dev` mengukur simpangan dari lajur TERDEKAT,
         # jadi begitu ego menyeberang, lajur terdekat berubah menjadi lajur salip
         # dan "tengah lajur asal" ikut melompat satu lajur. `y_goal` lalu
         # menunjuk satu lajur lebih jauh lagi, dan ego mengejar sasaran yang terus
@@ -325,63 +325,63 @@ class BehaviorFSM:
         # Pelajarannya umum: ukuran RELATIF terhadap yang terdekat tidak bisa
         # mendefinisikan sasaran ABSOLUT selama manuver yang mengubah mana yang
         # terdekat. Ia harus dikunci sebelum manuver dimulai.
-        if lajur is not None and self.state == LANE_KEEPING:
+        if lane is not None and self.state == LANE_KEEPING:
             # DITAPIS, bukan disalin: tengah lajur adalah sifat jalan, jadi ia tidak
             # boleh melompat. Mentah, `y_goal` berkedut sampai 0,147 m antar replan
             # dan MPC mengejar acuan yang bergerigi. Tapisnya harus di SINI, dengan
             # gerbang state yang sama dengan latch-nya: ditapis di pemanggil, ia
-            # ikut berjalan selama manuver -- ketika `dev_lajur` mengacu ke lajur
+            # ikut berjalan selama manuver -- ketika `lane_dev` mengacu ke lajur
             # SALIP -- dan lompatannya justru naik ke 0,693 m.
-            if self._lajur is None:
-                self._lajur = lajur
+            if self._lane is None:
+                self._lane = lane
             else:
-                a = config.ALPHA_TENGAH_LAJUR
-                self._lajur = tuple(lama + a * (baru - lama)
-                                    for lama, baru in zip(self._lajur, lajur))
-        lw, y_asal = self.lebar_lajur, self.y_asal
-        d = d - y_asal                 # -> simpangan dari tengah lajur asal TERUKUR
-        y_tujuan = y_asal + self.side_sign * lw
-        depan = _terdepan(_di_lajur(obstacles, y_asal, lw))
-        lajur_tujuan = _di_lajur(obstacles, y_tujuan, lw)
+                a = config.ALPHA_LANE_CENTER
+                self._lane = tuple(old + a * (fresh - old)
+                                    for old, fresh in zip(self._lane, lane))
+        lw, y_origin = self.lane_width, self.y_origin
+        d = d - y_origin                 # -> simpangan dari tengah lajur asal TERUKUR
+        y_dest = y_origin + self.side_sign * lw
+        front = _leading(_in_lane(obstacles, y_origin, lw))
+        target_lane = _in_lane(obstacles, y_dest, lw)
         # Pemicu & batal memakai kecepatan yang INGIN dipakai, bukan v_ego saja.
-        # Saat mengikuti, v_ego ~ v_depan: TTC terhadap v_ego tak hingga dan FSM
+        # Saat mengikuti, v_ego ~ v_front: TTC terhadap v_ego tak hingga dan FSM
         # tidak akan pernah menyalip ulang. Alasan menyalip adalah kendaraan depan
         # lebih lambat daripada V_REF. Saat mendekat (v_ego >= V_REF) tidak berubah.
-        v_mau = max(v_ego, config.V_REF)
+        v_want = max(v_ego, config.V_REF)
 
         if self.state == LANE_KEEPING:
-            if depan is not None and (_ttc(depan, v_mau) < config.TTC_TRIGGER
-                                      and v_mau - depan[2] > config.DV_TRIGGER):
-                self._minta(CHECK_OVERTAKE, t)
+            if front is not None and (_ttc(front, v_want) < config.TTC_TRIGGER
+                                      and v_want - front[2] > config.DV_TRIGGER):
+                self._request(CHECK_OVERTAKE, t)
             else:
-                self._calon = None
+                self._pending = None
 
         elif self.state == CHECK_OVERTAKE:
-            batal = (depan is None or _ttc(depan, v_mau) > config.TTC_EXIT
-                     or v_mau - depan[2] < config.DV_EXIT)
-            if batal:
-                self._minta(LANE_KEEPING, t)
-            elif self._lajur_tujuan_aman(lajur_tujuan) and self._sempat(depan, v_ego):
-                if self._minta(LANE_CHANGE_OVERTAKE, t):
+            cancelled = (front is None or _ttc(front, v_want) > config.TTC_EXIT
+                     or v_want - front[2] < config.DV_EXIT)
+            if cancelled:
+                self._request(LANE_KEEPING, t)
+            elif self._target_lane_safe(target_lane) and self._enough_time(front, v_ego):
+                if self._request(LANE_CHANGE_OVERTAKE, t):
                     # Target masih jauh di depan dan terlihat utuh: di sinilah
                     # lajunya paling dapat dipercaya sepanjang manuver.
-                    self._v_target = float(depan[2])
+                    self._v_target = float(front[2])
             else:
-                self._calon = None
+                self._pending = None
 
         elif self.state == LANE_CHANGE_OVERTAKE:
-            if not self._lajur_tujuan_aman(lajur_tujuan):
-                self.abort_terakhir = t                       # jalur abort, bagian 6
-                self._langsung(LANE_KEEPING)
-            elif abs(d) >= config.LATERAL_MASUK * lw:
-                self._minta(OVERTAKING, t)
+            if not self._target_lane_safe(target_lane):
+                self.last_abort = t                       # jalur abort, bagian 6
+                self._immediate(LANE_KEEPING)
+            elif abs(d) >= config.LATERAL_ENTER * lw:
+                self._request(OVERTAKING, t)
             else:
-                self._calon = None
+                self._pending = None
 
         elif self.state == OVERTAKING:
-            # _terdepan tidak bisa dipakai di sini: dia hanya melihat x > 0,
+            # _leading tidak bisa dipakai di sini: dia hanya melihat x > 0,
             # sehingga kendaraan yang baru terlewati 1 m sudah dianggap hilang.
-            asal = _di_lajur(obstacles, y_asal, lw)
+            origin = _in_lane(obstacles, y_origin, lw)
             # Daftar kosong AMBIGU: bisa "sudah terlewat PASS_MARGIN", bisa "tidak
             # terlihat". Rig satu kamera depan kehilangan target tepat saat ego
             # berdampingan, dan versi lama memperlakukan keduanya sama -- vision
@@ -390,14 +390,14 @@ class BehaviorFSM:
             # Karena itu yang terakhir terlihat diteruskan dengan kecepatan
             # relatifnya sampai jelas terlewat; tebakan yang DINYATAKAN, bukan
             # kekosongan yang disalahartikan sebagai aman.
-            if len(asal):
-                j = int(np.argmax(asal[:, 0]))        # yang paling depan, paling mengikat
+            if len(origin):
+                j = int(np.argmax(origin[:, 0]))        # yang paling depan, paling mengikat
                 # Posisi selalu disegarkan, LAJU hanya selagi target masih di depan.
                 # Begitu ego sejajar, kotak deteksi terpotong tepi citra dan taksiran
                 # laju Kalman memburuk: terukur -3,2 m/s padahal sesungguhnya -6,4,
                 # yang menunda kembali 3 detik tanpa alasan. Saat masih di depan
                 # target terlihat utuh dan lajunya terukur benar.
-                # obs[:, 2] kecepatan ABSOLUT (localization.halangan_ego_ke_jalan).
+                # obs[:, 2] kecepatan ABSOLUT (localization.obstacles_ego_to_road).
                 # Laju dari SAAT KEPUTUSAN menyalip (`self._v_target`), bukan dari
                 # frame terakhir. Terukur: laju yang dibekukan belakangan meleset
                 # 9,09 m/s terhadap 7,0 m/s yang sebenarnya -- 30% terlalu tinggi,
@@ -405,20 +405,20 @@ class BehaviorFSM:
                 # taksiran itu menyamai laju ego, ekstrapolasi TIDAK PERNAH
                 # menyimpulkan lewat dan ego tersangkut di lajur salip sampai run
                 # habis. Terjadi sungguhan, bukan kekhawatiran.
-                v_lain = self._v_target if self._v_target is not None else float(asal[j, 2])
-                self._lewat = (t, float(asal[j, 0]), v_lain)
-                lewat = asal[j, 0] <= -config.PASS_MARGIN
-            elif self._lewat is not None:
-                t0, x0, v_lain = self._lewat
+                v_other = self._v_target if self._v_target is not None else float(origin[j, 2])
+                self._passed = (t, float(origin[j, 0]), v_other)
+                passed = origin[j, 0] <= -config.PASS_MARGIN
+            elif self._passed is not None:
+                t0, x0, v_other = self._passed
                 # v_ego sekarang, bukan yang dulu: laju ego diketahui persis tiap tick.
                 # Dijepit supaya paling lambat -DV_EXIT: FSM hanya masuk manuver ini
                 # karena target lebih lambat dari DV_TRIGGER. Kalau taksiran laju
                 # belakangan berkata sebaliknya, yang keliru taksirannya, bukan
                 # premisnya -- dan tanpa jepitan ini gerbangnya bisa buntu selamanya.
-                dv = min(v_lain - v_ego, -config.DV_EXIT)
-                lewat = x0 + dv * (t - t0) <= -config.PASS_MARGIN
+                dv = min(v_other - v_ego, -config.DV_EXIT)
+                passed = x0 + dv * (t - t0) <= -config.PASS_MARGIN
             else:
-                lewat = True                          # tidak pernah ada yang dilewati
+                passed = True                          # tidak pernah ada yang dilewati
             # ponytail: jepitan -DV_EXIT di atas menjamin gerbang ini SELALU bisa
             # menyimpulkan, tetapi harganya taksiran laju yang buruk membuat
             # kesimpulannya terlambat, bukan salah. Di S1 terukur kembali pada
@@ -428,41 +428,41 @@ class BehaviorFSM:
             # kembali berangkat dengan laju itu dan kebablasan keluar. Di S3 kelima
             # run gagal mulai kembali pada 0,91-1,89 m/s menjauh; semua yang lolos
             # sudah bergerak ke arah lajur asal.
-            menjauh = self.side_sign * dd > config.DD_KEMBALI
-            if lewat and not menjauh:
-                self._minta(LANE_CHANGE_RETURN, t)
+            receding = self.side_sign * dd > config.DD_RETURN
+            if passed and not receding:
+                self._request(LANE_CHANGE_RETURN, t)
             else:
-                self._calon = None
+                self._pending = None
 
         elif self.state == LANE_CHANGE_RETURN:
-            if abs(d) < config.LATERAL_SELESAI:
-                self._lewat = self._v_target = None   # jangan terpakai di salip berikutnya
-                self._minta(LANE_KEEPING, t)
+            if abs(d) < config.LATERAL_DONE:
+                self._passed = self._v_target = None   # jangan terpakai di salip berikutnya
+                self._request(LANE_KEEPING, t)
             else:
-                self._calon = None
+                self._pending = None
 
         # Selama belum/tidak bisa menyalip: ikuti kendaraan depan. Dulu planner
-        # tetap diberi V_REF, ego terus mendekat, _sempat gugur, FSM terjebak di
+        # tetap diberi V_REF, ego terus mendekat, _enough_time gugur, FSM terjebak di
         # CHECK_OVERTAKE dan MPC terpaksa membelok menembus elips.
         # Hanya bila menyalip tidak mungkin (depan tidak cukup lambat, waktu tidak
         # cukup, atau lajur tujuan terisi). Melambat saat menyalip masih mungkin
         # membuang selisih kecepatan yang justru dipakai untuk menyalip.
         self.v_goal = config.V_REF
-        if self.state in (LANE_KEEPING, CHECK_OVERTAKE) and depan is not None:
-            bisa_salip = (v_mau - depan[2] > config.DV_TRIGGER
-                          and self._sempat(depan, v_ego)
-                          and self._lajur_tujuan_aman(lajur_tujuan))
-            if not bisa_salip:
-                self.v_goal = _v_ikut(depan)
+        if self.state in (LANE_KEEPING, CHECK_OVERTAKE) and front is not None:
+            can_overtake = (v_want - front[2] > config.DV_TRIGGER
+                          and self._enough_time(front, v_ego)
+                          and self._target_lane_safe(target_lane))
+            if not can_overtake:
+                self.v_goal = _v_follow(front)
         return self.state
 
-    def _lajur_tujuan_aman(self, lajur_tujuan):
-        if len(lajur_tujuan) == 0:
+    def _target_lane_safe(self, target_lane):
+        if len(target_lane) == 0:
             return True
-        x = lajur_tujuan[:, 0]
-        return not (((x >= 0) & (x < config.D_SAFE_DEPAN)).any()
-                    or ((x < 0) & (x > -config.D_SAFE_BELAKANG)).any())
+        x = target_lane[:, 0]
+        return not (((x >= 0) & (x < config.D_SAFE_FRONT)).any()
+                    or ((x < 0) & (x > -config.D_SAFE_REAR)).any())
 
-    def _sempat(self, depan, v_ego):
+    def _enough_time(self, front, v_ego):
         """Manuver tercepat harus selesai sebelum ego menyusul kendaraan depan."""
-        return min(config.MANEUVER_TIMES) < _ttc(depan, v_ego)
+        return min(config.MANEUVER_TIMES) < _ttc(front, v_ego)

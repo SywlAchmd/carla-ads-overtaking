@@ -11,126 +11,126 @@ import sys
 
 import numpy as np
 
-AKAR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, AKAR)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
 import config                                                         # noqa: E402
 import lanes                                                          # noqa: E402
 
-BENTUK_CITRA = (config.KAMERA_TINGGI, config.KAMERA_LEBAR)
-BENTUK_MASKER = (384, 640)
+IMAGE_SHAPE = (config.CAMERA_HEIGHT, config.CAMERA_WIDTH)
+MASK_SHAPE = (384, 640)
 
 
-def test_letterbox_1280x720_memberi_pad_12_baris():
+def test_letterbox_1280x720_gives_12_row_pad():
     """1280x720 dikecilkan 0,5 jadi 640x360, lalu dibingkai ke 640x384.
 
     Kalau padding 12 baris ini terlupa, seluruh hasil bergeser beberapa meter --
     dan tidak ada yang meledak, hanya salah diam-diam.
     """
-    r, pad_u, pad_v = lanes.letterbox_ke_citra(BENTUK_MASKER, BENTUK_CITRA)
+    r, pad_u, pad_v = lanes.letterbox_to_image(MASK_SHAPE, IMAGE_SHAPE)
     assert abs(r - 0.5) < 1e-12, r
     assert abs(pad_u) < 1e-12, pad_u
     assert abs(pad_v - 12.0) < 1e-12, pad_v
 
 
-def _piksel(x, y):
+def _pixels(x, y):
     """Kebalikan `lanes.ipm`: titik jalan -> piksel citra."""
-    f = lanes.F_PIKSEL
-    return (config.KAMERA_LEBAR / 2.0 - y * f / x,
-            config.KAMERA_TINGGI / 2.0 + f * config.KAMERA_Z / x)
+    f = lanes.F_PIXEL
+    return (config.CAMERA_WIDTH / 2.0 - y * f / x,
+            config.CAMERA_HEIGHT / 2.0 + f * config.CAMERA_Z / x)
 
 
-def test_ipm_bolak_balik():
+def test_ipm_round_trip():
     for x, y in ((10.0, 0.0), (25.0, 1.75), (7.0, -3.5), (40.0, 2.0)):
-        u, v = _piksel(x, y)
+        u, v = _pixels(x, y)
         xx, yy = lanes.ipm(u, v)
         assert abs(xx - x) < 1e-6, (x, y, xx)
         assert abs(yy - y) < 1e-6, (x, y, yy)
 
 
-def test_ipm_di_atas_horizon_tak_hingga():
+def test_ipm_above_horizon_is_infinite():
     """Baris di atas titik hilang tidak memotong permukaan jalan."""
-    x, _ = lanes.ipm(640.0, config.KAMERA_TINGGI / 2.0 - 5.0)
+    x, _ = lanes.ipm(640.0, config.CAMERA_HEIGHT / 2.0 - 5.0)
     assert not np.isfinite(x), x
 
 
-def test_kisi_menemukan_lebar_walau_satu_garis_hilang():
+def test_lattice_finds_width_with_one_line_missing():
     """Justru inilah alasan kisi dipakai: median jarak antar garis memberi 5,25 m
     di sini (rata-rata 3,5 dan 7,0), sedangkan kisinya tetap 3,50 m."""
     offset = np.array([-7.0, -3.5, 3.5])          # 0,0 sengaja dihilangkan
-    w, _ = lanes._kisi(offset, np.ones(3))
+    w, _ = lanes._lattice(offset, np.ones(3))
     assert abs(w - 3.5) < 0.02, w
 
 
-def test_kisi_bertahan_terhadap_satu_garis_palsu():
+def test_lattice_robust_to_one_fake_line():
     """Marka palsu berbobot kecil tidak boleh menggeser lebar lajur."""
     offset = np.array([-7.0, -3.5, 0.0, 3.5, -5.1])
-    bobot = np.array([300.0, 400.0, 500.0, 300.0, 25.0])
-    w, _ = lanes._kisi(offset, bobot)
+    weight = np.array([300.0, 400.0, 500.0, 300.0, 25.0])
+    w, _ = lanes._lattice(offset, weight)
     assert abs(w - 3.5) < 0.05, w
 
 
-def test_dev_lajur_mengikuti_pergeseran_ego():
-    """Ego digeser 0,7 m ke kiri dari tengah lajur -> dev_lajur = +0,7 m."""
-    for geser in (-1.2, -0.7, 0.0, 0.7, 1.2):
-        garis = np.array([-5.25, -1.75, 1.75, 5.25]) - geser
-        g = lanes.GeometriLajur(garis, np.full(4, 300.0), 0.0, 4000)
-        assert abs(g.lebar_lajur - 3.5) < 0.02, (geser, g.lebar_lajur)
-        assert abs(g.dev_lajur - geser) < 0.02, (geser, g.dev_lajur)
+def test_lane_dev_follows_ego_shift():
+    """Ego digeser 0,7 m ke kiri dari tengah lajur -> lane_dev = +0,7 m."""
+    for shift in (-1.2, -0.7, 0.0, 0.7, 1.2):
+        lines = np.array([-5.25, -1.75, 1.75, 5.25]) - shift
+        g = lanes.LaneGeometry(lines, np.full(4, 300.0), 0.0, 4000)
+        assert abs(g.lane_width - 3.5) < 0.02, (shift, g.lane_width)
+        assert abs(g.lane_dev - shift) < 0.02, (shift, g.lane_dev)
 
 
-def test_tengah_lajur_sebelah_berjarak_satu_lebar():
-    garis = np.array([-5.25, -1.75, 1.75, 5.25])
-    g = lanes.GeometriLajur(garis, np.full(4, 300.0), 0.0, 4000)
-    assert abs(g.tengah_lajur(+1) - 3.5) < 0.02, g.tengah_lajur(+1)
-    assert abs(g.tengah_lajur(-1) + 3.5) < 0.02, g.tengah_lajur(-1)
+def test_adjacent_lane_center_one_width_away():
+    lines = np.array([-5.25, -1.75, 1.75, 5.25])
+    g = lanes.LaneGeometry(lines, np.full(4, 300.0), 0.0, 4000)
+    assert abs(g.lane_center(+1) - 3.5) < 0.02, g.lane_center(+1)
+    assert abs(g.lane_center(-1) + 3.5) < 0.02, g.lane_center(-1)
 
 
-def test_sisa_kisi_kecil_saat_cocok_besar_saat_tidak():
-    rapi = lanes.GeometriLajur(np.array([-3.5, 0.0, 3.5]), np.full(3, 300.0), 0.0, 3000)
-    assert rapi.sisa_kisi < 0.01, rapi.sisa_kisi
-    kacau = lanes.GeometriLajur(np.array([-3.5, 0.0, 2.1]), np.full(3, 300.0), 0.0, 3000)
-    assert kacau.sisa_kisi > rapi.sisa_kisi, (kacau.sisa_kisi, rapi.sisa_kisi)
+def test_lattice_residual_small_on_fit_large_off_fit():
+    tidy = lanes.LaneGeometry(np.array([-3.5, 0.0, 3.5]), np.full(3, 300.0), 0.0, 3000)
+    assert tidy.lattice_residual < 0.01, tidy.lattice_residual
+    messy = lanes.LaneGeometry(np.array([-3.5, 0.0, 2.1]), np.full(3, 300.0), 0.0, 3000)
+    assert messy.lattice_residual > tidy.lattice_residual, (messy.lattice_residual, tidy.lattice_residual)
 
 
-def _masker_buatan(garis_y, yaw_deg=0.0, x0=8.0, x1=40.0):
-    """Masker biner berisi garis lurus pada offset `garis_y`, frame ego."""
-    m = np.zeros(BENTUK_MASKER, dtype=np.uint8)
-    r, pad_u, pad_v = lanes.letterbox_ke_citra(BENTUK_MASKER, BENTUK_CITRA)
+def _synthetic_mask(line_y, yaw_deg=0.0, x0=8.0, x1=40.0):
+    """Masker biner berisi garis lurus pada offset `line_y`, frame ego."""
+    m = np.zeros(MASK_SHAPE, dtype=np.uint8)
+    r, pad_u, pad_v = lanes.letterbox_to_image(MASK_SHAPE, IMAGE_SHAPE)
     b = -math.tan(math.radians(yaw_deg))
-    for c in garis_y:
+    for c in line_y:
         for x in np.arange(x0, x1, 0.05):
-            u, v = _piksel(x, c + b * x)
+            u, v = _pixels(x, c + b * x)
             um, vm = u * r + pad_u, v * r + pad_v
-            if 0 <= int(vm) < BENTUK_MASKER[0] and 0 <= int(um) < BENTUK_MASKER[1]:
+            if 0 <= int(vm) < MASK_SHAPE[0] and 0 <= int(um) < MASK_SHAPE[1]:
                 m[int(vm), int(um)] = 1
     return m
 
 
-def test_pipeline_lengkap_dari_masker_buatan():
+def test_full_pipeline_from_synthetic_mask():
     """Tiga garis berjarak 3,5 m, ego 0,4 m di kanan tengah lajur, hadap +3 deg."""
-    geser, yaw = -0.4, 3.0
-    m = _masker_buatan(np.array([-5.25, -1.75, 1.75, 5.25]) - geser, yaw_deg=yaw)
-    g = lanes.dari_masker(m, BENTUK_CITRA)
+    shift, yaw = -0.4, 3.0
+    m = _synthetic_mask(np.array([-5.25, -1.75, 1.75, 5.25]) - shift, yaw_deg=yaw)
+    g = lanes.from_mask(m, IMAGE_SHAPE)
     assert g is not None
-    assert abs(g.lebar_lajur - 3.5) < 0.12, g.lebar_lajur
-    assert abs(g.dev_lajur - geser) < 0.12, g.dev_lajur
+    assert abs(g.lane_width - 3.5) < 0.12, g.lane_width
+    assert abs(g.lane_dev - shift) < 0.12, g.lane_dev
     assert abs(math.degrees(g.yaw) - yaw) < 0.25, math.degrees(g.yaw)
 
 
-def test_garis_hanya_pada_slot_yang_didukung_marka():
+def test_lines_only_on_slots_backed_by_markings():
     """Kisi itu tak berhingga. Yang boleh digambar hanya slot yang punya marka --
     kalau tidak, garis lajur ditarik di atas tanggul dan pembatas."""
-    garis = np.array([-5.25, -1.75, 1.75, 5.25])
-    g = lanes.GeometriLajur(garis, np.full(4, 300.0), 0.0, 4000)
-    assert len(g.garis()) == 4, len(g.garis())
+    lines = np.array([-5.25, -1.75, 1.75, 5.25])
+    g = lanes.LaneGeometry(lines, np.full(4, 300.0), 0.0, 4000)
+    assert len(g.lines()) == 4, len(g.lines())
     # satu marka hilang -> tiga garis, bukan empat, dan bukan pula tak berhingga
-    g2 = lanes.GeometriLajur(garis[[0, 1, 3]], np.full(3, 300.0), 0.0, 3000)
-    assert len(g2.garis()) == 3, len(g2.garis())
-    assert abs(g2.lebar_lajur - 3.5) < 0.05
+    g2 = lanes.LaneGeometry(lines[[0, 1, 3]], np.full(3, 300.0), 0.0, 3000)
+    assert len(g2.lines()) == 3, len(g2.lines())
+    assert abs(g2.lane_width - 3.5) < 0.05
 
 
-def test_penghalusan_mengalahkan_argmax_histogram():
+def test_refinement_beats_histogram_argmax():
     """REGRESI bagian 28.1. Argmax histogram kasar karena skornya dihitung pada
     bin 0,10 m; penghalusan kuadrat terkecil menggantikan langkah terakhirnya.
 
@@ -138,34 +138,34 @@ def test_penghalusan_mengalahkan_argmax_histogram():
     Memperhalus langkah PENCARIAN tidak menolong -- itu sudah diuji dan malah
     memburuk -- jadi uji ini menjaga penyelesaiannya, bukan kisinya.
     """
-    kasar, halus = [], []
+    coarse, smooth = [], []
     for yaw in (-1.7, -0.4, 0.0, 0.8, 2.7):
-        m = _masker_buatan(np.array([-5.25, -1.75, 1.75, 5.25]), yaw_deg=yaw)
-        t = lanes.titik_lajur(m, BENTUK_CITRA)
-        b0 = lanes._kemiringan_bersama(t)
-        kasar.append(math.degrees(-math.atan(b0)) - yaw)
-        halus.append(math.degrees(-math.atan(lanes._haluskan(t, b0))) - yaw)
-    kasar, halus = np.array(kasar), np.array(halus)
-    assert np.abs(halus).max() < np.abs(kasar).max(), (kasar, halus)
-    assert np.abs(halus).max() < 0.15, halus
+        m = _synthetic_mask(np.array([-5.25, -1.75, 1.75, 5.25]), yaw_deg=yaw)
+        t = lanes.lane_points(m, IMAGE_SHAPE)
+        b0 = lanes._shared_slope(t)
+        coarse.append(math.degrees(-math.atan(b0)) - yaw)
+        smooth.append(math.degrees(-math.atan(lanes._refine(t, b0))) - yaw)
+    coarse, smooth = np.array(coarse), np.array(smooth)
+    assert np.abs(smooth).max() < np.abs(coarse).max(), (coarse, smooth)
+    assert np.abs(smooth).max() < 0.15, smooth
 
 
-def test_masker_kosong_mengembalikan_none():
-    assert lanes.dari_masker(np.zeros(BENTUK_MASKER, dtype=np.uint8), BENTUK_CITRA) is None
+def test_empty_mask_returns_none():
+    assert lanes.from_mask(np.zeros(MASK_SHAPE, dtype=np.uint8), IMAGE_SHAPE) is None
 
 
-def test_satu_garis_saja_tidak_memberi_lebar():
+def test_single_line_gives_no_width():
     """Satu marka tidak cukup menentukan kisi; jangan mengarang angka."""
-    g = lanes.dari_masker(_masker_buatan([1.75]), BENTUK_CITRA)
+    g = lanes.from_mask(_synthetic_mask([1.75]), IMAGE_SHAPE)
     if g is not None:                       # boleh terbaca, tapi lebarnya tak tentu
-        assert g.lebar_lajur is None or len(g.offset) >= 2
-        if g.lebar_lajur is None:
-            assert g.dev_lajur is None
+        assert g.lane_width is None or len(g.offset) >= 2
+        if g.lane_width is None:
+            assert g.lane_dev is None
 
 
 if __name__ == '__main__':
-    for nama, fn in sorted(globals().items()):
-        if nama.startswith('test_'):
+    for name, fn in sorted(globals().items()):
+        if name.startswith('test_'):
             fn()
-            print('ok ', nama)
-    print('semua lolos')
+            print('ok ', name)
+    print('all passed')

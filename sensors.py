@@ -17,14 +17,14 @@ import numpy as np
 import config
 
 
-def _pasang(world, ego, tipe, tf, **atribut):
-    bp = world.get_blueprint_library().find(tipe)
-    for nama, nilai in atribut.items():
-        bp.set_attribute(nama, str(nilai))
+def _attach(world, ego, bp_id, tf, **attrs):
+    bp = world.get_blueprint_library().find(bp_id)
+    for name, value in attrs.items():
+        bp.set_attribute(name, str(value))
     return world.spawn_actor(bp, tf, attach_to=ego)
 
 
-class RigKamera:
+class CameraRig:
     """Kamera warna (+ depth) di posisi ala KITTI. Pakai lewat `with`.
 
     `params` = out/vehicle_params.json; offset sumbu belakang dipakai untuk
@@ -32,26 +32,26 @@ class RigKamera:
     """
 
     def __init__(self, world, ego, params, stereo=False):
-        x = config.KAMERA_DEPAN_SUMBU + params['rear_axle_offset_x']
-        ukuran = dict(image_size_x=config.KAMERA_LEBAR, image_size_y=config.KAMERA_TINGGI,
-                      fov=config.KAMERA_FOV)
-        dy = config.KAMERA_BASELINE / 2.0 if stereo else 0.0
-        titik = {'rgb': -dy, 'depth': -dy}
+        x = config.CAMERA_AHEAD_OF_AXLE + params['rear_axle_offset_x']
+        size = dict(image_size_x=config.CAMERA_WIDTH, image_size_y=config.CAMERA_HEIGHT,
+                      fov=config.CAMERA_FOV)
+        dy = config.CAMERA_BASELINE / 2.0 if stereo else 0.0
+        points = {'rgb': -dy, 'depth': -dy}
         if stereo:
-            titik['rgb_kanan'] = +dy
+            points['rgb_right'] = +dy
         self.x = x                      # m, kamera di depan titik asal aktor ego
-        self.sensor, self.antrean = {}, {}
-        for nama, y in titik.items():
-            tipe = 'sensor.camera.depth' if nama == 'depth' else 'sensor.camera.rgb'
-            tf = carla.Transform(carla.Location(x=x, y=y, z=config.KAMERA_Z))
-            s = _pasang(world, ego, tipe, tf, **ukuran)
+        self.sensor, self.queues = {}, {}
+        for name, y in points.items():
+            bp_id = 'sensor.camera.depth' if name == 'depth' else 'sensor.camera.rgb'
+            tf = carla.Transform(carla.Location(x=x, y=y, z=config.CAMERA_Z))
+            s = _attach(world, ego, bp_id, tf, **size)
             q = queue.Queue()
             s.listen(q.put)
-            self.sensor[nama], self.antrean[nama] = s, q
+            self.sensor[name], self.queues[name] = s, q
 
-    def ambil(self, timeout=2.0):
+    def grab(self, timeout=2.0):
         """Frame terbaru tiap sensor untuk tick yang baru saja dijalankan."""
-        return {nama: q.get(timeout=timeout) for nama, q in self.antrean.items()}
+        return {name: q.get(timeout=timeout) for name, q in self.queues.items()}
 
     def destroy(self):
         for s in self.sensor.values():

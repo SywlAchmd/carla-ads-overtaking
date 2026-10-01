@@ -53,17 +53,17 @@ def capture(world, ego, poses, out_name, cam_tf=None, extras=None, annotate=None
     finally:
         cam.stop(); cam.destroy()
 
-    berkas = sorted(glob.glob(f'{frames_dir}/*.png'))
+    filename = sorted(glob.glob(f'{frames_dir}/*.png'))
     if annotate is not None:                    # overlay digambar setelah semua frame ada
-        for i, f in enumerate(berkas):
+        for i, f in enumerate(filename):
             annotate(i, f)
 
     subprocess.run(['ffmpeg', '-y', '-loglevel', 'error', '-framerate', '20',
                     '-i', f'{frames_dir}/%05d.png', '-c:v', 'libx264',
                     '-pix_fmt', 'yuv420p', '-crf', '23', out], check=True)
-    n = len(berkas)
+    n = len(filename)
     shutil.rmtree(frames_dir)
-    print(f'{n} frame -> {out}  ({os.path.getsize(out)/1e6:.1f} MB, {n/20:.0f} detik)')
+    print(f'{n} frame -> {out}  ({os.path.getsize(out)/1e6:.1f} MB, {n/20:.0f} s)')
     return out
 
 
@@ -74,7 +74,7 @@ def main():
             world.get_map().get_waypoint(sp.location, project_to_road=True,
                                          lane_type=carla.LaneType.Driving),
             LENGTH, STEP))
-        print(f'{len(wps)} titik, step {STEP:.2f} m, setara {SPEED * 3.6:.0f} km/jam')
+        print(f'{len(wps)} points, step {STEP:.2f} m, equivalent to {SPEED * 3.6:.0f} km/h')
         poses = []
         for wp in wps:
             tf = wp.transform

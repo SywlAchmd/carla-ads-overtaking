@@ -45,7 +45,7 @@ def plot_topdown(lanes, path):
     fig, ax = plt.subplots(figsize=(14, 4.5))
     for i, (xy, is_jn, width) in enumerate(lanes):
         sd = (xy - p0) @ R.T
-        label = 'Lajur ego' if i == 0 else f'Lajur kanan {i}'
+        label = 'Ego lane' if i == 0 else f'Right lane {i}'
         ax.plot(sd[:, 0], sd[:, 1], lw=2, label=f'{label}  (d = {sd[:, 1].mean():+.2f} m)')
         jn = sd[is_jn]
         if len(jn):
@@ -54,21 +54,21 @@ def plot_topdown(lanes, path):
         ax.axhline(sd[:, 1].mean(), ls=':', lw=.6, color='gray')
 
     ax.plot(0, 0, 'k*', ms=18, label=f'Spawn {config.SPAWN_IDX}', zorder=5)
-    ax.annotate('arah jalan', xy=(45, 0), xytext=(8, 0), va='center',
+    ax.annotate('road direction', xy=(45, 0), xytext=(8, 0), va='center',
                 arrowprops=dict(arrowstyle='-|>', lw=2, color='k'))
     ax.annotate('', xy=(150, -3.5), xytext=(150, 0),
                 arrowprops=dict(arrowstyle='-|>', lw=2.5, color='tab:green'))
-    ax.text(153, -1.9, 'manuver menyalip\ny_target = SIDE_SIGN x LANE_WIDTH = -3,50 m',
+    ax.text(153, -1.9, 'overtaking maneuver\ny_target = SIDE_SIGN x LANE_WIDTH = -3.50 m',
             fontsize=9, color='tab:green', va='center')
 
     ax.set_xlabel('s - distance along the road (m)')
     ax.set_ylabel('d - lateral offset (m)')
     ax.set_title(f'Test environment - Town04 spawn {config.SPAWN_IDX}, '
-                 f'{LENGTH:.0f} m, 4 lajur searah 3,50 m')
+                 f'{LENGTH:.0f} m, 4 same-direction lanes of 3.50 m')
     ax.set_ylim(-13, 4); ax.grid(alpha=.3)
     ax.legend(loc='upper right', fontsize=8, ncol=3)
     fig.tight_layout(); fig.savefig(path, dpi=150)
-    print(f'Tampak atas : {path}')
+    print(f'Top view    : {path}')
 
 
 def camera_shot(world, ego, path):
@@ -87,7 +87,7 @@ def camera_shot(world, ego, path):
         images.get(timeout=5.0).save_to_disk(path)
     finally:
         cam.stop(); cam.destroy()
-    print(f'Kamera      : {path}')
+    print(f'Camera      : {path}')
 
 
 def plot_candidates(path):
@@ -101,15 +101,15 @@ def plot_candidates(path):
     ax.axhline(config.SIDE_SIGN * config.LANE_WIDTH / 2, ls='--', lw=1, color='0.7')
 
     for cost, offset, T, tr in feasible:
-        pilihan = tr is best
-        ax.plot(tr.states[0], tr.states[1], lw=3 if pilihan else 1,
-                color='tab:green' if pilihan else '0.65', zorder=3 if pilihan else 1,
+        choice = tr is best
+        ax.plot(tr.states[0], tr.states[1], lw=3 if choice else 1,
+                color='tab:green' if choice else '0.65', zorder=3 if choice else 1,
                 label=f'selected: offset {offset:.1f} m, T = {T:.1f} s, J = {cost:.1f}'
-                      if pilihan else None)
+                      if choice else None)
         t = np.arange(tr.states.shape[1]) * tr.dt
         ddy = np.gradient(np.gradient(tr.states[1], tr.dt), tr.dt)
-        ax2.plot(t, np.abs(ddy), lw=2.5 if pilihan else 1,
-                 color='tab:green' if pilihan else '0.65', zorder=3 if pilihan else 1)
+        ax2.plot(t, np.abs(ddy), lw=2.5 if choice else 1,
+                 color='tab:green' if choice else '0.65', zorder=3 if choice else 1)
 
     # Kotak kecil di titik awal, bukan bodi sesuai skala: sumbu x tertekan ~7x
     # terhadap sumbu y, jadi bodi 5 m tergambar segemuk tembok dan justru
@@ -132,7 +132,7 @@ def plot_candidates(path):
 
     fig.suptitle('Local planner - quintic lateral + quartic longitudinal')
     fig.tight_layout(); fig.savefig(path, dpi=150)
-    print(f'Kandidat    : {path}')
+    print(f'Candidates  : {path}')
 
 
 def main():
@@ -140,8 +140,8 @@ def main():
     with simulation.carla_world() as world:
         sp = world.get_map().get_spawn_points()[config.SPAWN_IDX]
         lanes = lane_geometry(world, sp.location)
-        print(f'Lajur searah ditemukan: {len(lanes)} '
-              f'(lebar {", ".join(f"{w:.2f}" for _, _, w in lanes)} m)')
+        print(f'Same-direction lanes found: {len(lanes)} '
+              f'(width {", ".join(f"{w:.2f}" for _, _, w in lanes)} m)')
         plot_topdown(lanes, f'{config.OUT_DIR}/lanes_topdown.png')
         with simulation.ego_vehicle(world) as ego:
             camera_shot(world, ego, f'{config.OUT_DIR}/lanes_camera.png')

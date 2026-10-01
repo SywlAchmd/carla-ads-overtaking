@@ -22,15 +22,15 @@ import sensors
 import simulation
 import yolopx
 
-DETIK, X0, V_TARGET = 7.0, 55.0, 7.0
+SECONDS, X0, V_TARGET = 7.0, 55.0, 7.0
 
 
-def relatif(ego, lain):
-    """Posisi & kecepatan `lain` relatif ego, frame ego RH, dari titik asal aktor."""
+def relative(ego, other):
+    """Posisi & kecepatan `other` relatif ego, frame ego RH, dari titik asal aktor."""
     tf, v = ego.get_transform(), ego.get_velocity()
     yaw = math.radians(tf.rotation.yaw)
     c, s = math.cos(yaw), math.sin(yaw)
-    tl, vl = lain.get_transform().location, lain.get_velocity()
+    tl, vl = other.get_transform().location, other.get_velocity()
     dx, dy = tl.x - tf.location.x, tl.y - tf.location.y
     dvx, dvy = vl.x - v.x, vl.y - v.y
     return np.array([c * dx + s * dy, -(-s * dx + c * dy),
@@ -39,7 +39,7 @@ def relatif(ego, lain):
 
 def main_():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--weight', default=None, help='checkpoint YOLOPX lain (bagian 30)')
+    ap.add_argument('--weight', default=None, help='alternate YOLOPX checkpoint (section 30)')
     args = ap.parse_args()
     params = json.load(open(config.VEHICLE_PARAMS_JSON))
     net = yolopx.YOLOPX(args.weight)
@@ -47,51 +47,51 @@ def main_():
     print(f'YOLOPX epoch {net.epoch}, {net.device}, half={net.half}')
 
     with simulation.carla_world() as world:
-        ref, ref5 = main.siapkan_jalan(world)
-        yaw_jalan = -math.degrees(np.mean(ref[2]))
+        ref, ref5 = main.prepare_road(world)
+        yaw_road = -math.degrees(np.mean(ref[2]))
         with simulation.ego_vehicle(world) as ego:
-            print(f'pusat bounding box ego relatif titik asal aktor: '
+            print(f'ego bounding box center relative to actor origin: '
                   f'x={ego.bounding_box.location.x:+.3f} m  '
                   f'(rear_axle_offset_x={params["rear_axle_offset_x"]:+.3f})')
-            with sensors.RigKamera(world, ego, params) as rig:
-                for _ in range(int(config.WARMUP_DETIK / dt)):
-                    simulation.tick(world, [simulation.kecepatan(ego, config.V_REF, yaw_jalan)])
-                    rig.ambil()
+            with sensors.CameraRig(world, ego, params) as rig:
+                for _ in range(int(config.WARMUP_SECONDS / dt)):
+                    simulation.tick(world, [simulation.velocity(ego, config.V_REF, yaw_road)])
+                    rig.grab()
                 ego_x = main.localization.PathFrame(ref).ego(
                     main.localization.CarlaGTLocalization(
                         ego, params['rear_axle_offset_x']).update()).x
-                target = main.spawn_kendaraan(world, ref5, ego_x, X0, 0)
-                lihat = perception.VisionPerception(net, rig)
+                target = main.spawn_vehicles(world, ref5, ego_x, X0, 0)
+                vision = perception.VisionPerception(net, rig)
                 gt = perception.GroundTruthPerception(world, ego)
 
-                baris = []
+                rows = []
                 try:
-                    for k in range(int(DETIK / dt)):
+                    for k in range(int(SECONDS / dt)):
                         simulation.tick(world, [
-                            simulation.kecepatan(ego, config.V_REF, yaw_jalan),
-                            simulation.kecepatan(target, V_TARGET, yaw_jalan)])
-                        frame = rig.ambil()
-                        v_obs = lihat.update(frame, dt, ego_v=config.V_REF)
+                            simulation.velocity(ego, config.V_REF, yaw_road),
+                            simulation.velocity(target, V_TARGET, yaw_road)])
+                        frame = rig.grab()
+                        v_obs = vision.update(frame, dt, ego_v=config.V_REF)
                         g_obs = gt.update()
-                        benar = relatif(ego, target)
-                        pilih = lambda o: (o[np.argmin(np.abs(o[:, 0] - benar[0]))]
+                        truth = relative(ego, target)
+                        choose = lambda o: (o[np.argmin(np.abs(o[:, 0] - truth[0]))]
                                            if len(o) else np.full(4, np.nan))
-                        baris.append(np.concatenate([[k * dt], benar,
-                                                     pilih(v_obs), pilih(g_obs)]))
+                        rows.append(np.concatenate([[k * dt], truth,
+                                                     choose(v_obs), choose(g_obs)]))
                 finally:
                     target.destroy()
 
-    a = np.array(baris)
+    a = np.array(rows)
     np.savez(f'{config.OUT_DIR}/check_estimation.npz', data=a)
-    t, benar, vis, g = a[:, 0], a[:, 1:5], a[:, 5:9], a[:, 9:13]
-    ada = ~np.isnan(vis[:, 0])
+    t, truth, vis, g = a[:, 0], a[:, 1:5], a[:, 5:9], a[:, 9:13]
+    present = ~np.isnan(vis[:, 0])
 
-    print(f'\n{"t":>5}{"jarak benar":>12}{"vision x":>10}{"galat x":>9}'
-          f'{"galat y":>9}{"vx vision":>11}{"galat vx":>10}{"GT x":>9}{"galat":>8}')
+    print(f'\n{"t":>5}{"true dist":>12}{"vision x":>10}{"err x":>9}'
+          f'{"err y":>9}{"vx vision":>11}{"err vx":>10}{"GT x":>9}{"err":>8}')
     for i in range(0, len(t), 10):
-        b, v_, g_ = benar[i], vis[i], g[i]
+        b, v_, g_ = truth[i], vis[i], g[i]
         if np.isnan(v_[0]):
-            print(f'{t[i]:>5.1f}{b[0]:>12.2f}{"tidak terdeteksi":>28}'
+            print(f'{t[i]:>5.1f}{b[0]:>12.2f}{"not detected":>28}'
                   f'{"":>21}{g_[0]:>9.2f}{g_[0] - b[0]:>+8.2f}')
         else:
             print(f'{t[i]:>5.1f}{b[0]:>12.2f}{v_[0]:>10.2f}{v_[0] - b[0]:>+9.2f}'
@@ -102,33 +102,33 @@ def main_():
     # get_velocity() berderau 0,28 m/s per tick saat kecepatan aktor dipaksa tiap
     # tick, sedangkan pergeserannya hanya 0,017 m/s. Memakai get_velocity() sebagai
     # acuan berarti menghukum estimator dengan derau milik alat ukur.
-    benar_v = np.column_stack([np.gradient(benar[:, 0], dt), np.gradient(benar[:, 1], dt)])
-    lahir = t[np.argmax(ada)]
-    mapan = ada & (t > lahir + 1.0)
+    true_v = np.column_stack([np.gradient(truth[:, 0], dt), np.gradient(truth[:, 1], dt)])
+    born = t[np.argmax(present)]
+    settled = present & (t > born + 1.0)
 
-    def ringkas(nama, galat):
-        print(f'  {nama:<30} bias {galat.mean():+7.3f}   RMS {np.sqrt((galat ** 2).mean()):6.3f}'
-              f'   maks |{np.abs(galat).max():.3f}|')
+    def summary(name, err):
+        print(f'  {name:<30} bias {err.mean():+7.3f}   RMS {np.sqrt((err ** 2).mean()):6.3f}'
+              f'   max |{np.abs(err).max():.3f}|')
 
-    print(f'\nterdeteksi {ada.sum()}/{len(t)} tick, jarak '
-          f'{benar[ada, 0].min():.1f}-{benar[ada, 0].max():.1f} m; '
-          f'deteksi pertama {benar[np.argmax(ada), 0]:.1f} m')
-    print('posisi (seluruh tick terdeteksi):')
-    ringkas('x memanjang [m]', vis[ada, 0] - benar[ada, 0])
-    ringkas('y melintang [m]', vis[ada, 1] - benar[ada, 1])
-    print(f'kecepatan (mapan, t > {lahir + 1.0:.2f} s), acuan pergeseran posisi:')
-    ringkas('vx [m/s]', vis[mapan, 2] - benar_v[mapan, 0])
-    ringkas('vy [m/s]', vis[mapan, 3] - benar_v[mapan, 1])
-    print('  sebagai pembanding, derau acuan itu sendiri:')
-    print(f'    get_velocity() simulator   sd {benar[mapan, 2].std():.3f} m/s')
-    print(f'    pergeseran posisi / dt     sd {benar_v[mapan, 0].std():.3f} m/s')
-    print(f'    VisionPerception           sd {vis[mapan, 2].std():.3f} m/s')
+    print(f'\ndetected {present.sum()}/{len(t)} ticks, distance '
+          f'{truth[present, 0].min():.1f}-{truth[present, 0].max():.1f} m; '
+          f'first detection {truth[np.argmax(present), 0]:.1f} m')
+    print('position (all detected ticks):')
+    summary('x longitudinal [m]', vis[present, 0] - truth[present, 0])
+    summary('y lateral [m]', vis[present, 1] - truth[present, 1])
+    print(f'velocity (settled, t > {born + 1.0:.2f} s), reference = position difference:')
+    summary('vx [m/s]', vis[settled, 2] - true_v[settled, 0])
+    summary('vy [m/s]', vis[settled, 3] - true_v[settled, 1])
+    print('  for comparison, the noise of the reference itself:')
+    print(f'    get_velocity() simulator   sd {truth[settled, 2].std():.3f} m/s')
+    print(f'    position difference / dt   sd {true_v[settled, 0].std():.3f} m/s')
+    print(f'    VisionPerception           sd {vis[settled, 2].std():.3f} m/s')
 
-    konv = [tt - lahir for tt, e in zip(t[ada], np.abs(vis[ada, 2] - benar_v[ada, 0]))
+    conv = [tt - born for tt, e in zip(t[present], np.abs(vis[present, 2] - true_v[present, 0]))
             if e < 0.1]
-    print(f'konvergensi kecepatan: galat < 0,1 m/s setelah {konv[0]:.2f} s '
-          f'({konv[0] / dt:.0f} frame) sejak track lahir')
-    ringkas('GroundTruthPerception x [m]', g[ada, 0] - benar[ada, 0])
+    print(f'velocity convergence: error < 0.1 m/s after {conv[0]:.2f} s '
+          f'({conv[0] / dt:.0f} frames) since the track was born')
+    summary('GroundTruthPerception x [m]', g[present, 0] - truth[present, 0])
 
 
 if __name__ == '__main__':

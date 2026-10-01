@@ -14,7 +14,7 @@ import config
 _TF = None
 
 
-def _siapkan_jalur():
+def _prepare_path():
     if config.YOLOPX_DIR not in sys.path:
         sys.path.insert(0, config.YOLOPX_DIR)
 
@@ -23,7 +23,7 @@ class YOLOPX:
     """Satu model, tiga keluaran: deteksi kendaraan, area jalan, garis lajur."""
 
     def __init__(self, weight=None, device='cuda', half=True):
-        _siapkan_jalur()
+        _prepare_path()
         global _TF
         import torchvision.transforms as T
         from lib.config import cfg
@@ -43,7 +43,7 @@ class YOLOPX:
             self.model.half()
         self.epoch = ck.get('epoch')
 
-    def _masukan(self, rgb):
+    def _input(self, rgb):
         from lib.utils.augmentations import letterbox_for_img
         img, _, _ = letterbox_for_img(rgb, 640, auto=True)
         x = _TF(img).unsqueeze(0).to(self.device)
@@ -52,18 +52,18 @@ class YOLOPX:
     def infer(self, rgb, conf=None, iou=None):
         """rgb = ndarray (H, W, 3). Kembali (kotak, area_jalan, garis_lajur).
 
-        `kotak` = (M, 5) = [x1, y1, x2, y2, conf] dalam piksel citra asli.
+        `box` = (M, 5) = [x1, y1, x2, y2, conf] dalam piksel citra asli.
         Dua peta segmentasi dikembalikan pada ukuran masukan jaringan.
         """
         from lib.core.general import non_max_suppression, scale_coords
-        x = self._masukan(rgb)
+        x = self._input(rgb)
         with torch.no_grad():
             det_out, da_seg, ll_seg = self.model(x)
-        det = non_max_suppression(det_out[0], conf_thres=conf or config.DETEKSI_CONF,
-                                  iou_thres=iou or config.DETEKSI_IOU)[0]
+        det = non_max_suppression(det_out[0], conf_thres=conf or config.DETECTION_CONF,
+                                  iou_thres=iou or config.DETECTION_IOU)[0]
         if det is None or not len(det):
-            kotak = np.empty((0, 5))
+            box = np.empty((0, 5))
         else:
             det[:, :4] = scale_coords(x.shape[2:], det[:, :4], rgb.shape).round()
-            kotak = det[:, :5].float().cpu().numpy()
-        return kotak, da_seg.float().argmax(1)[0].cpu().numpy(), ll_seg.float().argmax(1)[0].cpu().numpy()
+            box = det[:, :5].float().cpu().numpy()
+        return box, da_seg.float().argmax(1)[0].cpu().numpy(), ll_seg.float().argmax(1)[0].cpu().numpy()

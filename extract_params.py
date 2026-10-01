@@ -54,16 +54,16 @@ def extract(ego):
 
 
 def report(p):
-    print(f"\n{'Parameter':<24}{'Nilai':>12}  Satuan")
+    print(f"\n{'Parameter':<24}{'Value':>12}  Unit")
     print('-' * 54)
     rows = [
         ('Wheelbase (L)', p['L'], 'm'),
-        ('Offset sumbu belakang', p['rear_axle_offset_x'], 'm (frame kendaraan)'),
-        ('delta_max fisik', p['delta_max_phys'], f"rad ({math.degrees(p['delta_max_phys']):.1f} deg)"),
-        ('delta_max dipakai', p['delta_max'], 'rad'),
-        ('Panjang', p['length'], 'm'),
-        ('Lebar', p['width'], 'm'),
-        ('Massa', p['mass'], 'kg'),
+        ('Rear axle offset', p['rear_axle_offset_x'], 'm (vehicle frame)'),
+        ('delta_max physical', p['delta_max_phys'], f"rad ({math.degrees(p['delta_max_phys']):.1f} deg)"),
+        ('delta_max used', p['delta_max'], 'rad'),
+        ('Length', p['length'], 'm'),
+        ('Width', p['width'], 'm'),
+        ('Mass', p['mass'], 'kg'),
         ('Drag coefficient', p['drag_coefficient'], '-'),
     ]
     for name, val, unit in rows:
@@ -71,13 +71,13 @@ def report(p):
     print(f"\nsteering_curve: {p['steering_curve']}")
 
     if abs(p['rear_axle_offset_y']) > 0.02:
-        print(f"\nPERINGATAN: sumbu belakang bergeser lateral "
-              f"{abs(p['rear_axle_offset_y']):.3f} m dari origin actor.")
+        print(f"\nWARNING: rear axle is shifted laterally "
+              f"{abs(p['rear_axle_offset_y']):.3f} m from the actor origin.")
 
-    print('\nKonversi titik referensi (3.2), pakai di localization.py:')
+    print('\nReference point conversion (3.2), used in localization.py:')
     print(f"    x_rear = tf.location.x + ({p['rear_axle_offset_x']:.4f}) * cos(yaw)")
     print(f"    y_rear = tf.location.y + ({p['rear_axle_offset_x']:.4f}) * sin(yaw)")
-    print(f"  (bukan L/2 = {p['L'] / 2:.4f} m -- selisihnya "
+    print(f"  (not L/2 = {p['L'] / 2:.4f} m -- the difference is "
           f"{abs(abs(p['rear_axle_offset_x']) - p['L'] / 2):.4f} m)")
 
 
@@ -90,7 +90,7 @@ def main():
         json.dump(params, f, indent=2)
 
     report(params)
-    print(f'\nTersimpan: {config.VEHICLE_PARAMS_JSON}')
+    print(f'\nSaved: {config.VEHICLE_PARAMS_JSON}')
 
 
 if __name__ == '__main__':

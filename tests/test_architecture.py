@@ -8,33 +8,33 @@ import ast
 import os
 import sys
 
-AKAR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, AKAR)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, ROOT)
 
 # tracking.py ikut murni: Kalman filter dan asosiasi harus bisa diuji tanpa
 # simulator, torch, maupun kamera -- lihat tests/test_tracking.py.
-MURNI = ('planning.py', 'control.py', 'tracking.py')
-TERLARANG = {'carla', 'simulation', 'perception', 'evaluation', 'localization', 'main'}
+PURE = ('planning.py', 'control.py', 'tracking.py')
+FORBIDDEN = {'carla', 'simulation', 'perception', 'evaluation', 'localization', 'main'}
 
 
-def _impor(berkas):
-    pohon = ast.parse(open(os.path.join(AKAR, berkas)).read())
-    nama = set()
-    for n in ast.walk(pohon):
+def _imports(filename):
+    tree = ast.parse(open(os.path.join(ROOT, filename)).read())
+    name = set()
+    for n in ast.walk(tree):
         if isinstance(n, ast.Import):
-            nama |= {a.name.split('.')[0] for a in n.names}
+            name |= {a.name.split('.')[0] for a in n.names}
         elif isinstance(n, ast.ImportFrom) and n.module:
-            nama.add(n.module.split('.')[0])
-    return nama
+            name.add(n.module.split('.')[0])
+    return name
 
 
-def test_modul_numerik_tidak_menyentuh_carla():
-    for berkas in MURNI:
-        haram = _impor(berkas) & TERLARANG
-        assert not haram, f'{berkas} mengimpor {haram} -- melanggar aturan 2.4'
+def test_numeric_modules_do_not_touch_carla():
+    for filename in PURE:
+        forbidden = _imports(filename) & FORBIDDEN
+        assert not forbidden, f'{filename} imports {forbidden} -- violates rule 2.4'
 
 
-def test_modul_numerik_bisa_diimpor_tanpa_server():
+def test_numeric_modules_import_without_server():
     """Kalau ada carla yang menyelinap, impor ini masih lolos -- server tidak
     dibutuhkan untuk mengimpor. Uji di atas yang menangkapnya; ini memastikan
     tidak ada efek samping saat impor."""
@@ -42,27 +42,27 @@ def test_modul_numerik_bisa_diimpor_tanpa_server():
     assert hasattr(planning, 'BehaviorFSM') and hasattr(control, 'MPCController')
 
 
-def test_sensor_tabrakan_hanya_di_evaluation():
+def test_collision_sensor_only_in_evaluation():
     """Sensor tabrakan adalah instrumen pengukuran, bukan masukan kendali."""
-    for berkas in ('planning.py', 'control.py', 'perception.py'):
-        isi = open(os.path.join(AKAR, berkas)).read()
-        assert 'collision' not in isi.lower(), f'{berkas} menyentuh sensor tabrakan'
-    assert 'sensor.other.collision' in open(os.path.join(AKAR, 'evaluation.py')).read()
+    for filename in ('planning.py', 'control.py', 'perception.py'):
+        body = open(os.path.join(ROOT, filename)).read()
+        assert 'collision' not in body.lower(), f'{filename} touches the collision sensor'
+    assert 'sensor.other.collision' in open(os.path.join(ROOT, 'evaluation.py')).read()
 
 
-def test_perintah_aktor_lewat_simulation_tick():
+def test_actor_commands_go_through_simulation_tick():
     """Perintah aktor asinkron balapan dengan world.tick() dan merusak determinisme
     (docstring simulation.tick). Wajib dikirim lewat simulation.tick."""
-    for berkas in os.listdir(AKAR):
-        if berkas.endswith('.py') and berkas != 'simulation.py':
-            isi = open(os.path.join(AKAR, berkas)).read()
-            for pola in ('.apply_control(', '.set_target_velocity(', '.set_transform('):
-                assert pola not in isi, f'{berkas} memanggil {pola} langsung -- pakai simulation.tick'
+    for filename in os.listdir(ROOT):
+        if filename.endswith('.py') and filename != 'simulation.py':
+            body = open(os.path.join(ROOT, filename)).read()
+            for pattern in ('.apply_control(', '.set_target_velocity(', '.set_transform('):
+                assert pattern not in body, f'{filename} calls {pattern} directly -- use simulation.tick'
 
 
 if __name__ == '__main__':
-    for nama, fn in sorted(globals().items()):
-        if nama.startswith('test_'):
+    for name, fn in sorted(globals().items()):
+        if name.startswith('test_'):
             fn()
-            print(f'ok  {nama}')
-    print('semua lolos')
+            print(f'ok  {name}')
+    print('all passed')

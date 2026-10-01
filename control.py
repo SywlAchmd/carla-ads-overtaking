@@ -15,7 +15,7 @@ import numpy as np
 import config
 import planning
 
-PARKIR = 1.0e4          # slot obstacle kosong diparkir sejauh ini, g jadi raksasa
+PARKED = 1.0e4          # slot obstacle kosong diparkir sejauh ini, g jadi raksasa
 
 
 @dataclass(frozen=True)
@@ -64,9 +64,9 @@ def steer_command(delta, v_ms, params):
 
     Sumbu-x steering_curve dalam km/jam (ditentukan empiris di Tahap 1).
     """
-    kurva = np.asarray(params['steering_curve'], dtype=float)
-    skala = float(np.interp(abs(v_ms) * 3.6, kurva[:, 0], kurva[:, 1]))
-    return float(np.clip(-delta / (params['delta_max_phys'] * skala), -1.0, 1.0))
+    curve = np.asarray(params['steering_curve'], dtype=float)
+    scale = float(np.interp(abs(v_ms) * 3.6, curve[:, 0], curve[:, 1]))
+    return float(np.clip(-delta / (params['delta_max_phys'] * scale), -1.0, 1.0))
 
 
 class ThrottlePI:
@@ -82,30 +82,30 @@ class ThrottlePI:
         self.ki = config.THROTTLE_KI if ki is None else ki
         self.i = 0.0
 
-    def update(self, a_ref, a_ukur, dt):
-        err = a_ref - a_ukur
-        keluaran = self.kp * a_ref + self.i + self.kp * err
+    def update(self, a_ref, a_meas, dt):
+        err = a_ref - a_meas
+        output = self.kp * a_ref + self.i + self.kp * err
         # Split-range: rem hanya bila throttle sudah jenuh di nol. Dulu setiap
         # a_ref < 0 langsung ke rem dan me-reset integrator -- a_ref -0,0016 m/s²
         # (praktis nol) memutus throttle 0,38 -> 0,02 dan kecepatan anjlok.
         # Integrator dibekukan saat jenuh (anti-windup), tidak di-reset.
-        if keluaran <= 0.0 and a_ref < 0.0:
+        if output <= 0.0 and a_ref < 0.0:
             return 0.0, float(np.clip(-a_ref / abs(config.A_MIN), 0.0, 1.0))
-        if 0.0 < keluaran < 1.0:                         # anti-windup
+        if 0.0 < output < 1.0:                         # anti-windup
             self.i += self.ki * err * dt
             self.i = float(np.clip(self.i, -0.5, 0.8))
-        return float(np.clip(keluaran, 0.0, 1.0)), 0.0
+        return float(np.clip(output, 0.0, 1.0)), 0.0
 
 
 class MPCController:
-    def __init__(self, params, n_obs=None, bobot=None):
-        # `bobot` menimpa nilai config tanpa mengeditnya -- dipakai tuning.py
+    def __init__(self, params, n_obs=None, weight=None):
+        # `weight` menimpa nilai config tanpa mengeditnya -- dipakai tuning.py
         # untuk menyapu satu bobot sambil yang lain tetap.
         b = dict(Q=config.MPC_Q, Qf_scale=config.MPC_QF_SCALE, R=config.MPC_R,
                  Rd=config.MPC_RD, rho=config.MPC_RHO,
                  kp=config.THROTTLE_KP, ki=config.THROTTLE_KI)
-        b.update(bobot or {})
-        self.bobot = b
+        b.update(weight or {})
+        self.weight = b
         self.params = params
         self.L = params['L']
         self.delta_max = params['delta_max']
@@ -140,17 +140,17 @@ class MPCController:
         # memasoknya dari dimensi kendaraan yang diukurnya sendiri (bagian 28.2),
         # sedangkan grafik CasADi hanya dibangun sekali di sini. Nilai bawaannya
         # sama dengan konstanta lama, jadi jalur ground truth tidak berubah.
-        zona = opti.parameter(2)
+        zone = opti.parameter(2)
 
         opti.subject_to(X[:, 0] == x0)
-        biaya = 0
+        cost = 0
         for k in range(N):
             opti.subject_to(X[:, k + 1] == _rk4(X[:, k], U[:, k], self.L, dt))
 
             e = X[:, k] - xref[:, k]
             e = ca.vertcat(e[0], e[1], _wrap(e[2]), e[3])
             du = U[:, k] - (uprev if k == 0 else U[:, k - 1])
-            biaya += ca.mtimes([e.T, Q, e]) + ca.mtimes([U[:, k].T, R, U[:, k]]) \
+            cost += ca.mtimes([e.T, Q, e]) + ca.mtimes([U[:, k].T, R, U[:, k]]) \
                 + ca.mtimes([du.T, Rd, du])
 
             opti.subject_to(opti.bounded(config.A_MIN, U[0, k], config.A_MAX))
@@ -159,7 +159,7 @@ class MPCController:
 
         eN = X[:, N] - xref[:, N]
         eN = ca.vertcat(eN[0], eN[1], _wrap(eN[2]), eN[3])
-        biaya += ca.mtimes([eN.T, Qf, eN])
+        cost += ca.mtimes([eN.T, Qf, eN])
 
         for k in range(N + 1):
             # Batas kecepatan mulai k=1: X[:,0] sudah dikunci ke hasil ukur, jadi
@@ -186,21 +186,21 @@ class MPCController:
                 opti.subject_to(a_lat <= config.MAX_LATERAL_ACCEL + eps_lat[k])
                 opti.subject_to(a_lat >= -config.MAX_LATERAL_ACCEL - eps_lat[k])
                 opti.subject_to(eps_lat[k] >= 0)
-                biaya += config.MPC_RHO_LAT * eps_lat[k] ** 2
+                cost += config.MPC_RHO_LAT * eps_lat[k] ** 2
             for j in range(self.n_obs):
                 xj = obs[0, j] + obs[2, j] * (k * dt)
                 yj = obs[1, j] + obs[3, j] * (k * dt)
                 # zona diukur dari pusat bodi, state X = sumbu belakang
-                g = planning.zona_aman(X[0, k] + config.SUMBU_KE_PUSAT * ca.cos(X[2, k]) - xj,
-                                       X[1, k] + config.SUMBU_KE_PUSAT * ca.sin(X[2, k]) - yj,
-                                       zona[0], zona[1])
+                g = planning.safety_zone(X[0, k] + config.AXLE_TO_CENTER * ca.cos(X[2, k]) - xj,
+                                       X[1, k] + config.AXLE_TO_CENTER * ca.sin(X[2, k]) - yj,
+                                       zone[0], zone[1])
                 # slack per obstacle, TIDAK dijumlahkan: satu kendaraan yang mepet
                 # tidak boleh menghapus batas aman terhadap kendaraan lain
                 opti.subject_to(g >= 1 - eps[j, k])
                 opti.subject_to(eps[j, k] >= 0)
-            biaya += b['rho'] * ca.sumsqr(eps[:, k])
+            cost += b['rho'] * ca.sumsqr(eps[:, k])
 
-        opti.minimize(biaya)
+        opti.minimize(cost)
         opti.solver('ipopt',
                     {'print_time': False},
                     {'print_level': 0, 'sb': 'yes', 'max_iter': config.MPC_MAX_ITER,
@@ -208,31 +208,31 @@ class MPCController:
                      'acceptable_tol': config.MPC_TOL * 100, 'acceptable_iter': 5})
 
         self.opti, self.X, self.U, self.eps, self.eps_lat = opti, X, U, eps, eps_lat
-        self.p = dict(x0=x0, xref=xref, uprev=uprev, obs=obs, zona=zona)
+        self.p = dict(x0=x0, xref=xref, uprev=uprev, obs=obs, zone=zone)
 
     def _obstacle_matrix(self, obstacles, x_ego):
         m = np.full((4, self.n_obs), 0.0)
-        m[0, :] = PARKIR                              # slot kosong: jauh sekali
+        m[0, :] = PARKED                              # slot kosong: jauh sekali
         if obstacles is not None and len(obstacles):
             o = np.asarray(obstacles, dtype=float)
             if len(o) > self.n_obs:
                 # Jarak dari EGO, bukan dari titik asal path. Memakai x absolut
                 # akan mengurutkan dari ujung jalan dan menyimpan kendaraan di
                 # belakang sambil membuang yang di depan.
-                jarak = np.hypot(o[:, 0] - x_ego[0], o[:, 1] - x_ego[1])
-                o = o[np.argsort(jarak)[:self.n_obs]]
+                dist = np.hypot(o[:, 0] - x_ego[0], o[:, 1] - x_ego[1])
+                o = o[np.argsort(dist)[:self.n_obs]]
             m[:, :len(o)] = o.T
         return m
 
-    def solve(self, x_meas, xref, obstacles=None, zona=None):
+    def solve(self, x_meas, xref, obstacles=None, zone=None):
         """-> (a, delta, waktu_ms, ok). xref shape (4, N+1)."""
         opti = self.opti
         opti.set_value(self.p['x0'], x_meas)
         opti.set_value(self.p['xref'], xref)
         opti.set_value(self.p['uprev'], self.u_prev)
         opti.set_value(self.p['obs'], self._obstacle_matrix(obstacles, x_meas))
-        opti.set_value(self.p['zona'],
-                       [config.ELLIPSE_A, config.ELLIPSE_B] if zona is None else list(zona))
+        opti.set_value(self.p['zone'],
+                       [config.ELLIPSE_A, config.ELLIPSE_B] if zone is None else list(zone))
 
         if self._x_buffer is not None:                # warm start: geser 1 langkah
             opti.set_initial(self.X, np.hstack([self._x_buffer[:, 1:],
@@ -272,10 +272,10 @@ class MPCController:
         self.u_prev = np.array([a, delta])
         return a, delta, ms, ok
 
-    def compute(self, x_meas, xref, a_ukur=0.0, obstacles=None, dt=None, zona=None):
+    def compute(self, x_meas, xref, a_meas=0.0, obstacles=None, dt=None, zone=None):
         """Satu tick penuh -> ControlCommand siap dikirim ke CARLA."""
-        a, delta, ms, ok = self.solve(x_meas, xref, obstacles, zona)
-        throttle, brake = self.pi.update(a, a_ukur,
+        a, delta, ms, ok = self.solve(x_meas, xref, obstacles, zone)
+        throttle, brake = self.pi.update(a, a_meas,
                                          config.FIXED_DELTA_SECONDS if dt is None else dt)
         return ControlCommand(throttle, brake,
                               steer_command(delta, x_meas[3], self.params),

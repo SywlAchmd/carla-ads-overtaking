@@ -47,27 +47,27 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | Perintah | Fungsi |
 |---|---|
 | `python main.py` | skenario S1 lengkap, loop tertutup, vonis berhasil/gagal |
-| `python main.py --skenario S3 --detik 25` | lajur tujuan terisi: mengikuti, lalu menyalip ulang |
-| `python main.py --perception vision --rekam` | S1 dengan YOLOPX + depth, plus video overlay |
-| `python main.py --perception vision --rekam --akhiran _sesudah` | sama, tapi keluarannya tidak menimpa berkas pembanding |
+| `python main.py --scenario S3 --seconds 25` | lajur tujuan terisi: mengikuti, lalu menyalip ulang |
+| `python main.py --perception vision --record` | S1 dengan YOLOPX + depth, plus video overlay |
+| `python main.py --perception vision --record --suffix _after` | sama, tapi keluarannya tidak menimpa berkas pembanding |
 | `python check_estimation.py` | ketelitian jarak & kecepatan vision vs ground truth |
 | `python tuning.py --sweep Q_PSI 300,450,600` | harness tuning step response |
 | `python tune_vision.py --sweep K_DEV 10,20,40` | sapuan parameter di skenario penuh + vision |
-| `python experiment.py --perception vision --ulang 10` | Tahap 9: success rate + sebaran metrik |
-| `python metrics.py --layer --eksperimen` | metrik per layer/fase dari log (tidak butuh server) |
-| `python metrics.py --layer --eksperimen --akhiran _sebelum` | metrik yang sama SEBELUM perbaikan bagian 27 |
+| `python experiment.py --perception vision --repeat 10` | Tahap 9: success rate + sebaran metrik |
+| `python metrics.py --layer --experiment` | metrik per layer/fase dari log (tidak butuh server) |
+| `python metrics.py --layer --experiment --suffix _before` | metrik yang sama SEBELUM perbaikan bagian 27 |
 | `python validate_model.py` | validasi bicycle model terhadap plant |
 | `python validate_model.py --steer` | verifikasi konversi kemudi |
 | `python validate_model.py --scan` | cari spawn point ruas lurus |
-| `python record_maneuver.py --kamera atas` | video dengan overlay kandidat |
+| `python record_maneuver.py --camera top` | video dengan overlay kandidat |
 | `python show_lanes.py` | gambar lingkungan uji dan kandidat planner |
-| `python plot_run.py --skenario S3` | grafik hasil run dari log (tidak butuh server) |
+| `python plot_run.py --scenario S3` | grafik hasil run dari log (tidak butuh server) |
 | `python plot_compare.py` | grafik pembanding GT vs vision (tidak butuh server) |
 | `python record_path.py` | video lintasan acuan global planner (butuh ffmpeg) |
 | `python check_sensors.py` | pasang rig kamera, verifikasi penempatan, simpan contoh frame |
 | `python show_rig.py` | konfigurasi sensor ala KITTI: foto ego + skema berdimensi |
 | `python plot_concepts.py` | gambar konsep: rig, frame, skenario, pipeline, MPC (tanpa server) |
-| `python check_detection.py --lajur 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
+| `python check_detection.py --lane 1` | ukur deteksi YOLOPX terhadap ground truth simulator |
 | `python check_lanes.py` | ketelitian geometri lajur (lebar, simpangan, sudut hadap) vs peta HD |
 | `python check_lanes.py --weight ~/sawal/model/yolopx-continuous.pt` | sapuan yang sama pakai checkpoint lain (bagian 30.7) |
 | `python check_ipm.py` | pembuktian IPM: f, bolak-balik, matriks CARLA, kamera depth |
@@ -81,25 +81,74 @@ menarik garis lajur di tempat yang tidak ada markanya -- termasuk di atas rel
 kereta -- dan ketelitian geometri lajurnya dua kali lebih buruk meski pikselnya
 3,6 kali lebih banyak. Angka lengkap `WRITING_SUMMARY.md` bagian 30.7.
 
-## Arsitektur
+## Struktur File
+
+Seluruh nama file, fungsi, class, variabel, konstanta, argumen CLI, kolom log,
+dan teks keluaran memakai bahasa Inggris. Komentar dan docstring tetap
+berbahasa Indonesia.
 
 ```
-localization.py  ground truth CARLA -> frame right-handed, titik sumbu belakang
-perception.py    GroundTruth + VisionPerception -> halangan dalam FRAME EGO
-overlay.py        overlay video: deteksi, kandidat planner, HUD  [butuh cv2]
-planning.py      quintic/quartic, local planner, BehaviorFSM      [tanpa carla]
-tracking.py      asosiasi dua tahap + Kalman filter halangan        [tanpa carla]
-lanes.py         masker lajur YOLOPX -> IPM -> kisi -> lebar & simpangan [tanpa carla]
-                 (IPM dibuktikan check_ipm.py; digambar plot_ipm.py)
-control.py       MPC CasADi + IPOPT, ThrottlePI, konversi kemudi  [tanpa carla]
-evaluation.py    sensor tabrakan + kriteria keberhasilan 11.2
-simulation.py    koneksi, mode sinkron, spawn, reference path
-main.py          main loop: localization/perception 20 Hz, planner 10 Hz, MPC 20 Hz
-config.py        semua konstanta
+carla-ads-overtaking/
+├── Modul inti (dipanggil main loop)
+│   ├── config.py           semua konstanta: skenario, bobot MPC, ambang FSM, kamera
+│   ├── simulation.py       koneksi, mode sinkron, spawn, reference path, tick()
+│   ├── localization.py     ground truth CARLA -> frame right-handed, titik sumbu belakang
+│   ├── sensors.py          CameraRig: kamera RGB + depth terpasang di ego
+│   ├── yolopx.py           pembungkus model YOLOPX (deteksi + segmentasi)       [butuh torch]
+│   ├── perception.py       GroundTruthPerception + VisionPerception -> halangan FRAME EGO
+│   ├── tracking.py         asosiasi dua tahap + Kalman filter halangan          [tanpa carla]
+│   ├── lanes.py            masker lajur -> IPM -> kisi -> lebar & simpangan     [tanpa carla]
+│   ├── planning.py         quintic/quartic, local planner, BehaviorFSM          [tanpa carla]
+│   ├── control.py          MPCController (CasADi + IPOPT), ThrottlePI, steer    [tanpa carla]
+│   ├── evaluation.py       sensor tabrakan + kriteria keberhasilan 11.2
+│   ├── overlay.py          Recorder: video overlay deteksi, kandidat, HUD       [butuh cv2]
+│   └── main.py             main loop: perception 20 Hz, planner 10 Hz, MPC 20 Hz
+│
+├── Eksperimen & tuning (butuh server CARLA)
+│   ├── experiment.py       Tahap 9: N ulangan, success rate + sebaran metrik
+│   ├── tuning.py           harness step response untuk bobot MPC
+│   ├── tune_vision.py      sapuan parameter di skenario penuh + vision
+│   ├── extract_params.py   ekstraksi parameter fisik ego -> out/vehicle_params.json
+│   └── validate_model.py   validasi bicycle model, konversi kemudi, cari spawn lurus
+│
+├── Pemeriksaan (butuh server CARLA)
+│   ├── check_sensors.py    penempatan rig kamera vs angka KITTI
+│   ├── check_detection.py  deteksi YOLOPX vs ground truth simulator
+│   ├── check_estimation.py jarak & kecepatan vision vs ground truth
+│   ├── check_lanes.py      geometri lajur YOLOPX vs peta HD
+│   └── check_ipm.py        pembuktian IPM: f, bolak-balik, matriks CARLA, depth
+│
+├── Gambar & video
+│   ├── metrics.py          metrik bab 4 per fase/layer dari log        [tanpa server]
+│   ├── plot_run.py         grafik satu run tertutup                    [tanpa server]
+│   ├── plot_compare.py     MPC + GT versus MPC + vision                [tanpa server]
+│   ├── plot_concepts.py    gambar konsep: rig, frame, skenario, MPC    [tanpa server]
+│   ├── plot_ipm.py         IPM di atas frame kamera + warp pandangan atas
+│   ├── plot_lane_fit.py    kemiringan bersama + pencocokan kisi
+│   ├── plot_lane_pipeline.py  tiga tahap lanes.py, dua model anotasi
+│   ├── show_lanes.py       lingkungan uji dan kandidat planner
+│   ├── show_rig.py         konfigurasi sensor ala KITTI
+│   ├── record_maneuver.py  video playback manuver                      [butuh ffmpeg]
+│   └── record_path.py      video lintasan acuan global planner         [butuh ffmpeg]
+│
+├── tests/                  127 uji, dijalankan sebagai skrip           [tanpa server]
+│   ├── test_architecture.py  aturan 2.4: modul numerik tidak menyentuh carla
+│   ├── test_bicycle_model.py, test_dimensions.py, test_evaluation.py, test_fsm.py
+│   └── test_lanes.py, test_localization.py, test_mpc.py, test_perception.py,
+│       test_planning.py, test_tracking.py
+│
+├── out/                    keluaran: gambar bab 3-4, log run (.npz), vehicle_params.json
+│
+└── README.md, WRITING_SUMMARY.md, TUNING_MPC.md, NOTES.md
 ```
 
 `planning.py` dan `control.py` **tidak boleh** mengimpor `carla` (aturan 2.4
 rencana kerja). Ditegakkan oleh `tests/test_architecture.py`.
+
+**Log `.npz` lama.** Kunci dan nama kolom di `out/*.npz` sudah dimigrasi ke nama
+Inggris (`columns`, `vehicle_positions`, `lane_dev`, `n_feasible`, `x_map`,
+`min_dist`, `verdict`, ...). Nilainya tidak berubah: `metrics.py` memberi angka
+yang identik dengan sebelum migrasi.
 
 ---
 
@@ -150,7 +199,7 @@ Angka GT di atas setelah perbaikan jangkar halangan 1,433 m (16 Sep). Sebelumnya
 
 Deviasi turun 0,161 -> 0,011 m setelah syarat awal percepatan lateral planner
 diambil dari rencana, bukan hasil ukur (`TUNING_MPC.md` 13.5). S3 wajib
-`--detik 25`: lebih lama dari itu ego melewati ujung ruas lurus 400 m dan
+`--seconds 25`: lebih lama dari itu ego melewati ujung ruas lurus 400 m dan
 menabrak guardrail.
 
 ---
@@ -162,8 +211,8 @@ Diurutkan dari yang paling mendesak. Terakhir diperbarui 17 September 2026.
 ### 1. Skenario S2, S4, S5 tidak punya definisi
 Bukan "belum diimplementasikan" — **naskahnya tidak ada di repo ini sama sekali**.
 Yang tercatat hanya sifat S5 (kendaraan depan mengerem mendadak), yang butuh
-profil kecepatan terjadwal di `main.spawn_kendaraan`. Definisi S1 dan S3 di
-`config.SKENARIO` pun rekonstruksi, bukan salinan bagian 11.3 rencana kerja —
+profil kecepatan terjadwal di `main.spawn_vehicles`. Definisi S1 dan S3 di
+`config.SCENARIOS` pun rekonstruksi, bukan salinan bagian 11.3 rencana kerja —
 cocokkan dulu sebelum ditulis di skripsi.
 
 ### 2. Data leakage YOLOPX — masalah KEABSAHAN, bukan performa
@@ -188,7 +237,7 @@ ulang 10 run). Yang tersisa bermuara ke satu hal: rig hanya punya kamera depan.
 Ongkos kamera belakang 14,4 ms per tick; anggaran masih cukup
 (19,4 + 14,4 = 33,8 dari 50 ms). **S3 dengan vision juga menunggu ini**:
 kendaraan lajur tujuan mulai 10 m di belakang ego dan tidak pernah terlihat,
-sehingga gerbang `D_SAFE_BELAKANG` selalu lolos bukan karena aman melainkan
+sehingga gerbang `D_SAFE_REAR` selalu lolos bukan karena aman melainkan
 karena tidak terlihat.
 
 ### 4. Perbandingan bagian 27 versus 29 tidak bersih
@@ -209,7 +258,7 @@ dengan MKZ sama sekali.
 `check_estimation.py` menyapu 55 → 9 m tetapi seluruhnya di lajur ego dengan ego
 berjalan lurus. Angka untuk kasus berdampingan (bias +0,39 m, maks +2,41 m)
 diambil dari log run loop tertutup — bukan sapuan yang dirancang. Padahal di
-situlah `perception.koreksi_muka` bekerja paling keras, dan asumsi "ego dan
+situlah `perception.face_correction` bekerja paling keras, dan asumsi "ego dan
 target sehadap" melemah saat yaw ego mencapai 10,8°.
 
 ### 7. 36,6 tick tanpa kandidat planner (vision) versus 4 (ground truth)
@@ -231,7 +280,7 @@ sejak planner berkomitmen pada rencana terakhirnya, replan yang gagal bukan lagi
 kehilangan arah.
 
 ### 8. Skrip rekam lama masih playback dan hardcode
-`main.py --perception vision --rekam` sudah merekam **hasil kendali sungguhan**
+`main.py --perception vision --record` sudah merekam **hasil kendali sungguhan**
 dengan overlay deteksi dan kandidat planner, jadi kebutuhan utamanya tertutupi.
 Yang tersisa: `record_maneuver.py` masih playback (physics mati, ego ditempel ke
 lintasan planner) dan hardcode 13,9 / 7,0 / 50 m, serta menuliskan offset sumbu
@@ -311,14 +360,14 @@ ada angkanya untuk ditulis di batasan masalah.
 
 - **Konversi kemudi wajib menegasikan.** delta right-handed positif = belok
   **kiri**; steer CARLA positif = belok **kanan**. Tanpa negasi mobil keluar
-  jalan 13,9 m. Dikunci `test_steer_membalik_tanda`.
+  jalan 13,9 m. Dikunci `test_steer_flips_sign`.
 - **Penyebut konversi kemudi = `delta_max_phys × curve(v)`**, bukan
   `delta_max`. Rumus bagian 7.5 rencana kerja salah (understeer 2,4×). Sumbu-x
   `steering_curve` dalam **km/jam**.
 - **Jangan pernah mengurangi dua sudut tanpa `localization.wrap`.** Peta Town04
   menyimpan arah ruas 902 sebagai 450,22° (= 90,22 + 360); tanpa normalisasi
   error arah terbaca 359° padahal 0,8°.
-- **Perception keluar frame ego**, konversi di `localization.halangan_ego_ke_jalan`.
+- **Perception keluar frame ego**, konversi di `localization.obstacles_ego_to_road`.
   FSM memakai `x` relatif ego; planner & MPC memakai `x` absolut frame jalan.
   Main loop menggeser di antaranya.
 
@@ -330,7 +379,7 @@ ada angkanya untuk ditulis di batasan masalah.
   keras aktif 65% waktu dan solver bekerja di tepi kelayakan.
 - **Percepatan terukur berderau berat** (−26,8..+12,8 m/s²). Dipotong ke batas
   fisik lalu low-pass. `a0` quartic memakai percepatan **yang diperintahkan**.
-- **Kolom log diakses lewat nama** (`main.KOLOM`), bukan angka. Menyisipkan kolom
+- **Kolom log diakses lewat nama** (`main.COLUMNS`), bukan angka. Menyisipkan kolom
   sudah dua kali menggeser indeks tanpa error.
 - **Jarak antar kendaraan untuk penilaian diukur antar bodi**, bukan antar pusat,
   dan dari **ground truth** — bukan perception. Yang dinilai harus benar; yang
@@ -347,7 +396,7 @@ ada angkanya untuk ditulis di batasan masalah.
 - Spawn point `SPAWN_IDX = 75`, lurus 400 m, lebar lajur 3,50 m. 40% jalurnya
   area junction (ramp highway). Kalau TrafficManager berperilaku aneh di Tahap
   9, **spawn 79** cadangannya.
-- Ego perlu **fase pemanasan** (`WARMUP_DETIK = 6`): `set_target_velocity` hanya
+- Ego perlu **fase pemanasan** (`WARMUP_SECONDS = 6`): `set_target_velocity` hanya
   menetapkan kecepatan bodi, roda masih diam, dan transiennya memakan 22% run.
 - Simulasi **deterministik bit-per-bit** untuk hasil kendali. Kalau dua run
   identik memberi angka berbeda, ada yang salah.

@@ -50,4 +50,4 @@ if __name__ == '__main__':
         if name.startswith('test_'):
             fn()
             print(f'ok  {name}')
-    print('semua lolos')
+    print('all passed')

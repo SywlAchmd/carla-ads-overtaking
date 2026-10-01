@@ -72,28 +72,28 @@ def scan_straight_spawns(world):
         results.append((worst, idx, n_right, n_left, min(widths), max(widths)))
 
     results.sort(key=lambda r: (r[0], -r[2]))          # lurus dulu, lalu lajur kanan terbanyak
-    print(f"\n{'spawn':>6}{'maks |dyaw|':>13}{'lajur kanan':>13}{'lajur kiri':>12}"
-          f"{'lebar lajur':>13}   (probe {probe_m:.0f} m)")
+    print(f"\n{'spawn':>6}{'max |dyaw|':>13}{'right lane':>13}{'left lane':>12}"
+          f"{'lane width':>13}   (probe {probe_m:.0f} m)")
     print('-' * 68)
     for dyaw, idx, n_right, n_left, w_min, w_max in results[:10]:
         varies = '~' if w_max - w_min > 0.05 else ' '
         print(f'{idx:>6}{dyaw:>12.2f}°{n_right:>13}{n_left:>12}{w_min:>12.2f}{varies}')
-    print(f"\nOVERTAKE_SIDE='{config.OVERTAKE_SIDE}', jadi pilih baris dengan lajur "
-          f"{config.OVERTAKE_SIDE} >= 1 (idealnya 2+ supaya ada ruang abort).")
-    print('Catat lebar lajurnya -- itu nilai LANE_WIDTH untuk planner (Tahap 3), bukan')
-    print('asumsi 3.5 m. Tanda ~ berarti lebarnya berubah di sepanjang probe; hindari,')
-    print('referensi lateralnya jadi bergeser.')
+    print(f"\nOVERTAKE_SIDE='{config.OVERTAKE_SIDE}', so pick a row with lanes on the "
+          f"{config.OVERTAKE_SIDE} >= 1 (ideally 2+ so there is room to abort).")
+    print('Note the lane width -- that is the LANE_WIDTH value for the planner (Stage 3), not')
+    print('an assumed 3.5 m. A ~ means the width changes along the probe; avoid it,')
+    print('the lateral reference would shift.')
 
 
-def uji_steer(world, ego, params):
+def check_steer(world, ego, params):
     """Verifikasi steer_command: perintahkan delta, baca sudut roda nyata.
 
     Kecepatan ditahan dengan set_target_velocity TIAP tick -- kalau hanya diset
     sekali lalu diandalkan throttle, mobil melambat dan kurva dievaluasi pada
     kecepatan yang salah.
     """
-    print(f"{'v minta':>9}{'v nyata':>9}{'delta minta':>13}{'delta nyata':>13}"
-          f"{'error':>9}{'  |  rumus 7.5':>15}{'jadinya':>10}")
+    print(f"{'v cmd':>9}{'v real':>9}{'delta cmd':>13}{'delta real':>13}"
+          f"{'error':>9}{'  |  formula 7.5':>15}{'gives':>10}")
     print('-' * 82)
     for v_target in (5.6, 13.9):                      # 20 dan 50 km/jam
         for delta in (0.02, 0.05, 0.10, 0.20):
@@ -102,17 +102,17 @@ def uji_steer(world, ego, params):
                 v = ego.get_velocity()
                 v_now = v.x * math.cos(yaw) + v.y * math.sin(yaw)
                 simulation.tick(world, [
-                    simulation.kecepatan(ego, v_target),
+                    simulation.velocity(ego, v_target),
                     carla.command.ApplyVehicleControl(ego.id, carla.VehicleControl(
                         throttle=0.0, steer=control.steer_command(delta, v_now, params)))])
             # negasi ke right-handed, sama seperti wheel_delta di run():
             # membandingkan dengan sudut mentah CARLA menyembunyikan salah tanda
-            nyata = -math.radians(sum(ego.get_wheel_steer_angle(w) for w in WHEELS)
+            real = -math.radians(sum(ego.get_wheel_steer_angle(w) for w in WHEELS)
                                   / len(WHEELS))
-            salah = delta / params['delta_max']
-            print(f'{v_target * 3.6:>6.0f} km/j{v_now * 3.6:>8.1f}{delta:>13.4f}'
-                  f'{nyata:>13.4f}{nyata - delta:>+9.4f}{salah:>15.4f}'
-                  f'{salah * params["delta_max_phys"]:>10.4f}')
+            wrong = delta / params['delta_max']
+            print(f'{v_target * 3.6:>6.0f} km/h{v_now * 3.6:>8.1f}{delta:>13.4f}'
+                  f'{real:>13.4f}{real - delta:>+9.4f}{wrong:>15.4f}'
+                  f'{wrong * params["delta_max_phys"]:>10.4f}')
 
 
 def run(world, ego, rear_offset_x):
@@ -121,10 +121,10 @@ def run(world, ego, rear_offset_x):
     loc = localization.CarlaGTLocalization(ego, rear_offset_x)
     control = carla.VehicleControl(throttle=config.VALIDATION_THROTTLE)
 
-    kirim = [simulation.kecepatan(ego, config.VALIDATION_SPEED)]
+    send = [simulation.velocity(ego, config.VALIDATION_SPEED)]
     for _ in range(int(config.VALIDATION_WARMUP / dt)):
-        simulation.tick(world, kirim + [carla.command.ApplyVehicleControl(ego.id, control)])
-        kirim = []
+        simulation.tick(world, send + [carla.command.ApplyVehicleControl(ego.id, control)])
+        send = []
 
     control.steer = config.VALIDATION_STEER
     log, off_road = [], 0
@@ -138,9 +138,9 @@ def run(world, ego, rear_offset_x):
                                            project_to_road=False) is None
 
     if off_road:
-        print(f'PERINGATAN: {off_road * dt:.1f} s dari {config.VALIDATION_DURATION:.0f} s '
-              'kendaraan keluar area drivable. Gesekan di luar aspal mengacaukan\n'
-              '            perbandingan; turunkan VALIDATION_STEER atau VALIDATION_DURATION.')
+        print(f'WARNING: {off_road * dt:.1f} s of {config.VALIDATION_DURATION:.0f} s '
+              'the vehicle left the drivable area. Off-asphalt friction corrupts the\n'
+              '            comparison; lower VALIDATION_STEER or VALIDATION_DURATION.')
     return log
 
 
@@ -160,38 +160,38 @@ def analyse(log, model, L):
     err = np.hypot(plant[:, 0] - model[:, 0], plant[:, 1] - model[:, 1])
     yaw_err = np.degrees((plant[:, 2] - model[:, 2] + np.pi) % (2 * np.pi) - np.pi)
 
-    print(f"\n{'t (s)':>7}{'|err| posisi (m)':>19}{'err yaw (deg)':>16}")
+    print(f"\n{'t (s)':>7}{'|pos err| (m)':>19}{'err yaw (deg)':>16}")
     print('-' * 42)
     for target in range(1, int(t[-1]) + 1):
         i = int(np.argmin(np.abs(t - target)))
         print(f'{t[i]:>7.2f}{err[i]:>19.3f}{yaw_err[i]:>16.2f}')
-    print(f'\nError posisi maksimum : {err.max():.3f} m')
-    print(f'Error posisi akhir    : {err[-1]:.3f} m')
-    print(f'Kecepatan rata-rata   : {np.mean([r["v"] for r in log]):.2f} m/s')
-    print(f'delta rata-rata       : {np.mean([r["delta"] for r in log]):.4f} rad '
+    print(f'\nMax position error    : {err.max():.3f} m')
+    print(f'Final position error  : {err[-1]:.3f} m')
+    print(f'Mean speed            : {np.mean([r["v"] for r in log]):.2f} m/s')
+    print(f'Mean delta            : {np.mean([r["delta"] for r in log]):.4f} rad '
           f'(steer_cmd = {config.VALIDATION_STEER:+.2f})')
 
     v = np.array([r['v'] for r in log])
     a_lat = (v ** 2 * np.tan(np.abs([r['delta'] for r in log])) / L).max()
-    print(f'Rentang kecepatan     : {v.min() * 3.6:.0f} - {v.max() * 3.6:.0f} km/jam')
-    print(f'a_lat maksimum        : {a_lat:.2f} m/s²')
+    print(f'Speed range           : {v.min() * 3.6:.0f} - {v.max() * 3.6:.0f} km/h')
+    print(f'Max a_lat             : {a_lat:.2f} m/s²')
 
     yr_log = np.array([r['yaw_rate'] for r in log])
     yr_fd = np.gradient(np.unwrap(plant[:, 2]), t)
-    print(f'\nyaw_rate (Tahap 2)')
-    print(f'  terlog dari CARLA   : {yr_log.mean():+.4f} rad/s (rata-rata)')
-    print(f'  d(yaw)/dt numerik   : {yr_fd.mean():+.4f} rad/s')
+    print(f'\nyaw_rate (Stage 2)')
+    print(f'  logged from CARLA  : {yr_log.mean():+.4f} rad/s (mean)')
+    print(f'  numeric d(yaw)/dt  : {yr_fd.mean():+.4f} rad/s')
     ok = np.mean(np.abs(yr_log - yr_fd)) < 0.5 * np.mean(np.abs(yr_fd))
-    print('  -> ' + ('tanda & besaran COCOK' if ok else
-                     'TIDAK COCOK -- periksa negasi yaw_rate di localization.py'))
+    print('  -> ' + ('sign & magnitude MATCH' if ok else
+                     'MISMATCH -- check the yaw_rate negation in localization.py'))
 
     if err[-1] > 1.0 and a_lat > 3.0:
-        print(f'\nCATATAN: a_lat {a_lat:.1f} m/s² sudah di luar amplop kinematic bicycle '
-              '(slip ban).\n         Error sebesar ini wajar; bandingkan dengan run '
-              'a_lat rendah sebelum menuduh bug.')
+        print(f'\nNOTE: a_lat {a_lat:.1f} m/s² is already outside the kinematic bicycle envelope '
+              '(tyre slip).\n         An error this size is expected; compare with a '
+              'low-a_lat run before blaming a bug.')
     elif err[-1] > 1.0:
-        print('\nPERIKSA: error akhir > 1 m padahal a_lat rendah. Tersangka utama: '
-              'rear_axle_offset_x\n         salah tanda, L salah, atau konversi yaw belum negatif.')
+        print('\nCHECK: final error > 1 m although a_lat is low. Prime suspects: '
+              'rear_axle_offset_x\n         with the wrong sign, a wrong L, or a yaw conversion that is not negated.')
 
     check_side_sign(plant)
     return err
@@ -204,17 +204,17 @@ def check_side_sign(plant):
     lateral = -math.sin(psi0) * d[0] + math.cos(psi0) * d[1]
     empirical = int(np.sign(lateral))
 
-    print('\nSIDE_SIGN (bagian 0.3)')
-    print(f'  steer_cmd {config.VALIDATION_STEER:+.2f} (kanan) -> deviasi lateral '
-          f'{lateral:+.2f} m di frame right-handed')
-    print(f'  maka kanan = y {"negatif" if empirical < 0 else "positif"}, '
-          f"SIDE_SIGN untuk OVERTAKE_SIDE='right' = {empirical:+d}")
+    print('\nSIDE_SIGN (section 0.3)')
+    print(f'  steer_cmd {config.VALIDATION_STEER:+.2f} (right) -> lateral deviation '
+          f'{lateral:+.2f} m in the right-handed frame')
+    print(f'  so right = y {"negative" if empirical < 0 else "positive"}, '
+          f"SIDE_SIGN for OVERTAKE_SIDE='right' = {empirical:+d}")
 
     actual = empirical if config.OVERTAKE_SIDE == 'right' else -empirical
     if actual == config.SIDE_SIGN:
-        print(f'  config.SIDE_SIGN = {config.SIDE_SIGN:+d} -> COCOK')
+        print(f'  config.SIDE_SIGN = {config.SIDE_SIGN:+d} -> MATCH')
     else:
-        print(f'  config.SIDE_SIGN = {config.SIDE_SIGN:+d} -> SALAH, ganti jadi {actual:+d}')
+        print(f'  config.SIDE_SIGN = {config.SIDE_SIGN:+d} -> WRONG, change it to {actual:+d}')
 
 
 def plot(log, model, err, path):
@@ -225,10 +225,10 @@ def plot(log, model, err, path):
     ax[0].plot(plant[:, 0], plant[:, 1], label='Plant (CARLA)', lw=2)
     ax[0].plot(model[:, 0], model[:, 1], '--', label='Kinematic bicycle', lw=2)
     ax[0].set_xlabel('X (m)'); ax[0].set_ylabel('Y (m), right-handed')
-    ax[0].set_title('Lintasan'); ax[0].axis('equal'); ax[0].legend(); ax[0].grid(alpha=.3)
+    ax[0].set_title('Path'); ax[0].axis('equal'); ax[0].legend(); ax[0].grid(alpha=.3)
 
     ax[1].plot(t, err, color='crimson')
-    ax[1].set_xlabel('t (s)'); ax[1].set_ylabel('|error| posisi (m)')
+    ax[1].set_xlabel('t (s)'); ax[1].set_ylabel('|position error| (m)')
     ax[1].set_title('Model mismatch'); ax[1].grid(alpha=.3)
 
     ax[2].plot(t, [r['v'] for r in log], label='v (m/s)')
@@ -236,10 +236,10 @@ def plot(log, model, err, path):
     ax[2].set_xlabel('t (s)'); ax[2].set_title('Input')
     ax[2].legend(); ax[2].grid(alpha=.3)
 
-    fig.suptitle(f'Validasi prediction model -- {config.EGO_BP}')
+    fig.suptitle(f'Prediction model validation -- {config.EGO_BP}')
     fig.tight_layout()
     fig.savefig(path, dpi=150)
-    print(f'\nGrafik  : {path}')
+    print(f'\nPlot    : {path}')
 
 
 def save_csv(log, model, path):
@@ -254,13 +254,13 @@ def save_csv(log, model, path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--scan', action='store_true',
-                    help='daftar spawn point pada ruas lurus, lalu keluar')
+                    help='list spawn points on straight sections, then exit')
     ap.add_argument('--steer', action='store_true',
-                    help='verifikasi steer_command terhadap sudut roda nyata')
+                    help='verify steer_command against the real wheel angle')
     args = ap.parse_args()
 
     if not os.path.exists(config.VEHICLE_PARAMS_JSON):
-        sys.exit('Jalankan extract_params.py dulu.')
+        sys.exit('Run extract_params.py first.')
     with open(config.VEHICLE_PARAMS_JSON) as f:
         params = json.load(f)
 
@@ -270,7 +270,7 @@ def main():
             return
         with simulation.ego_vehicle(world) as ego:
             if args.steer:
-                uji_steer(world, ego, params)
+                check_steer(world, ego, params)
                 return
             log = run(world, ego, params['rear_axle_offset_x'])
 

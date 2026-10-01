@@ -4,7 +4,7 @@ Dibaca dari log mentah supaya tidak perlu menjalankan ulang simulasi.
 
     python plot_run.py                        # GT  -> out/run_s1_mpc_gt.png
     python plot_run.py --perception vision    # -> out/run_s1_mpc_vision.png
-    python plot_run.py --skenario S3
+    python plot_run.py --scenario S3
 """
 import argparse
 import os
@@ -19,42 +19,42 @@ import evaluation
 
 # Latar tiap panel diwarnai menurut state FSM: satu gambar cukup untuk membaca
 # kapan tiap fase terjadi, tanpa menaruh garis vertikal di semua panel.
-WARNA = {'LANE_KEEPING': '#ffffff', 'CHECK_OVERTAKE': '#fdf3d0',
+COLORS = {'LANE_KEEPING': '#ffffff', 'CHECK_OVERTAKE': '#fdf3d0',
          'LANE_CHANGE_OVERTAKE': '#dbe9fb', 'OVERTAKING': '#dcf2d7',
          'LANE_CHANGE_RETURN': '#fbdfe4'}
 
 
-def latar_state(ax, t, st):
-    awal = 0
+def shade_states(ax, t, st):
+    start = 0
     for i in range(1, len(st) + 1):
-        if i == len(st) or st[i] != st[awal]:
-            ax.axvspan(t[awal], t[i - 1], color=WARNA.get(st[awal], '#eeeeee'), lw=0, zorder=0)
-            awal = i
+        if i == len(st) or st[i] != st[start]:
+            ax.axvspan(t[start], t[i - 1], color=COLORS.get(st[start], '#eeeeee'), lw=0, zorder=0)
+            start = i
 
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument('--skenario', default='S1', choices=list(config.SKENARIO))
+    ap.add_argument('--scenario', default='S1', choices=list(config.SCENARIOS))
     ap.add_argument('--perception', default='gt', choices=('gt', 'vision'))
     args = ap.parse_args()
-    sk = args.skenario.lower()
+    sk = args.scenario.lower()
 
     f = np.load(os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.npz'))
-    L, st, pos = f['log'], f['fsm_state'], f['posisi_kendaraan']
-    k = {nama: i for i, nama in enumerate(f['kolom'])}
+    L, st, pos = f['log'], f['fsm_state'], f['vehicle_positions']
+    k = {name: i for i, name in enumerate(f['columns'])}
     t, y, yaw = L[:, 0], L[:, k['y']], L[:, k['yaw']]
-    xc = L[:, k['x']] + config.SUMBU_KE_PUSAT * np.cos(yaw)
-    yc = y + config.SUMBU_KE_PUSAT * np.sin(yaw)
+    xc = L[:, k['x']] + config.AXLE_TO_CENTER * np.cos(yaw)
+    yc = y + config.AXLE_TO_CENTER * np.sin(yaw)
 
     fig, ax = plt.subplots(4, 1, figsize=(10, 11), sharex=True)
     for a in ax:
-        latar_state(a, t, st)
+        shade_states(a, t, st)
         a.grid(alpha=.3)
 
     ax[0].axhline(0, color='0.5', lw=.8)
     ax[0].axhline(config.SIDE_SIGN * config.LANE_WIDTH, color='0.5', lw=.8)
-    for tepi in (0.5, -0.5, -1.5):
-        ax[0].axhline(tepi * config.LANE_WIDTH, color='0.75', ls=':', lw=.8)
+    for edges in (0.5, -0.5, -1.5):
+        ax[0].axhline(edges * config.LANE_WIDTH, color='0.75', ls=':', lw=.8)
     ax[0].plot(t, y, lw=2, label='ego (rear axle)')
     ax[0].plot(t, L[:, k['y_goal']], '--', lw=1.2, label='FSM target lane centre')
     ax[0].set_ylabel('lateral deviation (m)'); ax[0].legend(loc='upper right', fontsize=8)
@@ -65,11 +65,11 @@ def main():
     ax[1].set_ylabel('speed (km/h)'); ax[1].legend(loc='upper right', fontsize=8)
 
     for i in range(pos.shape[1]):
-        d = evaluation.jarak_kotak(pos[:, i, 0] - xc, pos[:, i, 1] - yc,
-                                   f['dim_ego'], f['dim_kendaraan'][i], yaw, pos[:, i, 2])
+        d = evaluation.box_distance(pos[:, i, 0] - xc, pos[:, i, 1] - yc,
+                                   f['dim_ego'], f['vehicle_dims'][i], yaw, pos[:, i, 2])
         ax[2].plot(t, d, lw=2, label='target' if i == 0 else f'vehicle {i + 1}')
-    ax[2].axhline(config.JARAK_AMAN, color='crimson', ls=':', lw=1,
-                  label=f'requirement {config.JARAK_AMAN:.0f} m')
+    ax[2].axhline(config.SAFE_DISTANCE, color='crimson', ls=':', lw=1,
+                  label=f'requirement {config.SAFE_DISTANCE:.0f} m')
     ax[2].set_ylabel('body-to-body distance (m)'); ax[2].legend(loc='upper right', fontsize=8)
 
     ax[3].plot(t, L[:, k['delta_cmd']], lw=1.5, label='MPC steering delta (rad)')
@@ -83,14 +83,14 @@ def main():
     g2, l2 = ax3b.get_legend_handles_labels()
     ax3b.legend(g1 + g2, l1 + l2, loc='upper right', fontsize=8)
 
-    fig.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=w) for w in WARNA.values()],
-               labels=list(WARNA), loc='upper center', ncol=5, fontsize=8, frameon=False)
-    nama_p = 'ground truth perception' if args.perception == 'gt' else 'vision perception (YOLOPX + depth)'
-    fig.suptitle(f'Scenario {args.skenario} — MPC + {nama_p}', y=0.975)
+    fig.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=w) for w in COLORS.values()],
+               labels=list(COLORS), loc='upper center', ncol=5, fontsize=8, frameon=False)
+    name_p = 'ground truth perception' if args.perception == 'gt' else 'vision perception (YOLOPX + depth)'
+    fig.suptitle(f'Scenario {args.scenario} — MPC + {name_p}', y=0.975)
     fig.tight_layout(rect=(0, 0, 1, 0.945))
-    keluar = os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.png')
-    fig.savefig(keluar, dpi=150)
-    print(f'Grafik: {keluar}')
+    out = os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.png')
+    fig.savefig(out, dpi=150)
+    print(f'Plot: {out}')
 
 
 if __name__ == '__main__':

@@ -13,9 +13,9 @@ FIXED_DELTA_SECONDS = 0.05          # 20 Hz, mode sinkron
 EGO_BP = 'vehicle.dodge.charger_2020'
 # Kendaraan yang disalip. Diganti dari Nissan Patrol ke Lincoln MKZ 2020 pada
 # 18 Sep 2026: sedan, bukan SUV, jadi tingginya 1,49 m alih-alih 1,86 m -- beda
-# yang cukup tajam untuk menguji apakah `DimensiKendaraan` benar-benar MENGUKUR
+# yang cukup tajam untuk menguji apakah `VehicleDimensions` benar-benar MENGUKUR
 # atau cuma mengembalikan priornya.
-LAIN_BP = 'vehicle.lincoln.mkz_2020'
+OTHER_BP = 'vehicle.lincoln.mkz_2020'
 
 # Cari kandidat ruas lurus dengan: python validate_model.py --scan
 SPAWN_IDX = 75          # lajur paling kiri, 3 lajur di kanan, lurus, lebar 3.50 m konstan
@@ -44,20 +44,20 @@ VEHICLE_PARAMS_JSON = os.path.join(OUT_DIR, 'vehicle_params.json')
 # Tetapan tapis arah jalan hasil ukur, per tick 20 Hz. Derau sudut hadap terukur
 # 0,257 deg RMS (check_lanes.py); alpha 0,02 memberi tetapan waktu ~2,5 detik dan
 # menekannya ~7x, masih jauh lebih cepat daripada perubahan arah jalan itu sendiri.
-ALPHA_ARAH_JALAN = 0.02
+ALPHA_ROAD_HEADING = 0.02
 # Tetapan tapis TENGAH lajur, per tick 20 Hz. Tengah lajur adalah sifat jalan --
 # ia tidak boleh melompat. Tanpa tapis ini `y_goal` melompat sampai 0,147 m antar
 # replan (sd 0,044 m), dan MPC mengejar acuan yang berkedut. Simpangan ukur
 # 0,050 m RMS (check_lanes.py). Diterapkan di `BehaviorFSM` yang berjalan 10 Hz,
 # jadi alpha 0,05 memberi tetapan waktu ~2 detik.
-ALPHA_TENGAH_LAJUR = 0.05
+ALPHA_LANE_CENTER = 0.05
 LANE_WIDTH = 3.50                   # m, terukur dari Town04; PDGJ 2021 Tabel 5-58 (V_D 40-80)
 PLANNER_DT = 0.1                    # detik, resolusi sampling lintasan
 LATERAL_OFFSETS = (3.0, 3.5, 4.0)   # m, magnitudo -- dikalikan SIDE_SIGN
 MANEUVER_TIMES = (3.0, 3.5, 4.0)    # detik
 MAX_LATERAL_ACCEL = 3.0             # m/s², batas kenyamanan
 MIN_TURN_RADIUS = 5.6               # m, dari L=3.044 dan delta_max=0.5 rad
-# ELLIPSE_A, ELLIPSE_B, ELLIPSE_P: zona aman, diturunkan di bawah JARAK_AMAN
+# ELLIPSE_A, ELLIPSE_B, ELLIPSE_P: zona aman, diturunkan di bawah SAFE_DISTANCE
 
 # Bobot seleksi kandidat: J = W_LAT*J_lat + W_LON*J_lon + W_COL*J_col
 W_LAT, W_LON, W_COL = 1.0, 1.0, 1.0
@@ -76,34 +76,34 @@ TTC_TRIGGER = 5.0                   # detik, mulai mempertimbangkan menyalip
 TTC_EXIT = 7.0                      # detik, histeresis: batal mempertimbangkan
 DV_TRIGGER = 3.0                    # m/s, kendaraan depan harus selambat ini
 DV_EXIT = 1.5                       # m/s, histeresis
-D_SAFE_DEPAN = 25.0                 # m, lajur tujuan harus kosong ke depan
-D_SAFE_BELAKANG = 15.0              # m, dan ke belakang
-LATERAL_MASUK = 0.9                 # fraksi lebar lajur -> dianggap sudah pindah
+D_SAFE_FRONT = 25.0                 # m, lajur tujuan harus kosong ke depan
+D_SAFE_REAR = 15.0              # m, dan ke belakang
+LATERAL_ENTER = 0.9                 # fraksi lebar lajur -> dianggap sudah pindah
 PASS_MARGIN = 8.0                   # m, ego harus unggul sejauh ini sebelum kembali
 # Laju lateral menjauhi lajur asal maksimum untuk mulai kembali (TUNING_MPC.md 13).
 # Quintic kembali (T=4 s) yang berangkat dengan laju menjauh u kebablasan keluar:
 # u=0,1 -> 0,017 m; u=0,91 -> 0,40 m (terukur 0,47 m di run gagal). 0,1 m/s juga
 # ~70x di atas derau laju lateral saat menjaga lajur (maks 0,0014 m/s).
-DD_KEMBALI = 0.1                    # m/s
-LATERAL_SELESAI = 0.3               # m, kembali ke lajur asal dianggap selesai
-# Mengikuti kendaraan depan selama belum/tidak bisa menyalip (planning._v_ikut).
-# Jarak ikut d* = ELLIPSE_A + SUMBU_KE_PUSAT + WAKTU_IKUT * v_depan (jarak waktu-tetap).
-# Sapuan S3 (TUNING_MPC.md bagian 13.7). Setelah zona aman menjamin JARAK_AMAN,
+DD_RETURN = 0.1                    # m/s
+LATERAL_DONE = 0.3               # m, kembali ke lajur asal dianggap selesai
+# Mengikuti kendaraan depan selama belum/tidak bisa menyalip (planning._v_follow).
+# Jarak ikut d* = ELLIPSE_A + AXLE_TO_CENTER + FOLLOW_TIME * v_front (jarak waktu-tetap).
+# Sapuan S3 (TUNING_MPC.md bagian 13.7). Setelah zona aman menjamin SAFE_DISTANCE,
 # 1,0-2,5 s semuanya lolos dan jarak bodi tidak lagi bergantung nilai ini (1,42-
 # 1,69 m). 2,0 s = nilai terkecil yang tidak pernah membuat planner kehabisan
 # kandidat (1,0 s -> 12 tick nol, 1,5 s -> 4, 2,0 dan 2,5 s -> 0); tick nol itu
 # yang dulu menendang ego keluar lajur. 2,5 s hanya menambah jarak ikut.
-WAKTU_IKUT = 2.0                    # s
+FOLLOW_TIME = 2.0                    # s
 
 # Sensor kamera (Tahap 8, bagian 10). Penempatan mendekati rig KITTI (Geiger dkk.,
 # IJRR 2013, Gambar 3): seluruh kamera 1,65 m di atas permukaan jalan dan 1,68 m di
 # depan sumbu roda belakang, baseline stereo warna 0,54 m. Lensa KITTI 4 mm dengan
 # sudut buka ~90 derajat. Resolusi 1280x720 (KITTI 1392x512) -- keputusan penulis.
-KAMERA_LEBAR, KAMERA_TINGGI = 1280, 720
-KAMERA_FOV = 90.0                   # derajat, sudut buka horizontal
-KAMERA_Z = 1.65                     # m di atas permukaan jalan
-KAMERA_DEPAN_SUMBU = 1.68           # m di depan sumbu roda belakang
-KAMERA_BASELINE = 0.54              # m, jarak kamera warna kiri-kanan
+CAMERA_WIDTH, CAMERA_HEIGHT = 1280, 720
+CAMERA_FOV = 90.0                   # derajat, sudut buka horizontal
+CAMERA_Z = 1.65                     # m di atas permukaan jalan
+CAMERA_AHEAD_OF_AXLE = 1.68           # m di depan sumbu roda belakang
+CAMERA_BASELINE = 0.54              # m, jarak kamera warna kiri-kanan
 
 # YOLOPX (Tahap 8). Repo model = folder tetangga repo skripsi supaya repo ini
 # tetap bersih; weight hasil pelatihan penulis ada di luar area skripsi.
@@ -113,29 +113,29 @@ YOLOPX_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file
 # awal fine-tuning dan sebagai pembanding domain di check_detection.py --weight.
 YOLOPX_WEIGHT = os.path.join(os.path.dirname(YOLOPX_DIR), 'weights', 'best.pth')
 YOLOPX_WEIGHT_BDD = os.path.expanduser('~/sawal/data_acquisition/epoch-195.pth')
-DETEKSI_CONF = 0.5                  # ambang keyakinan; ditentukan check_detection.py
-DETEKSI_IOU = 0.45                  # ambang NMS
+DETECTION_CONF = 0.5                  # ambang keyakinan; ditentukan check_detection.py
+DETECTION_IOU = 0.45                  # ambang NMS
 
 # Pelacakan antar frame (Tahap 8, bagian 10.3). Lihat docstring tracking.py.
 # Inferensi dijalankan di ambang RENDAH supaya deteksi lemah tersedia untuk tahap
 # dua ByteTrack; pemisahan tinggi/rendah terjadi di pelacak, bukan di NMS.
-TRACK_CONF_TINGGI = DETEKSI_CONF    # di atas ini deteksi boleh melahirkan track
+TRACK_CONF_HIGH = DETECTION_CONF    # di atas ini deteksi boleh melahirkan track
 # 0,3 = ambang terendah yang masih memberi NOL positif palsu pada best.pth
 # (bagian 18.3). Di bawah itu model BDD mulai mengecat batu dan pagar.
-TRACK_CONF_RENDAH = 0.3             # hanya menahan track yang sudah ada
+TRACK_CONF_LOW = 0.3             # hanya menahan track yang sudah ada
 TRACK_IOU_MIN = 0.15                # gerbang asosiasi; di bawah ini tidak dipasangkan
 TRACK_N_INIT = 3                    # frame berturut sebelum track dilaporkan
 # Melayang maksimum. Di 10 Hz, 5 frame = 0,5 s. Harus lebih pendek daripada
 # FSM_DWELL + waktu reaksi supaya halangan hantu tidak sempat mengubah keputusan,
 # tapi cukup panjang menutupi kedipan deteksi di tepi jangkauan (bagian 18.2).
-TRACK_MAX_HILANG = 5
+TRACK_MAX_LOST = 5
 TRACK_SIGMA_A = 2.0                 # m/s², derau proses: percepatan kendaraan lain
 TRACK_SIGMA_V0 = 5.0                # m/s, ragu kecepatan awal (tak terukur dari 1 frame)
 # Derau ukur. Memanjang: galat depth terhadap muka kendaraan -0,48..+0,19 m
 # (bagian 18.4). Melintang: kuantisasi kotak, sigma_y = SIGMA_PIKSEL * d / f --
 # tumbuh dengan jarak, jadi dibangun per-deteksi di perception.py.
 TRACK_SIGMA_D = 0.5                 # m
-TRACK_SIGMA_PIKSEL = 4.0            # px
+TRACK_SIGMA_PIXEL = 4.0            # px
 
 # MPC (bagian 7.3)
 MPC_N = 20                          # horizon 2 detik
@@ -204,90 +204,90 @@ EGO_V0 = V_REF                      # m/s, mulai di kecepatan referensi (bagian 
 # set_target_velocity menetapkan kecepatan BODI; roda masih diam sehingga slip
 # longitudinal mengerem mobil. Terukur: dip ke 36,8 km/jam pada t=1,85 s, mapan
 # kembali t=4,4 s -- 22% dari run 20 detik. Ego dipanaskan dulu tanpa dicatat.
-WARMUP_DETIK = 6.0
+WARMUP_SECONDS = 6.0
 
 # Kriteria keberhasilan satu run (bagian 11.2). Ditetapkan SEBELUM eksperimen
 # dijalankan supaya success rate tidak subjektif.
-LULUS_LATERAL = 0.5                 # m, ambang "kembali ke lajur semula"
-LULUS_TAHAN = 2.0                   # detik, harus bertahan selama ini
-JARAK_AMAN = 1.0                    # m, jarak minimum antar bodi kendaraan
-BATAS_MANUVER = 20.0                # detik, sejak keluar dari LANE_KEEPING
+PASS_LATERAL = 0.5                 # m, ambang "kembali ke lajur semula"
+PASS_HOLD = 2.0                   # detik, harus bertahan selama ini
+SAFE_DISTANCE = 1.0                    # m, jarak minimum antar bodi kendaraan
+MANEUVER_LIMIT = 20.0                # detik, sejak keluar dari LANE_KEEPING
 
 # Zona aman planner & MPC (bagian 7.2), antar PUSAT bodi:
 #   g = ((dx/A)^p + (dy/B)^p)^(1/p) >= 1
 # Harus memuat "persegi terlarang" (setengah sisi = jumlah setengah dimensi +
-# JARAK_AMAN) supaya constraint menjamin syarat lulus. Elips lama A=7, B=2,2 dari
+# SAFE_DISTANCE) supaya constraint menjamin syarat lulus. Elips lama A=7, B=2,2 dari
 # sumbu belakang setara jarak bodi 0,29 m saat berpapasan. Elips biasa (p=2) yang
 # memuat sudut persegi butuh A ~14 m; p=4 cukup 7,71 m. TUNING_MPC.md bagian 13.
 # Dimensi ego = out/vehicle_params.json (dikunci tests/test_planning.py). Kendaraan
-# lain = LAIN_BP, bounding box CARLA terukur. Dipakai HANYA oleh jalur ground
+# lain = OTHER_BP, bounding box CARLA terukur. Dipakai HANYA oleh jalur ground
 # truth dan oleh penilai; jalur vision mengukurnya sendiri (bagian 28.2).
-EGO_PANJANG, EGO_LEBAR = 5.008, 1.882
-SUMBU_KE_PUSAT = 1.433              # m, sumbu belakang (state MPC) -> pusat bodi ego
-LAIN_PANJANG, LAIN_LEBAR = 4.892, 1.837
-LAIN_TINGGI = 1.490                 # m, bounding box Lincoln MKZ 2020, 18 Sep 2026
+EGO_LENGTH, EGO_WIDTH = 5.008, 1.882
+AXLE_TO_CENTER = 1.433              # m, sumbu belakang (state MPC) -> pusat bodi ego
+OTHER_LENGTH, OTHER_WIDTH = 4.892, 1.837
+OTHER_HEIGHT = 1.490                 # m, bounding box Lincoln MKZ 2020, 18 Sep 2026
 # Depth membaca permukaan yang TERLIHAT (bagian 18.4), dan permukaan itu berbeda
 # saat target di depan (muka belakang) dan saat berdampingan (sisi). Rasio
 # lebar/tinggi kotak deteksi membedakannya; keduanya terpisah 2,4x.
-# AR_BELAKANG/AR_SAMPING (1,04 dan 2,48) dihapus 17 Sep 2026: `koreksi_muka` tidak
+# AR_BELAKANG/AR_SAMPING (1,04 dan 2,48) dihapus 17 Sep 2026: `face_correction` tidak
 # lagi menebak sudut pandang dari rasio kotak, melainkan menghitungnya dari garis
 # pandang. Alasannya di WRITING_SUMMARY.md bagian 26.2.
 ELLIPSE_P = 4
 
 
-def zona_dari_dimensi(lain_panjang, lain_lebar, lebar_lajur=None):
+def zone_from_dimensions(other_length, other_width, lane_width=None):
     """(A, B) elips-super dari dimensi kendaraan lain -> zona aman.
 
     Dulu dua konstanta. Jadi fungsi supaya jalur VISION bisa memakai dimensi yang
     DIUKUR sendiri (bagian 28.2) alih-alih dimensi bounding box simulator; jalur
-    ground truth tetap memanggilnya dengan LAIN_PANJANG/LAIN_LEBAR dan karena itu
+    ground truth tetap memanggilnya dengan OTHER_LENGTH/OTHER_WIDTH dan karena itu
     menghasilkan angka yang sama persis seperti sebelumnya.
 
     B di tengah antara batas perlu dan jarak berpapasan di tengah lajur: margin
     seimbang ke keduanya. A = nilai terkecil yang memuat sudut persegi terlarang.
     """
-    w = LANE_WIDTH if lebar_lajur is None else lebar_lajur
-    setengah_panjang = (EGO_PANJANG + lain_panjang) / 2 + JARAK_AMAN
-    setengah_lebar = (EGO_LEBAR + lain_lebar) / 2 + JARAK_AMAN
+    w = LANE_WIDTH if lane_width is None else lane_width
+    half_length = (EGO_LENGTH + other_length) / 2 + SAFE_DISTANCE
+    half_width = (EGO_WIDTH + other_width) / 2 + SAFE_DISTANCE
     # B HARUS melebihi setengah lebar, kalau tidak (1 - (sl/B)^p) negatif dan
     # akar pangkat genapnya kompleks. Titik tengah memenuhi itu selama lajur lebih
     # lebar daripada syarat -- benar untuk dimensi peta, TIDAK selalu benar untuk
     # dimensi hasil ukur di jalur vision. Terbentur nyata saat lebar lajur terukur
     # 3,4 m dan lebar kendaraan tertaksir mendekati batas jepitnya.
-    b = max((w + setengah_lebar) / 2, setengah_lebar * 1.02)
-    a = setengah_panjang / (1 - (setengah_lebar / b) ** ELLIPSE_P) ** (1 / ELLIPSE_P)
+    b = max((w + half_width) / 2, half_width * 1.02)
+    a = half_length / (1 - (half_width / b) ** ELLIPSE_P) ** (1 / ELLIPSE_P)
     return float(a), float(b)
 
 
-_SETENGAH_PANJANG = (EGO_PANJANG + LAIN_PANJANG) / 2 + JARAK_AMAN     # 5,81 m
-_SETENGAH_LEBAR = (EGO_LEBAR + LAIN_LEBAR) / 2 + JARAK_AMAN          # 2,91 m
-ELLIPSE_A, ELLIPSE_B = zona_dari_dimensi(LAIN_PANJANG, LAIN_LEBAR)   # 7,71 / 3,20 m
+_HALF_LENGTH = (EGO_LENGTH + OTHER_LENGTH) / 2 + SAFE_DISTANCE     # 5,81 m
+_HALF_WIDTH = (EGO_WIDTH + OTHER_WIDTH) / 2 + SAFE_DISTANCE          # 2,91 m
+ELLIPSE_A, ELLIPSE_B = zone_from_dimensions(OTHER_LENGTH, OTHER_WIDTH)   # 7,71 / 3,20 m
 
-# Prior dimensi kendaraan lain untuk jalur VISION. Sengaja BUKAN LAIN_PANJANG/
-# LAIN_LEBAR di atas: itu bounding box simulator, dan memakainya berarti jalur
+# Prior dimensi kendaraan lain untuk jalur VISION. Sengaja BUKAN OTHER_LENGTH/
+# OTHER_WIDTH di atas: itu bounding box simulator, dan memakainya berarti jalur
 # vision diam-diam meminjam ground truth. Ini kendaraan desain Toyota Hiace,
 # PDGJ 2021 Tabel 5-9 -- sumber yang sama yang dipakai menjustifikasi kendaraan
 # uji (WRITING_SUMMARY.md bagian 3), dan lebih besar daripada target sebenarnya
 # sehingga priornya konservatif.
-PRIOR_PANJANG, PRIOR_LEBAR = 5.38, 1.88
+PRIOR_LENGTH, PRIOR_WIDTH = 5.38, 1.88
 # Bobot prior dalam satuan "setara berapa pengamatan". Ada pertukaran nyata di
 # sini dan angkanya dipilih sadar, bukan ditebak:
 #
 # Saat target masih tepat di depan (theta ~ 0) panjangnya TIDAK teramati sama
-# sekali -- siluetnya cuma lebar -- padahal justru di situ `koreksi_muka`
+# sekali -- siluetnya cuma lebar -- padahal justru di situ `face_correction`
 # memakai panjang/2 sepenuhnya. Prior yang terlalu lemah membuat panjang
 # melayang bebas persis ketika ia paling dipakai. Prior yang terlalu kuat
 # membiaskan hasil akhir.
 #
-# Terukur pada sapuan sintetis theta 0-42 deg (tests/test_dimensi.py):
+# Terukur pada sapuan sintetis theta 0-42 deg (tests/test_dimensions.py):
 #   bobot 8 -> panjang 5,05 m   bobot 4 -> 4,93 m   bobot 1 -> 4,73 m  (benar 4,61)
 # Dipilih 4: taksirannya meleset ~0,3 m TERLALU PANJANG, yang berarti zona aman
 # sedikit lebih besar daripada perlu -- arah kesalahan yang aman.
-PRIOR_BOBOT = 4.0
+PRIOR_WEIGHT = 4.0
 
 # Skenario (bagian 11.1): kendaraan lain = (jarak awal dari ego m, lajur, kecepatan m/s).
 # Lajur 0 = lajur ego, 1 = lajur menyalip. Kendaraan pertama = target yang disalip.
-SKENARIO = {
+SCENARIOS = {
     'S1': [(60.0, 0, 7.0)],                     # depan lambat, lajur kanan kosong
     # Lajur tujuan terisi kendaraan dari belakang di batas kecepatan: ego harus
     # menunggu sambil mengikuti, lalu menyalip ulang (accelerative overtaking).

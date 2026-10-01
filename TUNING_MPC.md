@@ -72,10 +72,10 @@ dan kehalusan aktuator (chatter).
 |---|---|---|
 | `overshoot%` | `max(sign(step) * (y - step)) / abs(step) * 100` | melewati lajur tujuan itu masalah keselamatan |
 | `settling s` | waktu terakhir `abs(e) > 5% * abs(step)`, ditambah satu tick | seberapa cepat manuver selesai |
-| `sisa m` | rata-rata `abs(e)` pada 1 detik terakhir | error tunak |
+| `residual m` | rata-rata `abs(e)` pada 1 detik terakhir | error tunak |
 | `chatter mrad` | rata-rata `abs(delta_k - delta_{k-1})` **hanya pada 1 detik terakhir** | ukuran "kemudi bergerigi" bagian 7.6 |
 | `jitter tot` | sama, tapi sepanjang run | pembanding; mencampur ramp awal |
-| `v err`, `v sisa`, `v min` | error kecepatan rata-rata, tunak, dan dip terdalam | untuk menyetel throttle PI |
+| `v err`, `v residual`, `v min` | error kecepatan rata-rata, tunak, dan dip terdalam | untuk menyetel throttle PI |
 
 Definisi `chatter` **berubah di tengah proses**, dan perubahan itu membalikkan
 kesimpulan langkah 2 — lihat bagian 5.
@@ -313,7 +313,7 @@ python tuning.py --sweep PI_KP 0.3,0.5,0.8,1.5
 python tuning.py --sweep PI_KP 0.2,0.25,0.3,0.4
 ```
 
-| `kp` | `v err` (m/s) | `v sisa` | `v min` (km/jam) |
+| `kp` | `v err` (m/s) | `v residual` | `v min` (km/jam) |
 |---|---|---|---|
 | 0,04 | 0,520 | 0,452 | 44,6 |
 | **0,08 (proposal)** | **0,110** | **0,002** | **45,8** |
@@ -337,7 +337,7 @@ sapuan terpisah**.
 python tuning.py --sweep PI_KI 0.05,0.15,0.25,0.5
 ```
 
-| `ki` | `v err` | `v sisa` | `v min` |
+| `ki` | `v err` | `v residual` | `v min` |
 |---|---|---|---|
 | 0,05 | 0,142 | 0,123 | 47,6 |
 | 0,15 | 0,056 | 0,032 | 47,8 |
@@ -797,14 +797,14 @@ ketiadaan model.
 
 ## 12. Behavior FSM — mengikuti kendaraan depan dan menyalip ulang
 
-11 September 2026. Skenario uji: S3 (`config.SKENARIO`) -- target 7,0 m/s 60 m di
+11 September 2026. Skenario uji: S3 (`config.SCENARIOS`) -- target 7,0 m/s 60 m di
 depan pada lajur ego, dan kendaraan di lajur tujuan mulai 10 m di belakang ego
 pada 13,9 m/s. Ego tidak boleh langsung menyalip; ia harus menunggu.
 
 ### 12.1 Masalah pada FSM lama
 
 1. Selama `LANE_KEEPING` dan `CHECK_OVERTAKE` planner selalu diberi `V_REF`. Bila
-   lajur tujuan terisi atau `_sempat` (TTC > 3 s) gugur, FSM tertahan di
+   lajur tujuan terisi atau `_enough_time` (TTC > 3 s) gugur, FSM tertahan di
    `CHECK_OVERTAKE` -- syarat batal butuh TTC > 7 s -- sementara ego terus mendekat.
 2. Pemicu memakai TTC terhadap `v_ego`. Ego yang sudah melambat ke kecepatan
    kendaraan depan punya TTC tak hingga, jadi tidak akan pernah memicu menyalip lagi.
@@ -816,7 +816,7 @@ ke target **0,00 m** pada t = 9,05 s, ke kendaraan lajur tujuan 0,04 m -- GAGAL.
 
 | Perubahan | Isi |
 |---|---|
-| Mengikuti | `v_goal = v_depan + 2e/T`, `e = celah - d*`, `d* = ELLIPSE_A + WAKTU_IKUT·v_depan`, `T = max(MANEUVER_TIMES)` |
+| Mengikuti | `v_goal = v_front + 2e/T`, `e = gap - d*`, `d* = ELLIPSE_A + FOLLOW_TIME·v_front`, `T = max(MANEUVER_TIMES)` |
 | Kapan mengikuti | hanya bila menyalip **tidak mungkin**: selisih kecepatan <= `DV_TRIGGER`, waktu tidak cukup, atau lajur tujuan terisi |
 | Pemicu & batal | TTC dihitung dengan `max(v_ego, V_REF)` |
 
@@ -849,7 +849,7 @@ belakang kendaraan 7 m/s.
 **Hanya bila menyalip tidak mungkin.** Melambat saat menyalip masih mungkin
 membuang selisih kecepatan yang justru dipakai untuk menyalip. Tanpa syarat ini,
 `d*` 21 m membuat ego mulai melambat di celah 33,8 m, sebelum pemicu menyalip S1
-di ~32 m. Dikunci `test_tidak_melambat_bila_bisa_menyalip`.
+di ~32 m. Dikunci `test_no_slowdown_when_able_to_overtake`.
 
 **`max(v_ego, V_REF)` untuk pemicu.** Alasan menyalip adalah kendaraan depan lebih
 lambat daripada kecepatan yang **diinginkan**, bukan kecepatan saat ini. Saat ego
@@ -863,16 +863,16 @@ FSM lama tetap lolos tanpa diubah.
 | Tabrakan guardrail di t ~ 30 s | run 35 s melewati ujung ruas lurus 400 m; FSM lama menabrak di titik yang sama | S3 dijalankan 25 s |
 | Jarak bodi 0,87 m ke kendaraan lajur tujuan saat ego diam di lajurnya | kecepatan dipaksa searah hadap aktor; gaya ban memutar arah hadap, kendaraan bergeser -3,50 -> -2,83 m | kecepatan dipaksa searah jalan; drift tinggal -3,60..-3,52 m |
 
-### 12.5 Sapuan `WAKTU_IKUT` (S3, 25 s)
+### 12.5 Sapuan `FOLLOW_TIME` (S3, 25 s)
 
 > **Kesimpulan bagian ini direvisi di bagian 13.7.** Sapuan di bawah diukur dengan
-> elips lama yang tidak menjamin `JARAK_AMAN` (bagian 13.1), jadi titik kritisnya
+> elips lama yang tidak menjamin `SAFE_DISTANCE` (bagian 13.1), jadi titik kritisnya
 > ditentukan oleh cacat itu, bukan oleh jarak ikut.
 
-Simulasi deterministik (dua run `WAKTU_IKUT` 2,0 s identik bit-per-bit), jadi satu
+Simulasi deterministik (dua run `FOLLOW_TIME` 2,0 s identik bit-per-bit), jadi satu
 run per nilai sudah menggambarkan konfigurasi itu.
 
-| `WAKTU_IKUT` | Celah ikut min | Jarak bodi ke target | Fase jarak terdekat | Perlambatan min | Mulai salip | Vonis |
+| `FOLLOW_TIME` | Celah ikut min | Jarak bodi ke target | Fase jarak terdekat | Perlambatan min | Mulai salip | Vonis |
 |---|---|---|---|---|---|---|
 | FSM lama | -- | 0,00 m | `CHECK_OVERTAKE` | -1,79 m/s² | tidak pernah | GAGAL |
 | 1,0 s | 11,2 m | 0,07 m | `LANE_CHANGE_OVERTAKE` | -1,83 | 12,50 s | GAGAL |
@@ -912,13 +912,13 @@ Penurunan 1,71 -> 1,43 m berasal dari perbaikan drift (12.4): dulu target
 bergeser +0,3 m menjauhi lintasan ego, sekarang tetap di tengah lajur. Angka lama
 sedikit terlalu optimis.
 
-### 12.7 Terbuka: elips tidak menjamin `JARAK_AMAN` — SELESAI di bagian 13
+### 12.7 Terbuka: elips tidak menjamin `SAFE_DISTANCE` — SELESAI di bagian 13
 
 Dimensi terukur: ego 5,01 × 1,88 m, Nissan Patrol 4,60 × 1,93 m. Tepat di batas
 elips saat berpapasan (`dx = 0`), `ELLIPSE_B = 2,2 m` setara jarak bodi
 `2,2 - (1,88 + 1,93)/2 = 0,29 m`, jauh di bawah syarat lulus 1,0 m. Jarak berpapasan
 1,42 m saat ini dijamin geometri lajur, bukan constraint -- dan sudah turun ke
-1,13 m pada `WAKTU_IKUT` 2,5 s.
+1,13 m pada `FOLLOW_TIME` 2,5 s.
 
 Agar constraint menjamin syarat lulus: `ELLIPSE_B >= (1,88 + 1,93)/2 + 1,0 = 2,91 m`.
 Mengubahnya memengaruhi saringan planner dan constraint MPC, jadi S1 dan S3 harus
@@ -950,23 +950,23 @@ dipakai planner dan MPC benar-benar menjamin syarat lulus jarak aman 1,0 m?
 Elips lama `A = 7,0`, `B = 2,2` diukur dari **sumbu belakang** ego. Saat
 berpapasan (`dx = 0`) batas elips ada di jarak pusat lateral 2,2 m. Dengan lebar
 ego 1,88 m dan Nissan Patrol 1,93 m, itu setara jarak bodi
-`2,2 - (1,88 + 1,93)/2 = 0,29 m` -- jauh di bawah `JARAK_AMAN = 1,0 m`.
+`2,2 - (1,88 + 1,93)/2 = 0,29 m` -- jauh di bawah `SAFE_DISTANCE = 1,0 m`.
 
 Jarak berpapasan yang tercapai selama ini (1,4-1,9 m) datang dari geometri lajur,
-bukan dari constraint. Pada `WAKTU_IKUT = 2,5 s` angkanya sudah turun ke 1,13 m.
+bukan dari constraint. Pada `FOLLOW_TIME = 2,5 s` angkanya sudah turun ke 1,13 m.
 
 ### 13.2 Syarat yang benar dan bentuk zona
 
-Jarak bodi >= `JARAK_AMAN` dijamin bila zona memuat seluruh **persegi terlarang**
+Jarak bodi >= `SAFE_DISTANCE` dijamin bila zona memuat seluruh **persegi terlarang**
 antar pusat bodi:
 
 | Setengah sisi | Rumus | Nilai |
 |---|---|---|
-| memanjang | `(L_ego + L_lain)/2 + JARAK_AMAN` | 5,81 m |
-| melintang | `(W_ego + W_lain)/2 + JARAK_AMAN` | 2,91 m |
+| memanjang | `(L_ego + L_lain)/2 + SAFE_DISTANCE` | 5,81 m |
+| melintang | `(W_ego + W_lain)/2 + SAFE_DISTANCE` | 2,91 m |
 
-State MPC adalah sumbu belakang, jadi pusat bodi digeser `SUMBU_KE_PUSAT` = 1,433 m
-(terukur, dikunci `test_dimensi_ego_di_config_sama_dengan_hasil_ukur`).
+State MPC adalah sumbu belakang, jadi pusat bodi digeser `AXLE_TO_CENTER` = 1,433 m
+(terukur, dikunci `test_ego_dimensions_in_config_match_measured`).
 
 **Elips biasa tidak praktis.** `B` harus lebih kecil dari lebar lajur (3,50 m),
 kalau tidak berpapasan di tengah lajur sebelah jadi tidak layak dan menyalip
@@ -992,22 +992,22 @@ Kedua parameter **diturunkan di `config.py`, bukan diketik**:
   sebelah) = **3,204 m**; margin ~0,30 m ke masing-masing sisi.
 - `A` = nilai terkecil yang masih memuat sudut persegi = **7,709 m**.
 
-Dikunci `test_zona_aman_memuat_persegi_terlarang`: seluruh tepi persegi ada di
+Dikunci `test_safety_zone_contains_forbidden_rectangle`: seluruh tepi persegi ada di
 dalam zona, sementara berpapasan di tengah lajur sebelah tetap layak.
 
 ### 13.3 Hipotesis yang gugur: margin `B` kurang
 
-Setelah zona dipasang, `WAKTU_IKUT` 1,0 dan 2,5 s gagal `lane_departure` (ego
+Setelah zona dipasang, `FOLLOW_TIME` 1,0 dan 2,5 s gagal `lane_departure` (ego
 terlempar ke y -4,89 dan -5,36 m). Dugaan pertama: margin `B` terhadap jalur
 berpapasan terlalu tipis. Diuji dengan p = 6 supaya `B` bisa mengecil tanpa `A`
 meledak: (B, A) = (3,0; 7,78), (3,1; 7,02), (3,2; 6,66), masing-masing untuk S1
-dan S3 pada `WAKTU_IKUT` 1,5 / 2,0 / 2,5 s.
+dan S3 pada `FOLLOW_TIME` 1,5 / 2,0 / 2,5 s.
 
-**Hasilnya praktis sama di ketiganya**, dan `WAKTU_IKUT = 2,5 s` tetap gagal di
+**Hasilnya praktis sama di ketiganya**, dan `FOLLOW_TIME = 2,5 s` tetap gagal di
 semua varian. Bentuk zona bukan penyebabnya. Karena tidak ada beda terukur,
 dipakai p = 4, yang paling dekat dengan elips.
 
-### 13.4 Gerbang kembali `DD_KEMBALI` — mengobati gejala
+### 13.4 Gerbang kembali `DD_RETURN` — mengobati gejala
 
 Dari 16 run terkumpul korelasi yang bersih:
 
@@ -1018,7 +1018,7 @@ Dari 16 run terkumpul korelasi yang bersih:
 
 Quintic kembali (T = 4 s) yang berangkat dengan laju menjauh `u` kebablasan ke
 luar: `u = 0,1` -> 0,017 m; `u = 0,91` -> 0,40 m (terukur 0,47 m). Derau laju
-lateral saat menjaga lajur maksimum 0,0014 m/s, jadi ambang `DD_KEMBALI = 0,1 m/s`
+lateral saat menjaga lajur maksimum 0,0014 m/s, jadi ambang `DD_RETURN = 0,1 m/s`
 ~70x di atas derau dan jauh di bawah kasus gagal.
 
 Setelah gerbang dipasang, ego memang selalu mulai kembali saat sudah bergerak
@@ -1030,7 +1030,7 @@ jadi ia tidak menutupi apa pun.
 
 ### 13.5 Akar masalah: lup planner-MPC lewat percepatan lateral terukur
 
-Planner dijalankan ulang secara offline dari log per tick (`WAKTU_IKUT` 2,5 s):
+Planner dijalankan ulang secara offline dari log per tick (`FOLLOW_TIME` 2,5 s):
 
 | t | Kejadian |
 |---|---|
@@ -1070,18 +1070,18 @@ Jarak 1,88 m pada kolom tengah bukan perbaikan kendali: ego terdorong keluar
 sampai -4,31 m, tepat menyentuh garis lajur ketiga. Setelah lup diputus, ego
 berpapasan dari tengah lajur tujuan dengan jarak 1,39 m dan tetap di lajurnya.
 
-### 13.7 Pemilihan `WAKTU_IKUT` (revisi bagian 12.5)
+### 13.7 Pemilihan `FOLLOW_TIME` (revisi bagian 12.5)
 
 S3, 25 detik, zona baru + `y''` dari rencana:
 
-| `WAKTU_IKUT` | Celah ikut min | Jarak bodi | Deviasi lajur | Nol kandidat | Perlambatan min | Durasi | Vonis |
+| `FOLLOW_TIME` | Celah ikut min | Jarak bodi | Deviasi lajur | Nol kandidat | Perlambatan min | Durasi | Vonis |
 |---|---|---|---|---|---|---|---|
 | 1,0 s | 13,2 m | 1,69 m | 0,010 m | 12 tick | -1,61 m/s² | 16,6 s | BERHASIL |
 | 1,5 s | 15,5 m | 1,42 m | 0,011 m | 4 tick | -1,88 | 16,9 s | BERHASIL |
 | **2,0 s** | **18,6 m** | **1,49 m** | **0,012 m** | **0 tick** | **-1,91** | 18,0 s | **BERHASIL** |
 | 2,5 s | 22,0 m | 1,52 m | 0,012 m | 0 tick | -1,96 | 18,1 s | BERHASIL |
 
-Keempatnya kini lolos, dan jarak bodi tidak lagi bergantung `WAKTU_IKUT` -- itu
+Keempatnya kini lolos, dan jarak bodi tidak lagi bergantung `FOLLOW_TIME` -- itu
 memang yang diharapkan setelah constraint menjamin jarak aman (13.2).
 
 **2,0 s dipilih sebagai nilai terkecil yang tidak pernah membuat planner kehabisan
@@ -1090,7 +1090,7 @@ kejadian itulah yang dulu menendang ego keluar (13.5). Menaikkan ke 2,5 s tidak
 menambah apa pun selain jarak ikut yang lebih jauh.
 
 Batasan: resolusi sapuan 0,5 s, satu skenario, dan simulasinya deterministik
-(dua run `WAKTU_IKUT` 2,0 s identik bit-per-bit) sehingga satu run per nilai
+(dua run `FOLLOW_TIME` 2,0 s identik bit-per-bit) sehingga satu run per nilai
 sudah menggambarkan konfigurasi itu. Perlu diulang setelah S2/S4/S5 dan vision.
 
 ### 13.8 Terbuka

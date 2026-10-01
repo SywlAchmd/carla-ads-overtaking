@@ -9,7 +9,7 @@ Rencana kerja lengkap: `rencana_skripsi_mpc_overtaking.md` — **tidak ada di re
 ini maupun di mesin pengembangan**; dicari 16 September 2026 dan tidak ditemukan.
 Seluruh rujukan "bagian X.Y" di bawah menunjuk dokumen itu. Bagian 11.3 (definisi
 skenario) karena itu tidak pernah bisa dicocokkan: definisi S1 dan S3 di
-`config.SKENARIO` adalah rekonstruksi, dan S2/S4/S5 tidak punya definisi sama sekali.
+`config.SCENARIOS` adalah rekonstruksi, dan S2/S4/S5 tidak punya definisi sama sekali.
 
 ---
 
@@ -803,8 +803,8 @@ dan sumber gambar/video untuk bab metodologi (bagian 11.6 minta video direkam
 sejak awal, bukan setelah eksperimen selesai).
 
 Menghasilkan playback manuver menyalip dengan **overlay kandidat**: biru = 9
-kemungkinan lintasan, hijau = yang dipilih. Dua sudut kamera (`--kamera atas`
-potret / `--kamera kejar`).
+kemungkinan lintasan, hijau = yang dipilih. Dua sudut kamera (`--camera top`
+potret / `--camera kejar`).
 
 **Ini playback, bukan hasil kendali.** Physics dimatikan, posisi ego ditempelkan
 ke lintasan planner. Beri label "lintasan hasil local planner" kalau dipakai di
@@ -821,7 +821,7 @@ bersebelahan), simpangan ego baru -2,16 m dari -3,50 (masih separuh di lajur
 lama). Constraint elips `g = 0,709` -- **dilanggar**.
 
 **Penyebab:** `plan_lane_change` dipanggil tanpa argumen `obstacles`. Planner
-tidak tahu ada kendaraan di sana. Ditambah `GAP_AWAL = 30 m` yang membuat TTC
+tidak tahu ada kendaraan di sana. Ditambah `GAP_INITIAL = 30 m` yang membuat TTC
 (2,35 s) lebih pendek dari durasi manuver (4 s) -- persis kondisi yang dilarang
 bagian 6.
 
@@ -838,7 +838,7 @@ polos sehingga warna hilang total dan sembilan kandidat menyatu jadi satu
 gumpalan. Mematikan `bloom_intensity` tidak menolong.
 
 **Solusi:** rekam frame bersih, lalu proyeksikan titik lintasan ke bidang gambar
-memakai matriks kamera (`proyeksi()`) dan gambar dengan PIL setelahnya. Kontrol
+memakai matriks kamera (`projection()`) dan gambar dengan PIL setelahnya. Kontrol
 penuh atas warna, ketebalan, transparansi, dan bisa menyembunyikan bagian
 lintasan di belakang mobil.
 
@@ -848,7 +848,7 @@ lintasan di belakang mobil.
 ### Receding horizon 10 Hz
 
 Versi awal memanggil planner **sekali** per manuver -- tidak reaktif, dan itu
-terlihat: kipas kandidat diam di tempat. Diganti dengan `rangkai_receding()`
+terlihat: kipas kandidat diam di tempat. Diganti dengan `chain_receding()`
 yang mengulang seluruh proses tiap 100 ms dari state lateral ego saat itu,
 sesuai frekuensi di bagian 2.
 
@@ -875,7 +875,7 @@ Garis waktu fase, cocok dengan tabel bagian 6:
 | t | Fase | Pemicu |
 |---|---|---|
 | 0 - 3,6 s | `ikuti_lajur` | celah 50 -> 25 m |
-| 3,7 s | -> `menyalip` | celah 24,5 m < ambang 25 m |
+| 3,7 s | -> `overtaking` | celah 24,5 m < ambang 25 m |
 | 9,0 s | -> `kembali` | ego unggul 12,1 m |
 | 14,7 s | kembali di lajur asal | simpangan < 0,05 m |
 
@@ -967,7 +967,7 @@ dan dwell time terikat satu pertidaksamaan; menyatakannya dalam satuan waktu
 membuat keterikatan itu eksplisit dan satu konstanta menutupi seluruh rentang
 kecepatan.
 
-Uji `test_ambang_menyesuaikan_selisih_kecepatan` mengunci sifat ini: celah
+Uji `test_threshold_adapts_to_speed_difference` mengunci sifat ini: celah
 pemicu harus naik seiring selisih kecepatan, dan rasio celah/dv harus tetap di
 sekitar `TTC_TRIGGER`.
 
@@ -1031,7 +1031,7 @@ definisi fundamental adalah hal yang lazim, bukan kelemahan.
 | Ambang | Nilai | Peran | Padanan literatur |
 |---|---|---|---|
 | `TTC_TRIGGER` | 5,0 s | mulai **mempertimbangkan** (`LANE_KEEPING -> CHECK_OVERTAKE`) | tidak ada padanan langsung |
-| `_sempat()` | **3,0 s** | boleh **mengeksekusi** (`CHECK_OVERTAKE -> LANE_CHANGE_OVERTAKE`) | Bai dkk. baseline **3,0 s**; Lin dkk. 2,7 s |
+| `_enough_time()` | **3,0 s** | boleh **mengeksekusi** (`CHECK_OVERTAKE -> LANE_CHANGE_OVERTAKE`) | Bai dkk. baseline **3,0 s**; Lin dkk. 2,7 s |
 
 Gerbang eksekusi 3,0 s **persis sama dengan baseline Bai dkk.** dan dekat dengan
 2,7 s Lin dkk. Itu bukan kebetulan yang perlu dijelaskan: nilainya datang dari
@@ -1071,10 +1071,10 @@ literatur adalah 2,7-4,5 s, dan Bai dkk. menyediakan kerangka studi sensitivitas
 **Abort tidak menunggu dwell.** Bagian 6 menulis dwell 0,3 s untuk "setiap
 transisi", tapi menunda pembatalan justru menambah risiko. Chattering *masuk* ke
 abort jauh lebih aman daripada chattering *keluar* darinya, jadi jalur
-`LANE_CHANGE_OVERTAKE -> LANE_KEEPING` dieksekusi seketika lewat `_langsung()`.
+`LANE_CHANGE_OVERTAKE -> LANE_KEEPING` dieksekusi seketika lewat `_immediate()`.
 Transisi lain tetap memakai dwell.
 
-**`_terdepan` tidak dipakai di state `OVERTAKING`.** Fungsi itu hanya melihat
+**`_leading` tidak dipakai di state `OVERTAKING`.** Fungsi itu hanya melihat
 `x > 0`, sehingga kendaraan yang baru terlewati 1 m sudah dianggap hilang dan FSM
 langsung kembali ke lajur — melanggar syarat `PASS_MARGIN = 8 m` di bagian 6.
 Diganti dengan pemeriksaan seluruh kendaraan di lajur asal yang posisinya masih
@@ -1086,7 +1086,7 @@ Diganti dengan pemeriksaan seluruh kendaraan di lajur asal yang posisinya masih
 abort dengan input sintetis, tapi skenario S3 (kendaraan di lajur tujuan, celah
 terbatas) belum dijalankan di simulator. Itu bagian dari Tahap 9.
 
-**Ambang lain belum dituning.** `D_SAFE_DEPAN`, `D_SAFE_BELAKANG`, dan
+**Ambang lain belum dituning.** `D_SAFE_FRONT`, `D_SAFE_REAR`, dan
 `PASS_MARGIN` masih memakai nilai dari bagian 6 apa adanya. Bagian 11.5
 menyarankan mencatat jumlah abort per skenario sebagai diagnostik: sering abort
 di S1 (lajur kosong) berarti terlalu konservatif.
@@ -1236,7 +1236,7 @@ bekerja di frame ini, jadi tidak ada dua konvensi yang harus dijaga sinkron.
 Ditaruh di `localization.py` sesuai aturan 2.4.
 
 **Satu pengecualian yang disengaja:** FSM memakai `x` **relatif** terhadap ego
-(`_terdepan` menyaring `x > 0`), sedangkan planner dan MPC memakai `x`
+(`_leading` menyaring `x > 0`), sedangkan planner dan MPC memakai `x`
 **absolut** di frame jalan. Main loop menggeser satu baris sebelum memanggil
 FSM. Mengubah tanda tangan FSM akan memaksa 17 uji ditulis ulang untuk keuntungan
 yang tidak ada.
@@ -1316,7 +1316,7 @@ mengikutinya.
 
 **Solusi:** `steer = -delta / (delta_max_phys x curve(v))`. Uji `--steer`
 diperbaiki agar membandingkan di frame yang sama, plus uji unit
-`test_steer_membalik_tanda` yang mengunci tandanya.
+`test_steer_flips_sign` yang mengunci tandanya.
 
 **Pelajaran:** uji yang menyalin konvensi dari kode yang diujinya tidak menguji
 apa-apa. Bug ini hanya muncul di loop tertutup, karena open-loop tidak punya
@@ -1329,7 +1329,7 @@ umpan balik yang bisa meledak.
 **Gejala:** kecepatan ambles 50 -> 7 km/jam pada t=12 s padahal celah ke
 kendaraan depan masih 42 m. Bukan penghindaran.
 
-**Ukuran:** `a_ukur = (v - v_prev)/dt` di 20 Hz menghasilkan **-26,8 sampai
+**Ukuran:** `a_meas = (v - v_prev)/dt` di 20 Hz menghasilkan **-26,8 sampai
 +12,8 m/s²**, simpangan baku 3,53, lompatan antar-tick sampai 19,9 -- padahal
 batas fisiknya -6 sampai +3. **23 dari 400 tick di luar batas fisik.**
 
@@ -1364,7 +1364,7 @@ Setelah akar penyebabnya diperbaiki, `MPC_MAX_ITER` dikembalikan ke 100 dan
 waktu solve turun (maks 56 -> 47 ms). Kenaikan batas iterasi memang cuma
 tambalan gejala.
 
-Dikunci uji `test_kecepatan_sedikit_di_atas_v_max_tetap_terpecahkan`.
+Dikunci uji `test_speed_slightly_above_v_max_still_solvable`.
 
 ---
 
@@ -1444,9 +1444,9 @@ masih diam**. Slip longitudinal besar menghasilkan gaya pengereman:
 | Porsi run 20 detik | **22%** |
 | Deviasi lateral selama transien | 0,005 m (murni masalah memanjang) |
 
-**Solusi: fase pemanasan sebelum pencatatan.** Ego dijalankan `WARMUP_DETIK = 6`
+**Solusi: fase pemanasan sebelum pencatatan.** Ego dijalankan `WARMUP_SECONDS = 6`
 dengan pipeline lengkap tapi tanpa logging. Kendaraan target baru di-spawn
-setelah itu, tepat `GAP_AWAL` di depan posisi ego yang **sebenarnya**.
+setelah itu, tepat `GAP_INITIAL` di depan posisi ego yang **sebenarnya**.
 
 **Dampak pada metrik:**
 
@@ -1465,7 +1465,7 @@ akan merugikan hasil sendiri.
 Efek samping: graf CasADi ikut terbangun saat pemanasan, sehingga outlier 429 ms
 di tick pertama hilang dari statistik waktu solve.
 
-Bonus ketepatan: jarak awal sekarang **tepat** `GAP_AWAL`. Sebelumnya target
+Bonus ketepatan: jarak awal sekarang **tepat** `GAP_INITIAL`. Sebelumnya target
 di-spawn relatif `x = 0` sedangkan ego mulai di `x = -1,53`, jadi jarak
 sebenarnya 61,5 m -- bagian 11.1 minta jarak awal ditetapkan per skenario.
 
@@ -1556,7 +1556,7 @@ angka membaik, jangan cuma bahwa ia membaik.
 
 ### Kolom log bertambah
 
-`n_layak` (jumlah kandidat lolos) dan `offset` (offset terpilih) kini ikut
+`n_feasible` (jumlah kandidat lolos) dan `offset` (offset terpilih) kini ikut
 dicatat per tick -- bagian 11.5 menyebut keduanya sebagai diagnostik apakah
 sampling `T` dan `y_target` cocok. Kalau sering nol, samplingnya yang salah.
 
@@ -1605,7 +1605,7 @@ Lima metrik per konfigurasi:
 |---|---|
 | `overshoot%` | sejauh mana `y` melewati target, searah gerakan |
 | `settling s` | waktu sampai `\|e\|` menetap di bawah 5% besar lompatan |
-| `sisa m` | rata-rata `\|e\|` pada 1 detik terakhir |
+| `residual m` | rata-rata `\|e\|` pada 1 detik terakhir |
 | `jitter mrad` | rata-rata `\|delta_k - delta_{k-1}\|` -- **angka untuk "kemudi bergerigi"** |
 | `delta maks` | apakah menyentuh batas kemudi |
 
@@ -1616,7 +1616,7 @@ Plus waktu solve dan jumlah solver gagal.
 
 ### Override bobot
 
-`MPCController.__init__` menerima argumen `bobot` yang menimpa nilai `config`
+`MPCController.__init__` menerima argumen `weight` yang menimpa nilai `config`
 tanpa mengeditnya:
 
 ```
@@ -1651,12 +1651,12 @@ Bedanya baru terlihat saat halangan mengapit ego: urutan absolut menyimpan yang
 di belakang dan membuang yang di depan. Belum berdampak di S1 (satu kendaraan
 saja) tapi S3 punya dua. Sekarang memakai jarak dari ego, dikunci uji.
 
-**`ddy` diperiksa, ternyata bersih.** Sempat dicurigai berderau seperti `a_ukur`
+**`ddy` diperiksa, ternyata bersih.** Sempat dicurigai berderau seperti `a_meas`
 (rentang -26,8..+12,8 m/s²), tapi terukur hanya -0,49..+0,62 m/s² dengan sd
 0,236. Sebabnya `dy = v*sin(yaw)` dan `yaw` datang langsung dari transform,
 bukan hasil turunan numerik. Tidak perlu difilter.
 
-**`siapkan_jalan()` diekstrak** ke `main.py` dan dipakai bersama `tuning.py`.
+**`prepare_road()` diekstrak** ke `main.py` dan dipakai bersama `tuning.py`.
 
 ---
 
@@ -1814,7 +1814,7 @@ apa yang dilihat.
 
 **Solusi:** perception mengeluarkan `(M, 4) = [x, y, vx, vy]` **frame ego**,
 posisi **dan kecepatan** relatif terhadap ego. Konversi ke frame jalan pindah ke
-`localization.halangan_ego_ke_jalan()` -- rotasi menurut `ego.yaw`, translasi
+`localization.obstacles_ego_to_road()` -- rotasi menurut `ego.yaw`, translasi
 menurut posisi ego, dan penambahan kecepatan ego (bagian 10.4 menyebut kecepatan
 dari perception memang relatif).
 
@@ -1886,7 +1886,7 @@ laporkan kondisinya.
 **Akibat untuk uji:** `test_waktu_solve_di_bawah_anggaran` gagal karena beban,
 bukan karena kode. Uji yang gagal karena lingkungan lebih buruk daripada tidak
 ada uji -- ia melatih orang mengabaikan kegagalan. Diganti
-`test_jumlah_iterasi_solver_wajar` yang meng-assert **jumlah iterasi IPOPT**
+`test_solver_iteration_count_reasonable` yang meng-assert **jumlah iterasi IPOPT**
 (murni algoritmik, tidak terpengaruh beban). Waktu solve tetap dicetak sebagai
 informasi.
 
@@ -1942,7 +1942,7 @@ terlambat.
 penjadwalan thread server; mesin berbeda, peluangnya berbeda. Pelajarannya:
 determinisme yang tidak ditegakkan oleh kode hanyalah kebetulan.
 
-**Perbaikan:** `simulation.tick(world, perintah)` -- satu-satunya jalan perintah
+**Perbaikan:** `simulation.tick(world, commands)` -- satu-satunya jalan perintah
 aktor. `tests/test_architecture.py` menolak `.apply_control(`,
 `.set_target_velocity(`, `.set_transform(` di luar `simulation.py`.
 
@@ -1986,7 +1986,7 @@ menyalip lagi**. Rincian dan angka di `TUNING_MPC.md` bagian 12.
 **Yang diubah (`planning.BehaviorFSM`):** `v_goal` mengikuti kendaraan depan bila
 menyalip tidak mungkin; pemicu dan batal memakai `max(v_ego, V_REF)` supaya ego
 yang sudah melambat tetap bisa memicu menyalip. Hasilnya perilaku *accelerative
-overtaking*. `main.py` kini menjalankan skenario dari `config.SKENARIO`.
+overtaking*. `main.py` kini menjalankan skenario dari `config.SCENARIOS`.
 
 **Jalan buntu yang ditempuh, berurutan:**
 
@@ -2000,9 +2000,9 @@ overtaking*. `main.py` kini menjalankan skenario dari `config.SKENARIO`.
    hanya dipaksa kecepatannya searah hadapnya sendiri, arah hadap berputar oleh
    gaya ban, penghalang bergeser -3,50 -> -2,83 m. Kecepatan kini dipaksa searah
    jalan; drift tinggal <= 0,08 m.
-4. **`WAKTU_IKUT` 2,0 s memicu pelambatan di S1** sebelum pemicu menyalip (d* 21 m,
+4. **`FOLLOW_TIME` 2,0 s memicu pelambatan di S1** sebelum pemicu menyalip (d* 21 m,
    hukum aktif di celah < 33,8 m). Syarat "hanya bila menyalip tidak mungkin"
-   diberlakukan juga di `LANE_KEEPING`; dikunci `test_tidak_melambat_bila_bisa_menyalip`.
+   diberlakukan juga di `LANE_KEEPING`; dikunci `test_no_slowdown_when_able_to_overtake`.
 
 **Hasil:** S3 BERHASIL (jarak bodi 1,42 m, durasi 18,9 s), FSM lama GAGAL (0,00 m).
 S1 tetap BERHASIL; jarak minimum 1,71 -> 1,43 m karena target kini benar-benar
@@ -2011,9 +2011,9 @@ di tengah lajur (dulu bergeser +0,3 m menjauhi ego -- angka lama terlalu optimis
 **Sitasi:** penulis menetapkan sitasi baru harus terbit <= 4 tahun, ber-URL, dan
 isinya dibuka. ISO 15622 (2018), Rajamani (2012), Li dkk. (2011), dan buku teks
 kendali klasik karena itu **tidak dipakai**. Nilai time gap ISO 15622 dari sumber
-<= 4 tahun tidak ditemukan -- `WAKTU_IKUT` bersandar pada sapuan eksperimen.
+<= 4 tahun tidak ditemukan -- `FOLLOW_TIME` bersandar pada sapuan eksperimen.
 
-**Terbuka:** `ELLIPSE_B` 2,2 m tidak menjamin `JARAK_AMAN` 1,0 m (README #1).
+**Terbuka:** `ELLIPSE_B` 2,2 m tidak menjamin `SAFE_DISTANCE` 1,0 m (README #1).
 
 ---
 
@@ -2027,19 +2027,19 @@ belakang) hanya setara jarak bodi 0,29 m saat berpapasan. Jarak yang selama ini
 tercapai datang dari lebar lajur, bukan dari constraint.
 
 **Zona baru.** Elips-super pangkat 4 antar pusat bodi, memuat seluruh persegi
-terlarang (setengah sisi 5,81 x 2,91 m = dimensi kedua kendaraan + JARAK_AMAN).
+terlarang (setengah sisi 5,81 x 2,91 m = dimensi kedua kendaraan + SAFE_DISTANCE).
 `A = 7,709` dan `B = 3,204` **diturunkan di config dari dimensi terukur**, tidak
 diketik. Elips biasa butuh A 11-14 m untuk memuat sudut yang sama, terlalu panjang.
 Dikunci dua uji baru.
 
 **Dua jalan buntu sebelum akar masalah ketemu:**
 
-1. **Margin B.** Setelah zona dipasang, `WAKTU_IKUT` 1,0 dan 2,5 s gagal
+1. **Margin B.** Setelah zona dipasang, `FOLLOW_TIME` 1,0 dan 2,5 s gagal
    lane_departure. Dikira margin B terhadap jalur berpapasan terlalu tipis;
    disapu B 3,0/3,1/3,2 dengan p=6 -- hasilnya praktis sama, 2,5 s tetap gagal.
    Bentuk zona bukan penyebab.
 2. **Gerbang kembali.** Korelasi 16 run bersih: semua run gagal memulai kembali ke
-   lajur saat ego masih bergerak menjauh 0,91-1,89 m/s. Dipasang `DD_KEMBALI`
+   lajur saat ego masih bergerak menjauh 0,91-1,89 m/s. Dipasang `DD_RETURN`
    0,1 m/s (didukung analisis quintic dan derau 0,0014 m/s). Ego memang tidak lagi
    mulai kembali di tengah ayunan, **tapi 1,0 dan 2,5 s tetap gagal** karena
    lemparannya sudah terjadi lebih awal, saat `OVERTAKING`. Gerbang dipertahankan
@@ -2055,7 +2055,7 @@ Ini persis TEMUAN 2 Tahap 5 di sisi lateral; `a0` longitudinal sudah lama memaka
 nilai yang diperintahkan. Perbaikan: `y''` awal diambil dari lintasan rencana
 sebelumnya (`Trajectory.lateral_at`), posisi dan kecepatan tetap terukur.
 
-**Hasil.** S1 dan S3 BERHASIL dan deterministik; `WAKTU_IKUT` 1,0-2,5 s semuanya
+**Hasil.** S1 dan S3 BERHASIL dan deterministik; `FOLLOW_TIME` 1,0-2,5 s semuanya
 lolos. Deviasi lajur S1 turun 0,161 -> **0,011 m** (maks 0,530 -> 0,152 m), dan
 ego tidak lagi terdorong sampai menyentuh garis lajur ketiga.
 
@@ -2081,7 +2081,7 @@ derajat sudut bodi bergeser ~0,31 m yang tidak dihitung (README #1).
 2. **Sudut hadap diabaikan.** Pada 5 derajat, kotak sejajar sumbu melebihkan jarak
    ~0,2 m.
 
-`evaluation.jarak_kotak` sekarang memutar kedua kotak menurut sudut hadapnya dan
+`evaluation.box_distance` sekarang memutar kedua kotak menurut sudut hadapnya dan
 mengukur dari pusat bodi. Poligon cembung yang terpisah selalu punya jarak minimum
 di pasangan titik-sudut ke sisi, jadi cukup memeriksa kedua arah, ditambah uji
 sumbu pemisah untuk kasus bertumpuk. Yaw kendaraan lain ikut dicatat di log: yang
@@ -2262,7 +2262,7 @@ angka menyesatkan karena alat ukurnya, bukan karena yang diukur.
 
 Terukur `ego.bounding_box.location.x = -0,005 m`: titik asal aktor = pusat bodi.
 Jadi `GroundTruthPerception` melaporkan relatif pusat bodi ego, sementara
-`halangan_ego_ke_jalan` menambahkan `ego.x` yang sumbu belakang. Halangan di
+`obstacles_ego_to_road` menambahkan `ego.x` yang sumbu belakang. Halangan di
 frame jalan meleset **1,433 m terlalu dekat**.
 
 Arahnya konservatif -- zona aman efektif 7,71 + 1,43 = 9,14 m ke depan -- jadi
@@ -2274,7 +2274,7 @@ yang KETIGA di proyek ini, setelah bias XTE Tahap 1 dan kotak penilai jarak.
 menuliskan acuannya sendiri: zona planner & MPC menggeser ego ke pusat bodi lalu
 mengurangkan halangan (jadi pusat-ke-pusat), sementara `main.py` mengurangkan
 `ego.x` untuk FSM (jadi sumbu belakang -> pusat, persis yang didokumentasikan
-`planning._v_ikut`). `main.py` tidak perlu disentuh. Dikunci
+`planning._v_follow`). `main.py` tidak perlu disentuh. Dikunci
 `tests/test_localization.py`.
 
 ### Hasil setelah perbaikan
@@ -2300,7 +2300,7 @@ regresi, tapi tetap butir terbuka.
 
 16 September 2026. Angka di `WRITING_SUMMARY.md` bagian 19.6-19.7.
 
-`main.py` dapat flag `--perception vision|gt` dan `--rekam`. Mode gt sengaja
+`main.py` dapat flag `--perception vision|gt` dan `--record`. Mode gt sengaja
 tidak memasang rig kamera sama sekali, supaya hasilnya tetap identik dengan run
 sebelumnya tanpa beban render tambahan.
 
@@ -2320,7 +2320,7 @@ diperluas ke lajur sebelah sudut besar.
 
 ### ffmpeg tidak ada di mesin ini
 
-`overlay.Perekam.simpan` semula memanggil ffmpeg seperti `record_path.capture`,
+`overlay.Recorder.save` semula memanggil ffmpeg seperti `record_path.capture`,
 dan gagal di akhir run 20 detik. Diganti `cv2.VideoWriter`: OpenCV sudah jadi
 dependensi perception, sedangkan ffmpeg dependensi sistem yang ternyata belum
 terpasang. Frame-nya selamat karena `rmtree` berada setelah encode, jadi run-nya
@@ -2445,7 +2445,7 @@ karena run vision sudah terulang setelah bagian 19.14. Yang disapu justru yang
 tidak bisa disentuh step response: ambang FSM dan bobot pemilihan kandidat.
 
 Jebakan: durasi run 15 detik memberi vonis PALSU `lane_departure` di semua
-konfigurasi, karena manuver selesai ~15 s dan run terpotong sebelum LULUS_TAHAN
+konfigurasi, karena manuver selesai ~15 s dan run terpotong sebelum PASS_HOLD
 2,0 s. Disamakan dengan main.py (20 s).
 
 **Hanya satu pasangan berubah**: Q_y 20 -> 150, Q_psi 450 -> 3400. K_DEV,
@@ -2470,7 +2470,7 @@ akan pernah menemukan 3400.
 Dugaan "vision lebih berisik jadi butuh dwell lebih panjang" terbantah: 0,5 dan
 0,8 s jauh lebih buruk (nol kandidat 38 -> 44 -> 68, rem tersaturasi -6,00).
 Peredamannya sudah ada di tempat yang lebih tepat -- TRACK_N_INIT 3 frame dan
-melayang 5 frame di `tracking.Pelacak`.
+melayang 5 frame di `tracking.Tracker`.
 
 ### Hasil
 
@@ -2636,7 +2636,7 @@ Cara mengenali frame lamunan: `x_est` naik persis 0,505 m tiap tick dan `y_est`
 persis 0,172 m tiap tick. Konstan sampai tiga desimal = prediksi kecepatan
 tetap, bukan pengukuran. Pola ini layak diingat untuk debugging berikutnya.
 
-Yang menunda ada tiga (`TRACK_MAX_HILANG` 0,25 s, gerbang `menjauh`,
+Yang menunda ada tiga (`TRACK_MAX_LOST` 0,25 s, gerbang `receding`,
 `FSM_DWELL` 0,3 s) tetapi **tidak satu pun memverifikasi bahwa target sudah
 terlewati**. Ketiganya kebetulan menunda.
 
@@ -2647,10 +2647,10 @@ bukan dari gerbangnya. Ditulis apa adanya.
 ### Cacat 2 — MPC menghindari halangan yang tidak pernah ada
 
 Saat kotak deteksi beralih dari tampak belakang ke tampak samping,
-`koreksi_muka` gagal mengenali peralihannya. Galat melintang pada t = 8,15 s
+`face_correction` gagal mengenali peralihannya. Galat melintang pada t = 8,15 s
 mencapai **-1,06 m ke arah ego**.
 
-Angka itu bukan kebetulan: `LAIN_LEBAR / 2 = 0,966 m`. Koreksi melintang
+Angka itu bukan kebetulan: `OTHER_WIDTH / 2 = 0,966 m`. Koreksi melintang
 **praktis tidak diterapkan sama sekali** — estimasi berhenti di permukaan sisi
 yang terlihat, tidak diteruskan ke pusat bodi di baliknya.
 
@@ -2700,13 +2700,13 @@ Angka lengkap: `WRITING_SUMMARY.md` bagian 27.
 
 ### Perbaikan 1 — hitung sudutnya, jangan ditebak
 
-`koreksi_muka` menebak sudut pandang dari rasio lebar/tinggi kotak. Rasio itu
+`face_correction` menebak sudut pandang dari rasio lebar/tinggi kotak. Rasio itu
 runtuh persis saat berdampingan karena kotaknya terpotong tepi citra.
 
 Yang membuat perbaikannya kecil: **sudut itu sebenarnya sudah diketahui.**
 Balik-proyeksi menghasilkan `(d, y)`, jadi `theta = atan2(y, d)`. Lebar siluet
-pada sudut itu adalah `PANJANG*sin(theta)` dari sisi ditambah
-`LEBAR*cos(theta)` dari buritan, dan porsi sisi itulah bobot campurannya. Enam
+pada sudut itu adalah `LENGTH*sin(theta)` dari sisi ditambah
+`WIDTH*cos(theta)` dari buritan, dan porsi sisi itulah bobot campurannya. Enam
 baris, dan batas-batasnya benar dengan sendirinya — tidak perlu dijepit.
 
 Kalibrasi kamera tidak pernah terpotong tepi citra. Itu seluruh alasannya
@@ -2777,7 +2777,7 @@ persis yang diharapkan kalau halangan hantu memang hilang.
 Lima run ground truth diukur ulang: **identik bit-per-bit** dengan sebelumnya.
 Gerbang baru memang sengaja dirancang setara dengan yang lama selama halangan
 terlihat (`max(x) <= -PASS_MARGIN` sama dengan "tidak ada `x` di atas
-`-PASS_MARGIN`"), dan itu dikunci uji `test_ground_truth_tidak_berubah_perilakunya`.
+`-PASS_MARGIN`"), dan itu dikunci uji `test_ground_truth_behaviour_unchanged`.
 
 Artinya seluruh angka ground truth di bagian 23 dan 25 tetap berlaku tanpa
 diukur ulang. Uji naik 91 → 98.
@@ -2855,13 +2855,13 @@ Awalnya zona aman diberi dimensi hasil ukur. Run GAGAL lane_departure — bias
 lebar 0,26 m saja sudah menggeser zona.
 
 Dipisah menurut apa yang dituntut: dimensi terukur untuk KETELITIAN
-(`koreksi_muka`), kendaraan desain PDGJ untuk KESELAMATAN (zona aman). Margin
+(`face_correction`), kendaraan desain PDGJ untuk KESELAMATAN (zona aman). Margin
 keselamatan tidak boleh bisa menyusut oleh galat penaksir.
 
 ### Kegagalan 4 — mengukur dimensi di depth pusat bodi
 
 Saya geser pengukuran dimensi ke `d + dx`, dengan alasan yang sama yang
-melahirkan `koreksi_muka`. Keliru: tinggi terbentang di muka yang TERLIHAT, yang
+melahirkan `face_correction`. Keliru: tinggi terbentang di muka yang TERLIHAT, yang
 memang ada di depth `d`. Tinggi rusak dari +1,1% jadi +14,3%, lebar menabrak
 batas jepitnya, zona berubah, run gagal. Dikembalikan.
 
@@ -2940,7 +2940,7 @@ IAE lateral saat LANE_KEEPING: 0,143 (GT) versus **1,036 m·s** (vision). Bagian
 Bukan pengendalinya memburuk — **alat ukurnya diperbaiki.** Sampai bagian 28.3,
 XTE dihitung dari `y` di frame yang dijangkarkan kamera. Frame itu ikut bergeser
 bersama keyakinan kamera, jadi sebagian simpangan ego lenyap bersamanya.
-Sekarang XTE memakai kolom `y_peta`, yaitu posisi ego di frame peta.
+Sekarang XTE memakai kolom `y_map`, yaitu posisi ego di frame peta.
 
 Dan selisih kedua frame ternyata jauh lebih besar daripada perkiraan saya: saya
 sempat bilang "~0,05 m terhadap ambang 0,5 m". Diukur satu run penuh, selisihnya
@@ -3031,7 +3031,7 @@ ada yang bisa dikalibrasi.
 
 ### Yang benar: berhenti mencari, mulai menyelesaikan
 
-`_kemiringan_bersama` memilih argmax histogram pada bin 0,10 m. Bin selebar itu
+`_shared_slope` memilih argmax histogram pada bin 0,10 m. Bin selebar itu
 membuat puncaknya **rata**, dan puncak rata letaknya tidak presisi — seberapa
 rapat pun dicari.
 
@@ -3046,7 +3046,7 @@ Terhadap peta HD: sudut hadap RMS **0,257 → 0,086°**, simpangan ego RMS
 
 **Tengah lajur ditapis.** FSM menyalin hasil ukur mentah, `y_goal` melompat 0,147 m
 antar replan. Tapis pertama saya taruh di pemanggil dan itu **memperburuk**
-(0,693 m): tapisnya ikut berjalan selama manuver, ketika `dev_lajur` mengacu ke
+(0,693 m): tapisnya ikut berjalan selama manuver, ketika `lane_dev` mengacu ke
 lajur SALIP. Harus di balik gerbang state yang sama dengan latch-nya. Lompatan
 turun ke 0,0094 m.
 
