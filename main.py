@@ -36,7 +36,10 @@ COLUMNS = ['t', 'x', 'y', 'yaw', 'v', 'y_ref', 'y_goal', 'lane_dev', 'a_cmd',
          # KAMERA -- itu benar untuk kendali, tetapi menilai "kembali ke lajur"
          # dengannya berarti bertanya apakah ego kembali ke lajur yang DIYAKININYA
          # sendiri. Alat ukur harus terpisah dari yang diukur.
-         'x_map', 'y_map']
+         'x_map', 'y_map',
+         # Area jalan (drivable area): porsi lajur tujuan dan tepi jalan di frame
+         # jalan. NaN di jalur GT, yang tidak memakainya.
+         'drivable', 'road_right', 'road_left']
 
 
 def to_carla(cmd):
@@ -183,7 +186,11 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
         # Geometri lajur & dimensi kendaraan dari perception, bukan dari peta HD
         # maupun bounding box simulator (bagian 28). None selama jalur GT atau
         # selama masker lajur belum terbaca -- pemakainya jatuh ke konstanta peta.
-        lane = zone = lane_width = None
+        lane = zone = lane_width = road = None
+        drivable = getattr(vision, 'drivable', None)
+        edges = getattr(vision, 'edges', None)
+        if edges is not None:
+            road = (ego.y + edges[0], ego.y + edges[1])   # relatif ego -> frame jalan
         geo = getattr(vision, 'lane', None)
         if geo is not None and geo.lane_width is not None:
             # lane_dev positif = ego di KIRI tengah lajur, sama seperti frame jalan.
@@ -217,7 +224,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
             # sepakat sampai 0,012 m/s saat LANE_KEEPING.
             dy_meas = ego.v * math.sin(ego.yaw)
             dy = dy_meas if traj is None else float(traj.lateral_at(t - t_traj)[1])
-            fsm.update(t, ego.y, ego.v, obs_rel, dy_meas, lane=lane)
+            fsm.update(t, ego.y, ego.v, obs_rel, dy_meas, lane=lane, drivable=drivable)
             # Percepatan awal lateral (y'') dan longitudinal (a0) dari RENCANA/
             # PERINTAH, bukan hasil ukur. Hasil ukur menutup lup planner-MPC: MPC
             # mengikuti kelengkungan awal rencana, percepatan itu terukur, lalu
@@ -226,7 +233,8 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
             ddy = 0.0 if traj is None else float(traj.lateral_at(t - t_traj)[2])
             traj_new, feasible = planning.plan_lane_change(
                 ego.y, dy, ddy, ego.x, ego.v, a_cmd_prev, fsm.v_goal,
-                obstacles=obs, y_goal=fsm.y_goal, zone=zone, lane_width=lane_width)
+                obstacles=obs, y_goal=fsm.y_goal, zone=zone, lane_width=lane_width,
+                road=road)
             # KOMITMEN: replan yang gagal tidak membuang rencana yang sedang
             # berjalan (bagian 19.14). Menyeberang itu balapan antara kemajuan
             # lateral dan celah yang menutup, dan celah minimum yang dibutuhkan
@@ -297,7 +305,9 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
                         float(cmd.solver_ok), float(n_feasible), offset_chosen, tx, ty,
                         fsm.v_goal, x_est, y_est,
                         float(mpc.last_iter), t_plan, mpc.last_eps, mpc.last_eps_lat,
-                        y_plan_05, y_plan_20, ego_map.x, ego_map.y])
+                        y_plan_05, y_plan_20, ego_map.x, ego_map.y,
+                        float('nan') if drivable is None else drivable,
+                        *((float('nan'),) * 2 if road is None else road)])
             states.append(fsm.state)
             positions.append(pos)
 

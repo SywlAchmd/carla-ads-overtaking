@@ -80,6 +80,61 @@ def lane_points(mask, image_shape, reach=RANGE):
     return np.column_stack([x[use], y[use]])
 
 
+# --- Area jalan (drivable area) ---------------------------------------------
+# Rentang x petak yang diperiksa. Lebih pendek dari RANGE: kendaraan di depan
+# menutupi jalan di belakangnya, dan di 30 m satu piksel masker sudah ~0,1 m.
+DRIVABLE_REACH = (6.0, 30.0)
+
+def _sample(mask, image_shape, x, y):
+    """Nilai masker di titik jalan (x, y) frame ego. Di luar citra = False."""
+    r, pad_u, pad_v = letterbox_to_image(np.shape(mask), image_shape)
+    u, v = np.broadcast_arrays(*to_pixel(x, y))
+    um = np.round(u * r + pad_u).astype(int)
+    vm = np.round(v * r + pad_v).astype(int)
+    ok = (um >= 0) & (um < mask.shape[1]) & (vm >= 0) & (vm < mask.shape[0])
+    out = np.zeros(u.shape, dtype=bool)
+    out[ok] = mask[vm[ok], um[ok]] > 0
+    return out
+
+
+def drivable_fraction(da, image_shape, center, slope, half_width, reach=DRIVABLE_REACH):
+    """Porsi petak lajur yang ditandai area jalan, 0..1.
+
+    Petak = x dalam `reach`, y = center + slope*x +- half_width (frame ego).
+    Terukur di S1: lajur salip 1,00, lajur ego dengan kendaraan di depannya turun
+    sampai 0,40 -- kendaraan membolongi masker, jadi angka ini menjawab "lajurnya
+    LAPANG". Ia TIDAK menjawab "lajurnya ADA": bahu jalan kiri juga aspal dan
+    terbaca 1,00. Itu urusan `LaneGeometry.lane_marked`.
+    """
+    x, dy = np.meshgrid(np.linspace(*reach, 12), np.linspace(-half_width, half_width, 5))
+    return float(_sample(da, image_shape, x, center + slope * x + dy).mean())
+
+
+def road_edges(da, image_shape, start, slope, reach=DRIVABLE_REACH):
+    """(kanan, kiri): tepi area jalan yang memuat `start`, perpotongan di x = 0.
+
+    Tiap baris x mencari run drivable yang memuat `start`. Antar baris diambil
+    persentil 90 ke LUAR, bukan median: kendaraan di sebelah ego memotong run di
+    baris yang ditutupinya, dan median ikut melaporkan sisi kendaraan itu sebagai
+    tepi jalan (terukur 0,54 m padahal tepinya ~5 m). Kendaraan sudah urusan
+    zona aman. None bila `start` tidak drivable di baris mana pun.
+    """
+    c = np.arange(-15.0, 15.0 + 1e-9, 0.1)
+    i0 = int(np.argmin(np.abs(c - start)))
+    right, left = [], []
+    for x in np.linspace(*reach, 12):
+        row = _sample(da, image_shape, x, c + slope * x)
+        if not row[i0]:
+            continue
+        gap = np.flatnonzero(~row)
+        hi, lo = gap[gap > i0], gap[gap < i0]
+        left.append(c[hi[0] - 1] if len(hi) else c[-1])
+        right.append(c[lo[-1] + 1] if len(lo) else c[0])
+    if not left:
+        return None
+    return float(np.percentile(right, 10)), float(np.percentile(left, 90))
+
+
 def _shared_slope(points, search=SEARCH_B, step=0.005):
     """Kemiringan yang dipakai BERSAMA semua garis lajur.
 
@@ -199,8 +254,9 @@ def _refine(points, b0, iterations=3):
 class LaneGeometry:
     """Hasil satu frame. `offset` positif = ke kiri ego, meter."""
 
-    def __init__(self, offset, weight, slope, n_pixels):
+    def __init__(self, offset, weight, slope, n_pixels, c=None):
         self.offset = offset            # perpotongan tiap garis lajur di x = 0
+        self.c = c                      # perpotongan TIAP piksel marka, untuk lane_marked
         self.weight = weight              # piksel pendukung tiap garis
         self.slope = slope    # dy/dx; ~ -tan(yaw ego terhadap jalan)
         self.n_pixels = n_pixels
@@ -277,6 +333,21 @@ class LaneGeometry:
             return None
         return float(-self.lane_dev + side * self.lane_width)
 
+    def lane_marked(self, side, tol=0.3):
+        """Lajur sebelah diapit marka di KEDUA sisinya? `side` = +1 kiri, -1 kanan.
+
+        Area jalan tidak bisa membedakan lajur dari bahu jalan: keduanya aspal.
+        Markanya bisa -- bahu jalan hanya punya garis tepi di satu sisi. Dihitung
+        dari piksel, bukan dari puncak `offset`: garis luar lajur salip putus-putus
+        dan hanya jadi puncak di 54% frame, sedangkan pikselnya terukur >= 109 di
+        setiap frame (bahu jalan kiri: 0).
+        """
+        if self.lane_width is None or self.c is None:
+            return False
+        mid = self.lane_center(side)
+        return all((np.abs(self.c - (mid + s * self.lane_width / 2)) < tol).sum() >= MIN_PIXELS
+                   for s in (-1, 1))
+
     def __repr__(self):
         w = self.lane_width
         return (f'LaneGeometry({len(self.offset)} lines, width='
@@ -284,8 +355,15 @@ class LaneGeometry:
                 f'yaw={np.degrees(self.yaw):+.1f} deg, {self.n_pixels} px)')
 
 
-def from_mask(mask, image_shape, reach=RANGE):
-    """Masker garis lajur YOLOPX -> `LaneGeometry`, atau None bila terlalu sedikit."""
+def from_mask(mask, image_shape, reach=RANGE, drivable=None):
+    """Masker garis lajur YOLOPX -> `LaneGeometry`, atau None bila terlalu sedikit.
+
+    `drivable` = masker area jalan; bila diberikan, hanya garis lajur di dalam
+    area jalan yang dipakai. Terukur di S1: 0,3% piksel garis lajur di luarnya,
+    seluruhnya garis di luar jalan; garis tepi jalan 0% (ikut ditandai area jalan).
+    """
+    if drivable is not None:
+        mask = (np.asarray(mask) > 0) & (np.asarray(drivable) > 0)
     points = lane_points(mask, image_shape, reach)
     if len(points) < MIN_PIXELS:
         return None
@@ -293,4 +371,4 @@ def from_mask(mask, image_shape, reach=RANGE):
     offset, weight = _peaks(points[:, 1] - b * points[:, 0])
     if not len(offset):
         return None
-    return LaneGeometry(offset, weight, b, len(points))
+    return LaneGeometry(offset, weight, b, len(points), c=points[:, 1] - b * points[:, 0])

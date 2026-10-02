@@ -78,6 +78,12 @@ DV_TRIGGER = 3.0                    # m/s, kendaraan depan harus selambat ini
 DV_EXIT = 1.5                       # m/s, histeresis
 D_SAFE_FRONT = 25.0                 # m, lajur tujuan harus kosong ke depan
 D_SAFE_REAR = 15.0              # m, dan ke belakang
+# Porsi petak lajur tujuan (6-30 m, setengah lebar lajur) yang harus ditandai area
+# jalan sebelum pindah lajur -- bukti lajurnya LAPANG, bukan sekadar tak ada
+# deteksi. 0 bila lajurnya tidak diapit marka (bahu jalan juga aspal). Terukur di
+# S1: lajur salip 1,00 sebelum manuver, lajur yang ditempati kendaraan turun
+# sampai 0,40. Jalur GT tidak memakainya.
+DRIVABLE_MIN = 0.9
 LATERAL_ENTER = 0.9                 # fraksi lebar lajur -> dianggap sudah pindah
 PASS_MARGIN = 8.0                   # m, ego harus unggul sejauh ini sebelum kembali
 # Laju lateral menjauhi lajur asal maksimum untuk mulai kembali (TUNING_MPC.md 13).

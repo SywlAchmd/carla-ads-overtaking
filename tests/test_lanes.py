@@ -107,6 +107,52 @@ def _synthetic_mask(line_y, yaw_deg=0.0, x0=8.0, x1=40.0):
     return m
 
 
+def _synthetic_area(y_lo, y_hi, hole=None):
+    """Masker area jalan: drivable bila y titik jalan di [y_lo, y_hi].
+
+    `hole` = (x0, x1, y0, y1): petak bukan-jalan, seperti kendaraan.
+    """
+    r, pad_u, pad_v = lanes.letterbox_to_image(MASK_SHAPE, IMAGE_SHAPE)
+    vm, um = np.mgrid[0:MASK_SHAPE[0], 0:MASK_SHAPE[1]]
+    with np.errstate(invalid='ignore'):
+        x, y = lanes.ipm((um - pad_u) / r, (vm - pad_v) / r)
+        m = np.isfinite(x) & (y >= y_lo) & (y <= y_hi)
+        if hole is not None:
+            m &= ~((x >= hole[0]) & (x <= hole[1]) & (y >= hole[2]) & (y <= hole[3]))
+    return m
+
+
+def test_lines_outside_drivable_area_dropped():
+    """Garis palsu di luar jalan (rel, jalur seberang) tidak boleh ikut kisi."""
+    real = np.array([-5.25, -1.75, 1.75])
+    m = _synthetic_mask(np.append(real, 8.75))
+    area = _synthetic_area(-5.6, 2.1)                       # garis tepi ikut area jalan
+    assert np.any(np.abs(lanes.from_mask(m, IMAGE_SHAPE).offset - 8.75) < 0.3)
+    g = lanes.from_mask(m, IMAGE_SHAPE, drivable=area)
+    assert not np.any(np.abs(g.offset - 8.75) < 0.3), g.offset
+    assert abs(g.lane_width - 3.5) < 0.12, g.lane_width
+
+
+def test_drivable_fraction_tells_lane_exists_from_not():
+    area = _synthetic_area(-5.25, 1.75)                     # lajur ego + lajur kanan
+    right = lanes.drivable_fraction(area, IMAGE_SHAPE, -3.5, 0.0, 3.5 / 4)
+    left = lanes.drivable_fraction(area, IMAGE_SHAPE, 3.5, 0.0, 3.5 / 4)
+    assert right > 0.95 and left < 0.05, (right, left)
+
+
+def test_lane_marked_tells_lane_from_shoulder():
+    """Lajur kanan diapit dua garis; sisi kiri cuma punya garis tepi (bahu jalan)."""
+    g = lanes.from_mask(_synthetic_mask(np.array([-5.25, -1.75, 1.75])), IMAGE_SHAPE)
+    assert g.lane_marked(-1) and not g.lane_marked(+1)
+
+
+def test_road_edges_ignore_vehicle_beside_ego():
+    """Kendaraan memotong area jalan di barisnya; tepi jalan tidak boleh ikut."""
+    area = _synthetic_area(-5.25, 1.75, hole=(6.0, 22.0, -1.0, 1.75))
+    right, left = lanes.road_edges(area, IMAGE_SHAPE, -3.5, 0.0)
+    assert abs(right + 5.25) < 0.15 and abs(left - 1.75) < 0.15, (right, left)
+
+
 def test_full_pipeline_from_synthetic_mask():
     """Tiga garis berjarak 3,5 m, ego 0,4 m di kanan tengah lajur, hadap +3 deg."""
     shift, yaw = -0.4, 3.0

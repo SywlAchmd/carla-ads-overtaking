@@ -18,11 +18,11 @@ def in_overtake_lane(x, v=V_EGO):
     return [x, Y_OVERTAKE, v, 0.0]
 
 
-def road(fsm, duration, d, obs, t0=0.0, dt=0.05, v_ego=V_EGO):
+def road(fsm, duration, d, obs, t0=0.0, dt=0.05, v_ego=V_EGO, **kw):
     """Jalankan FSM selama `duration` detik dengan input tetap."""
     t = t0
     for _ in range(int(round(duration / dt))):
-        fsm.update(t, d, v_ego, obs)
+        fsm.update(t, d, v_ego, obs, **kw)
         t += dt
     return fsm.state
 
@@ -52,6 +52,13 @@ def test_dwell_time_delays_transition():
 def test_check_overtake_proceeds_when_target_lane_empty():
     fsm = P.BehaviorFSM()
     assert road(fsm, 1.0, 0.0, [front(24.0)]) == P.LANE_CHANGE_OVERTAKE
+
+
+def test_check_overtake_held_when_target_lane_not_drivable():
+    """Tak ada deteksi BUKAN bukti lajurnya ada: area jalan harus menandainya."""
+    held, free = P.BehaviorFSM(), P.BehaviorFSM()
+    assert road(held, 1.0, 0.0, [front(24.0)], drivable=0.0) == P.CHECK_OVERTAKE
+    assert road(free, 1.0, 0.0, [front(24.0)], drivable=1.0) == P.LANE_CHANGE_OVERTAKE
 
 
 def test_check_overtake_held_when_target_lane_occupied():

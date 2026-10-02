@@ -79,6 +79,17 @@ def test_no_obstacle_chooses_lane_center():
     assert abs(y_end - config.SIDE_SIGN * config.LANE_WIDTH) < 1e-6, y_end
 
 
+def test_road_edge_rejects_candidates_leaving_road():
+    """Bodi ego (lebar 1,88 m) harus tetap di dalam tepi area jalan."""
+    edge = config.SIDE_SIGN * 4.6                  # 0,66 m di luar tengah lajur tujuan
+    road = tuple(sorted((edge, -edge)))
+    _, feasible = plan_lane_change(0, 0, 0, 0, 13.9, 0, 13.9, road=road)
+    offsets = {f[1] for f in feasible}
+    assert 4.0 not in offsets and 3.5 in offsets, offsets
+    tight = tuple(sorted((config.SIDE_SIGN * 3.0, -config.SIDE_SIGN * 3.0)))
+    assert plan_lane_change(0, 0, 0, 0, 13.9, 0, 13.9, road=tight) == (None, [])
+
+
 def test_overtake_direction_follows_side_sign():
     for sign in (-1, +1):
         best, _ = plan_lane_change(0, 0, 0, 0, 13.9, 0, 13.9, side_sign=sign)

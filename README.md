@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 127 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 133 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -97,7 +97,7 @@ carla-ads-overtaking/
 │   ├── yolopx.py           pembungkus model YOLOPX (deteksi + segmentasi)       [butuh torch]
 │   ├── perception.py       GroundTruthPerception + VisionPerception -> halangan FRAME EGO
 │   ├── tracking.py         asosiasi dua tahap + Kalman filter halangan          [tanpa carla]
-│   ├── lanes.py            masker lajur -> IPM -> kisi -> lebar & simpangan     [tanpa carla]
+│   ├── lanes.py            garis lajur di area jalan -> IPM -> kisi; porsi lajur tujuan & tepi jalan [tanpa carla]
 │   ├── planning.py         quintic/quartic, local planner, BehaviorFSM          [tanpa carla]
 │   ├── control.py          MPCController (CasADi + IPOPT), ThrottlePI, steer    [tanpa carla]
 │   ├── evaluation.py       sensor tabrakan + kriteria keberhasilan 11.2
@@ -131,7 +131,7 @@ carla-ads-overtaking/
 │   ├── record_maneuver.py  video playback manuver                      [butuh ffmpeg]
 │   └── record_path.py      video lintasan acuan global planner         [butuh ffmpeg]
 │
-├── tests/                  127 uji, dijalankan sebagai skrip           [tanpa server]
+├── tests/                  133 uji, dijalankan sebagai skrip           [tanpa server]
 │   ├── test_architecture.py  aturan 2.4: modul numerik tidak menyentuh carla
 │   ├── test_bicycle_model.py, test_dimensions.py, test_evaluation.py, test_fsm.py
 │   └── test_lanes.py, test_localization.py, test_mpc.py, test_perception.py,

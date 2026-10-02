@@ -84,8 +84,9 @@ def main_():
                         -math.degrees(psi + math.radians(yaw_set)))])
                     image = rig.grab()
 
-                    _, _, ll = net.infer(sensors.rgb_array(image['rgb']))
-                    g = lanes.from_mask(ll, (config.CAMERA_HEIGHT, config.CAMERA_WIDTH))
+                    _, da, ll = net.infer(sensors.rgb_array(image['rgb']))
+                    g = lanes.from_mask(ll, (config.CAMERA_HEIGHT, config.CAMERA_WIDTH),
+                                        drivable=da)       # sama dengan jalur kendali
                     if g is None:
                         rows.append([k * dt, d_set, yaw_set, np.nan, np.nan, np.nan, 0, 0])
                         continue

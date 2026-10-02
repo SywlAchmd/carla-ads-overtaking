@@ -216,6 +216,8 @@ class VisionPerception:
         self.dimensions = VehicleDimensions() if measure_dimensions else None
         self.lane = None                  # LaneGeometry frame terakhir, atau None
         self.mask = None                 # (area jalan, garis lajur) frame terakhir
+        self.drivable = None             # porsi lajur tujuan yang area jalan, 0..1
+        self.edges = None                # (kanan, kiri) tepi jalan relatif ego, m
 
     def update(self, frame, dt, ego_v=0.0, ego_a=0.0, ego_w=0.0):
         depth = sensors.depth_meter(frame['depth'])
@@ -224,8 +226,19 @@ class VisionPerception:
         # bagian 28. Inferensinya sudah berjalan tiap tick; yang ditambahkan
         # hanya balik-proyeksi maskernya, ~1 ms.
         box, da, ll = self.net.infer(rgb, conf=config.TRACK_CONF_LOW)
-        self.lane = lanes.from_mask(ll, rgb.shape)
-        self.mask = (da, ll)        # untuk overlay video; kendali tidak memakainya
+        # Garis lajur hanya yang di dalam area jalan: garis di atas rel atau di
+        # jalur seberang pembatas tidak boleh ikut membentuk kisi.
+        self.lane = g = lanes.from_mask(ll, rgb.shape, drivable=da)
+        self.mask = (da, ll)        # untuk overlay video
+        # Area jalan untuk kendali: lajur tujuan ADA dan lapang (FSM), dan tepi
+        # jalan untuk menyaring kandidat planner. None bila kisi tak terbaca.
+        self.drivable = self.edges = None
+        if g is not None and g.lane_width is not None:
+            # 0 bila lajur tujuan tak diapit marka: bahu jalan juga area jalan
+            self.drivable = lanes.drivable_fraction(
+                da, rgb.shape, g.lane_center(config.SIDE_SIGN), g.slope, g.lane_width / 4
+            ) if g.lane_marked(config.SIDE_SIGN) else 0.0
+            self.edges = lanes.road_edges(da, rgb.shape, -g.lane_dev, g.slope)
         use, z, R = [], [], []
         for b in box:
             u, v = int((b[0] + b[2]) / 2), int((b[1] + b[3]) / 2)

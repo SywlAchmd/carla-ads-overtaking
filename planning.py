@@ -147,11 +147,15 @@ def _cost(t, states, ddy, T, y_lane_center, v_desired, cy, cx, g):
 
 
 def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
-                     side_sign=None, dt=None, y_goal=None, zone=None, lane_width=None):
+                     side_sign=None, dt=None, y_goal=None, zone=None, lane_width=None,
+                     road=None):
     """Bangkitkan kandidat, saring yang tidak layak, kembalikan (terbaik, semua_layak).
 
     Mengembalikan (None, []) bila tidak ada kandidat yang lolos -- FSM harus
     memperlakukan itu sebagai abort, bukan error.
+
+    `road` = (y_kanan, y_kiri) tepi area jalan di frame jalan, dari masker
+    segmentasi; kandidat yang bodinya keluar darinya dibuang. None = tidak dicek.
     """
     side_sign = config.SIDE_SIGN if side_sign is None else side_sign
     dt = config.PLANNER_DT if dt is None else dt
@@ -187,6 +191,14 @@ def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
                 continue
             if _curvature(dx, dy, ddx, ddy).max() > kappa_max:
                 continue
+            if road is not None:
+                # jejak bodi yang berputar: pojok depan menyapu L/2*sin(psi) ke luar
+                psi = states[2]
+                yc = states[1] + config.AXLE_TO_CENTER * np.sin(psi)
+                half = (config.EGO_LENGTH / 2 * np.abs(np.sin(psi))
+                        + config.EGO_WIDTH / 2 * np.cos(psi))
+                if (yc - half).min() < road[0] or (yc + half).max() > road[1]:
+                    continue                              # keluar area jalan
             g = _ellipse_g(states, obstacles, zone)
             if g is not None and g.min() < 1.0:
                 continue                                  # bertabrakan
@@ -299,7 +311,7 @@ class BehaviorFSM:
         """Abort tidak menunggu dwell -- menunda 0,3 s justru menambah risiko."""
         self.state, self._pending = target, None
 
-    def update(self, t, d, v_ego, obstacles, dd=0.0, lane=None):
+    def update(self, t, d, v_ego, obstacles, dd=0.0, lane=None, drivable=None):
         """Satu langkah FSM. `obstacles` = (M,4) [x, y, vx, vy], x relatif ego.
 
         `d` = y ego di frame jalan; simpangan terhadap lajur asal dihitung DI SINI
@@ -310,7 +322,9 @@ class BehaviorFSM:
         lateral (m/s).
         `lane` = (y tengah lajur ego di frame jalan, lebar lajur) hasil UKUR dari
         kepala segmentasi YOLOPX; None berarti memakai konstanta peta seperti
-        sebelum bagian 28. Kembalikan nama state.
+        sebelum bagian 28. `drivable` = porsi petak lajur tujuan yang ditandai
+        area jalan (`lanes.drivable_fraction`); None = jalur GT, tidak diperiksa.
+        Kembalikan nama state.
         """
         # `lane` = (y tengah lajur ego di frame jalan, lebar) hasil ukur, atau None.
         #
@@ -343,6 +357,12 @@ class BehaviorFSM:
         y_dest = y_origin + self.side_sign * lw
         front = _leading(_in_lane(obstacles, y_origin, lw))
         target_lane = _in_lane(obstacles, y_dest, lw)
+        # Daftar deteksi kosong hanya berarti "tidak terlihat apa-apa". Area jalan
+        # memberi bukti POSITIF bahwa lajur tujuan ada dan lapang. Hanya dipakai
+        # sebelum manuver: begitu ego menyeberang, lajur terdekat berganti dan
+        # petaknya ikut bergeser satu lajur.
+        target_open = self._target_lane_safe(target_lane) and (
+            drivable is None or drivable >= config.DRIVABLE_MIN)
         # Pemicu & batal memakai kecepatan yang INGIN dipakai, bukan v_ego saja.
         # Saat mengikuti, v_ego ~ v_front: TTC terhadap v_ego tak hingga dan FSM
         # tidak akan pernah menyalip ulang. Alasan menyalip adalah kendaraan depan
@@ -361,7 +381,7 @@ class BehaviorFSM:
                      or v_want - front[2] < config.DV_EXIT)
             if cancelled:
                 self._request(LANE_KEEPING, t)
-            elif self._target_lane_safe(target_lane) and self._enough_time(front, v_ego):
+            elif target_open and self._enough_time(front, v_ego):
                 if self._request(LANE_CHANGE_OVERTAKE, t):
                     # Target masih jauh di depan dan terlihat utuh: di sinilah
                     # lajunya paling dapat dipercaya sepanjang manuver.
@@ -451,7 +471,7 @@ class BehaviorFSM:
         if self.state in (LANE_KEEPING, CHECK_OVERTAKE) and front is not None:
             can_overtake = (v_want - front[2] > config.DV_TRIGGER
                           and self._enough_time(front, v_ego)
-                          and self._target_lane_safe(target_lane))
+                          and target_open)
             if not can_overtake:
                 self.v_goal = _v_follow(front)
         return self.state
