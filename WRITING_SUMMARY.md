@@ -24,7 +24,7 @@ Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
 | 8 | Perception lengkap (YOLOPX + depth + tracking) | **selesai untuk S1** |
 | 9 | Eksperimen penuh | **selesai untuk S1**; S2-S5 belum |
 
-Kode: 8.466 baris, 133 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+Kode: 8.466 baris, 134 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
 Terakhir diperbarui 2 Oktober 2026: checkpoint YOLOPX epoch 92 dan drivable area
 di jalur kendali (bagian 31). Angka perception bagian 18 dan 29 memakai
 checkpoint lama; pembandingnya di bagian 31.1-31.2.
@@ -44,13 +44,14 @@ terhadap simulator: bagian 18.2-18.4 dan 19.2.
 
 | Bagian | Kendaraan target | Checkpoint YOLOPX | Status angka |
 |---|---|---|---|
-| **31** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** |
+| **32** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** (hasil vision terbaru) |
+| **31** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU** (perception, drivable area, GT); hasil vision digantikan 32 |
 | 28-30 | Lincoln MKZ 2020 | epoch 263 (lama) | riwayat checkpoint lama; metodenya berlaku |
 | 14-27 | **Nissan Patrol (lama)** | epoch 263 (lama) | riwayat; temuannya berlaku, angkanya TIDAK |
 | 1-13 | -- | -- | parameter ego, lingkungan, sitasi: berlaku |
 
 Bagian era Nissan Patrol diberi spanduk di judulnya. Kalau ragu: angka yang
-dikutip di skripsi harus dari bagian 31 (atau 29 untuk metode tanpa angka baru).
+dikutip di skripsi harus dari bagian 31-32 (atau 29 untuk metode tanpa angka baru).
 
 ---
 
@@ -3099,3 +3100,106 @@ memang ada dan kosong -- dan harus ditulis apa adanya.
   drivable area.
 - Berkas `*_before.*` sengaja tidak dibangkitkan ulang: isinya keadaan SEBELUM
   perbaikan bagian 27.
+
+---
+
+## 32. Kembali ke tengah lajur: dua sebab, satu perbaikan yang gagal (2 Oktober 2026)
+
+**Gejala.** Pada jalur vision, setelah menyalip ego melampaui tengah lajur asal
+sampai **+0,37 m** dan masih +0,17 m saat run berakhir; GT melampaui +0,06 m dan
+pas di tengah pada t ~ 18,7 s. Ini pekerjaan terbuka README nomor 10.
+
+**Bukan pengendali.** MPC mengejar `y_goal`-nya dengan tepat. Yang meleset
+`y_goal` itu sendiri, diukur dengan kolom diagnosa baru di log (`psi_err`,
+`psi_meas_err`, `n_lines`, `lattice_res`):
+
+| t (s) | State | Frame kendali minus peta |
+|---|---|---|
+| 0-9 | menjaga lajur, mulai menyalip | +-0,02 m |
+| 11 | OVERTAKING | -0,05 m |
+| 13 | LANE_CHANGE_RETURN | -0,16 m |
+| 15 | LANE_CHANGE_RETURN | -0,27 m |
+| 19 | LANE_KEEPING | -0,37 m |
+
+Frame jalan vision dijangkarkan kamera dan arahnya dijejak (bagian 28.3). Bias
+arah 0,1-0,3 deg memutarnya pelan; tengah lajur asal **dibekukan sebagai
+koordinat** selama manuver, jadi saat kembali koordinat itu sudah ~0,3 m dari
+tengah lajur sebenarnya. Sesudahnya dua tapis lambat (tengah lajur ~2 s, arah
+jalan ~2,5 s) yang mengoreksinya.
+
+### 32.1 Sebab 1: arah jalan dari dua tick yang berbeda
+
+`main.py` menghitung arah jalan sebagai `yaw ego - yaw terhadap lajur`. Yaw ego
+dari tick SEKARANG, yaw terhadap lajur dari citra tick LALU (`vision.update`
+dipanggil beberapa baris kemudian). Galatnya = laju belok x 50 ms.
+
+| | Sebelum | Sesudah |
+|---|---|---|
+| Korelasi galat arah vs laju belok | **+0,84** | +0,26 |
+| Kemiringan regresi | **0,068 s** (~1 tick) | 0,010 s |
+
+Diperbaiki dengan memasangkan geometri lajur dengan pose ego saat citranya
+diambil (`st_image`). Benar secara mekanisme, tetapi sendirian hanya menurunkan
+lampauan +0,371 -> +0,357 m.
+
+### 32.2 Sebab 2: bias arah statis yang bergantung lajur
+
+Sapuan terkendali (`check_lanes`-style, pose ditetapkan, ego lurus, tanpa
+kendaraan lain, s = 20-270 m): galat arah lajur 1 **-0,105 deg**, lajur 2
+**-0,191 deg**; lokasi di sepanjang jalan hampir tak berpengaruh.
+
+Tiga dugaan untuk sebabnya, dan nasibnya:
+
+| Dugaan | Hasil |
+|---|---|
+| Bodi mengangguk saat mengerem | **gugur**: pitch kamera di CARLA 0,00 deg (+-0,007) |
+| Roll bodi | **gugur**: roll hanya mengubah jarak antar garis, bukan kemiringannya |
+| Jalan menurun relatif kamera (garis jauh miring ~kappa*c) | gradien terukur +0,025 deg/m di 93% frame -- **tetapi perbaikannya gagal**, lihat bawah |
+
+**Perbaikan yang gagal, dicatat apa adanya.** Kemiringan diambil pada garis yang
+melewati kamera (cocokkan `b_k = b + kappa*c_k`, ambil b di c = 0). Pada masker
+sintetis ia kebal kemiringan jalan (rerata terkumpul bergeser 0,52 deg). Pada
+data nyata: sapuan lajur tetap -0,13 / -0,19 deg, `check_lanes` sudut hadap RMS
+memburuk 0,091 -> 0,106 deg, lampauan +0,371 -> +0,428 m. **Dicabut.** Model
+"jalan menurun" benar pada sintetis tetapi bukan sebab bias di data nyata, dan
+ekstrapolasi ke c = 0 menambah derau. Sebab bias statis ini masih terbuka.
+
+### 32.3 Perbaikan yang bekerja: kunci IDENTITAS lajur asal
+
+Bias arah sekecil apa pun menumpuk selama tengah lajur asal dibekukan sebagai
+koordinat. Padahal posisi lajur relatif ego diukur sangat teliti tiap frame
+(simpangan RMS 0,016-0,020 m). Maka yang dikunci kini **identitasnya**: tiap
+ukuran tengah lajur `y_ukur` diasosiasikan ke lajur asal dengan memilih
+`y_ukur + n*lebar` yang terdekat ke tengah lajur asal terakhir, lalu ditapis
+seperti biasa -- sepanjang manuver juga. Lompatan satu lajur saat ego
+menyeberang diserap `n`; putaran frame ikut terjejak.
+
+Diuji tanpa simulator (`test_origin_lane_tracked_through_maneuver_without_jumping`):
+frame bergeser 0,3 m, ukuran datang dari lajur salip dan sesekali lajur asal;
+kode lama membeku di 0,0, kode baru mengikuti ke 0,30 tanpa pernah melompat.
+
+### 32.4 Hasil (checkpoint epoch 92, drivable area aktif)
+
+3 run diagnosa dan 10 ulangan `experiment.py`, sebelum versus sesudah 32.1 + 32.3:
+
+| | Sebelum | **Sesudah** | GT |
+|---|---|---|---|
+| Lampauan puncak setelah kembali (peta) | +0,371 m | **+0,113 m** | +0,058 m |
+| Simpangan saat run berakhir (peta) | +0,166 m | +0,092 m | ~0 |
+| Deviasi lajur, ekor SESUDAH manuver | 0,1317 ± 0,0010 m | **0,0502 ± 0,0013 m** | 0,0286 m |
+| Deviasi lajur, SEBELUM manuver | 0,0119 ± 0,0005 m | 0,0110 ± 0,0003 m | 0,0000 m |
+| IAE lateral saat LANE_KEEPING | 0,603 m.s | **0,275 m.s** | 0,143 m.s |
+| ITAE lateral ke lajur terdekat | 53,1 m.s² | 44,1 m.s² | 35,3 m.s² |
+| Jarak min antar bodi | 1,855 ± 0,019 m | 1,808 ± 0,020 m | 1,432 m |
+| Durasi manuver | 12,26 ± 0,08 s | 12,51 ± 0,08 s | 11,65 s |
+| Galat prediksi @ 0,5 s, RMS | 0,0361 m | 0,0407 m | 0,0203 m |
+| Vonis | 10/10 | **10/10** | 5/5 |
+
+Jalur GT S1 dan S3 identik bit-per-bit. Durasi naik 0,25 s karena ego kini
+benar-benar menuju tengah lajur sebenarnya. Galat prediksi 0,5 s sedikit naik --
+dicatat, bukan disembunyikan.
+
+**Ikut diperbaiki: `plot_compare.py`** memplot simpangan lateral di frame
+KENDALI. Untuk vision frame itu ikut berputar, sehingga garisnya tampak berhenti
+0,3 m dari tengah padahal ego tepat di tengah. Kini dari `y_map`, sama dengan
+penilaian -- alat ukur terpisah dari yang diukur.

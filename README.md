@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 133 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 134 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -133,7 +133,7 @@ carla-ads-overtaking/
 │   ├── record_maneuver.py  video playback manuver                      [butuh ffmpeg]
 │   └── record_path.py      video lintasan acuan global planner         [butuh ffmpeg]
 │
-├── tests/                  133 uji, dijalankan sebagai skrip           [tanpa server]
+├── tests/                  134 uji, dijalankan sebagai skrip           [tanpa server]
 │   ├── test_architecture.py  aturan 2.4: modul numerik tidak menyentuh carla
 │   ├── test_bicycle_model.py, test_dimensions.py, test_evaluation.py, test_fsm.py
 │   └── test_lanes.py, test_localization.py, test_mpc.py, test_perception.py,
@@ -176,18 +176,19 @@ Hasil terakhir (MPC + GT perception, 2 Okt 2026, kendaraan target **Lincoln MKZ
 | S1 | **BERHASIL** | 1,43 m | 0,015 m | 11,6 s | flying overtaking |
 | S3 | **BERHASIL** | 1,52 m | 0,018 m | 19,1 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
 
-Hasil S1 dengan perception tanpa peta HD, checkpoint epoch 92, dan drivable area
-(2 Okt 2026, `WRITING_SUMMARY.md` bagian 31). Render `quality-level=Low`:
+Hasil S1 dengan perception tanpa peta HD, checkpoint epoch 92, drivable area, dan
+perbaikan kembali ke tengah lajur (2 Okt 2026, `WRITING_SUMMARY.md` bagian 32).
+Render `quality-level=Low`:
 
 | Metrik | MPC + vision (10 run) | MPC + GT (5 run) |
 |---|---|---|
 | Vonis | **10/10 BERHASIL** | **5/5 BERHASIL** |
-| Jarak min antar bodi | 1,858 ± 0,017 m | 1,432 m (sd 0,000) |
-| Durasi manuver | 12,26 ± 0,08 s | 11,65 s |
-| **Deviasi lajur, SEBELUM manuver** | **0,0111 ± 0,0005 m** | **0,0000 m** |
-| Deviasi lajur, ekor SESUDAH manuver | 0,1274 ± 0,0010 m | 0,0286 m |
-| Galat prediksi @ 0,5 s, RMS | 0,0361 m | 0,0203 m |
-| XTE ke lajur terdekat, RMS | 0,581 m | 0,535 m |
+| Jarak min antar bodi | 1,808 ± 0,020 m | 1,432 m (sd 0,000) |
+| Durasi manuver | 12,51 ± 0,08 s | 11,65 s |
+| **Deviasi lajur, SEBELUM manuver** | **0,0110 ± 0,0003 m** | **0,0000 m** |
+| Deviasi lajur, ekor SESUDAH manuver | 0,0502 ± 0,0013 m | 0,0286 m |
+| Galat prediksi @ 0,5 s, RMS | 0,0407 m | 0,0203 m |
+| XTE ke lajur terdekat, RMS | 0,563 m | 0,535 m |
 | Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
 
 Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
@@ -302,14 +303,15 @@ memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
   Hayward 1972, Flash & Hogan 1985, KITTI 2013) belum diputuskan. Lihat
   `WRITING_SUMMARY.md` bagian 16.
 
-### 10. Transien kembali ke lajur belum ditelusuri
-Setelah kembali, ego melampaui tengah lajur sampai **+0,30 m** dan butuh lebih
-dari 6 detik mengendap; jendela run 20 detik berakhir sebelum selesai
-(`WRITING_SUMMARY.md` bagian 29.5). Tidak menurunkan keselamatan dan tidak
-menggagalkan syarat lulus, tetapi ia yang mendominasi IAE dan ITAE.
+### 10. ~~Transien kembali ke lajur belum ditelusuri~~ -- sebagian besar selesai 2 Okt 2026
+Sebabnya bukan pengendali: frame jalan vision berputar pelan oleh bias arah,
+sedangkan tengah lajur asal dibekukan sebagai koordinat selama manuver. Dua
+perbaikan (`WRITING_SUMMARY.md` bagian 32): arah jalan kini dari tick yang sama,
+dan yang dikunci identitas lajur asal, bukan koordinatnya. Lampauan setelah
+kembali **+0,37 -> +0,11 m**, ekor deviasi **0,132 -> 0,050 m**.
 
-Menelusurinya menuntut percobaan yang dirancang untuk itu. Empat dugaan sudah
-gugur pada 28 Sep; jangan menambah dugaan kelima tanpa mengukur.
+Yang tersisa: bias arah statis 0,1-0,2 deg yang bergantung lajur. Tiga dugaan
+gugur (pitch, roll, jalan menurun); sebabnya belum ketemu.
 
 ### 11. Waktu solve maksimum perlu diukur di mesin senggang
 Terukur 36,18 ± 9,97 ms dengan satu run menyentuh **55,20 ms**, melewati anggaran

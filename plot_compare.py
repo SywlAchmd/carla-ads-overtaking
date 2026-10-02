@@ -28,7 +28,11 @@ def load_run(sk, mode):
     yc = L[:, k['y']] + config.AXLE_TO_CENTER * np.sin(yaw)
     dist = evaluation.box_distance(pos[:, 0, 0] - xc, pos[:, 0, 1] - yc,
                                    f['dim_ego'], f['vehicle_dims'][0], yaw, pos[:, 0, 2])
-    return dict(t=L[:, k['t']], y=L[:, k['y']], v=L[:, k['v']] * 3.6, dist=dist,
+    # Simpangan lateral menurut PETA, bukan frame kendali: frame jalur vision
+    # dijangkarkan kamera dan ikut berputar oleh bias arah, jadi `y`-nya bisa
+    # tampak 0,3 m dari tengah padahal ego tepat di tengah. Sama dengan penilaian.
+    y = L[:, k['y_map']] if 'y_map' in k else L[:, k['y']]
+    return dict(t=L[:, k['t']], y=y, v=L[:, k['v']] * 3.6, dist=dist,
                 n_feasible=L[:, k['n_feasible']], st=f['fsm_state'])
 
 

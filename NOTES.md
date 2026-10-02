@@ -3283,3 +3283,45 @@ lama tidak punya skrip pembuat; tidak satu pun bergantung pada checkpoint.
 **Ikut ketahuan dari checkpoint baru:** keyakinan deteksi pada 40 m turun ke
 ~0,7 (dulu ~0,97), dan taksiran lebar kendaraan memburuk ke -21,8%. Yang kedua
 tidak menyentuh keselamatan karena zona aman memakai kendaraan desain.
+
+---
+
+## Kenapa Ego Lama Kembali ke Tengah — 2 Oktober 2026
+
+**Pertanyaan penulis:** setelah menyalip, kenapa ego tidak langsung pas di tengah
+lajur? Ternyata bukan pengendali: frame jalan vision berputar pelan, dan tengah
+lajur asal dibekukan sebagai koordinat selama manuver. Saat kembali, koordinat
+itu sudah ~0,3 m dari tengah sebenarnya; ego melampauinya +0,37 m.
+
+**Diukur dulu.** Kolom diagnosa ditambahkan (`psi_err`, `psi_meas_err`,
+`n_lines`, `lattice_res`). Galat arah mentah per fase: +0,03 deg sebelum manuver,
+**+0,34 deg** selama OVERTAKING.
+
+**Jalan buntu yang dilewati, berurutan:**
+1. *Bodi mengangguk saat mengerem.* Korelasi dengan percepatan lemah (-0,25), dan
+   pitch kamera di CARLA terukur 0,00 deg. Gugur.
+2. *Bergantung lajur, bukan manuver?* Korelasi dengan posisi lateral -0,74 --
+   tetapi skenario deterministik, jadi lajur dan lokasi di jalan terancu. Sapuan
+   terkendali memisahkannya: lajur 1 -0,105 deg, lajur 2 -0,191 deg, lokasi tak
+   berpengaruh. Bias lajur nyata, tapi hanya ~0,09 deg; tak cukup menjelaskan.
+3. *Keterlambatan satu tick* -- yang ini benar: korelasi +0,84 dengan laju belok,
+   kemiringan 0,068 s. Arah jalan memasangkan yaw ego tick sekarang dengan citra
+   tick lalu. Diperbaiki; korelasi turun ke +0,26. Tapi lampauan hanya turun
+   0,371 -> 0,357 m.
+4. *Jalan menurun relatif kamera* (garis jauh miring sebanding letaknya). Gradien
+   terukur di 93% frame dan cocok dengan kemiringan jalan dari check_ipm. Dibuat
+   estimatornya, bekerja sempurna di masker sintetis -- dan **memburukkan** semua
+   angka nyata (lampauan 0,428 m, check_lanes 0,106 deg). Dicabut.
+
+**Yang akhirnya bekerja** bukan memperbaiki bias, tetapi membuat sasaran tidak
+peka terhadapnya: kunci IDENTITAS lajur asal, bukan koordinatnya. Tiap ukuran
+diasosiasikan ke lajur asal lewat `y_ukur + n*lebar`, disegarkan sepanjang
+manuver. Lampauan **0,371 -> 0,113 m**, ekor deviasi **0,132 -> 0,050 m**, 10/10,
+GT identik.
+
+**Ikut ketahuan:** `plot_compare.py` memplot frame kendali. Untuk vision garisnya
+tampak berhenti 0,3 m dari tengah padahal ego tepat di tengah. Kini dari `y_map`.
+
+**Pelajaran:** dua kali dalam sesi ini dugaan yang cocok di data sintetis atau di
+korelasi gugur di pengukuran terkendali. Ukur dulu dengan pembanding yang bersih;
+memperbaiki sebab yang salah memperburuk hasil.
