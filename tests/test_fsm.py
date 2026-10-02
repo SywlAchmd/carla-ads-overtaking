@@ -54,6 +54,25 @@ def test_check_overtake_proceeds_when_target_lane_empty():
     assert road(fsm, 1.0, 0.0, [front(24.0)]) == P.LANE_CHANGE_OVERTAKE
 
 
+def test_origin_lane_tracked_through_maneuver_without_jumping():
+    """Frame berputar pelan selama manuver: tengah lajur asal bergeser 0,3 m.
+
+    Ukurannya datang dari lajur TERDEKAT -- lajur salip, atau berganti-ganti saat
+    ego tepat di atas garis. Lajur asal harus ikut bergeser 0,3 m, bukan dibekukan
+    di 0 dan bukan melompat satu lajur.
+    """
+    w = config.LANE_WIDTH
+    fsm = P.BehaviorFSM()
+    road(fsm, 1.0, 0.0, [], lane=(0.0, w))                     # terkunci di 0
+    fsm.state = P.OVERTAKING
+    shift = 0.3
+    for k in range(200):
+        nearest = shift + (Y_OVERTAKE if k % 3 else 0.0)        # salip, kadang asal
+        fsm.update(1.0 + k * 0.1, Y_OVERTAKE, V_EGO, [front(30.0)], lane=(nearest, w))
+        assert abs(fsm.y_origin) < 0.5, fsm.y_origin            # tidak pernah melompat
+    assert abs(fsm.y_origin - shift) < 0.01, fsm.y_origin
+
+
 def test_check_overtake_held_when_target_lane_not_drivable():
     """Tak ada deteksi BUKAN bukti lajurnya ada: area jalan harus menandainya."""
     held, free = P.BehaviorFSM(), P.BehaviorFSM()

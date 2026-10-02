@@ -39,7 +39,11 @@ COLUMNS = ['t', 'x', 'y', 'yaw', 'v', 'y_ref', 'y_goal', 'lane_dev', 'a_cmd',
          'x_map', 'y_map',
          # Area jalan (drivable area): porsi lajur tujuan dan tepi jalan di frame
          # jalan. NaN di jalur GT, yang tidak memakainya.
-         'drivable', 'road_right', 'road_left']
+         'drivable', 'road_right', 'road_left',
+         # Diagnosa arah jalan (frame kamera) terhadap peta, deg: setelah tapis
+         # (yang dipakai kendali) dan mentah per frame dari garis lajur. Plus
+         # mutu garis lajur frame itu. NaN di jalur GT.
+         'psi_err', 'psi_meas_err', 'n_lines', 'lattice_res']
 
 
 def to_carla(cmd):
@@ -113,6 +117,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
     dt = config.FIXED_DELTA_SECONDS
     traj, t_traj, v_prev = None, 0.0, None
     psi_road = None              # arah jalan hasil ukur, ditapis (None = jalur GT)
+    st_image = None              # pose ego saat citra yang menghasilkan `vision.lane` diambil
     a_filt, a_cmd_prev = 0.0, 0.0
     n_feasible, offset_chosen, feasible_end = 0, 0.0, []
     t_plan = float('nan')
@@ -142,7 +147,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
             # diambil dari kepala segmentasi, bukan dari `world.get_map()`. s = 0
             # tetap disamakan dengan frame peta -- itu konvensi, bukan geometri --
             # supaya log kedua jalur bisa dibandingkan angka per angka.
-            g0, e0 = vision.lane, loc.update()
+            g0, e0 = vision.lane, st_image
             if g0.lane_width is not None:
                 frame = localization.PathFrame.from_perception(
                     e0, g0, x0=map_frame.ego(e0).x)
@@ -159,11 +164,18 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
         ego_map = map_frame.ego(st_rh)                     # hanya untuk penilaian
         # JEJAK arah jalan, jangan dibekukan. Titik asal digeser bersamaan supaya
         # (x, y) ego tidak melompat: yang dikoreksi hanya arah ke depan.
+        # `vision.lane` di sini dari citra tick LALU, jadi dipasangkan dengan yaw ego
+        # saat citra itu diambil (`st_image`), bukan yaw sekarang. Dipasangkan
+        # dengan yaw sekarang, galatnya = laju belok x 50 ms: terukur korelasi
+        # +0,84 dengan laju belok, ~0,14 deg selama OVERTAKING (bagian 32).
         geo_f = getattr(vision, 'lane', None)
+        psi_meas_err = float('nan')
+        if st_image is not None and geo_f is not None and geo_f.lane_width is not None:
+            psi_meas_err = math.degrees(localization.wrap(st_image.yaw - geo_f.yaw - map_frame.psi0))
         if psi_road is not None and geo_f is not None and geo_f.lane_width is not None:
             psi_road = localization.wrap(
                 psi_road + config.ALPHA_ROAD_HEADING
-                * localization.wrap(st_rh.yaw - geo_f.yaw - psi_road))
+                * localization.wrap(st_image.yaw - geo_f.yaw - psi_road))
             frame = localization.PathFrame.from_pose(st_rh, psi_road, ego.x, ego.y)
             if recorder is not None:
                 recorder.pf = frame
@@ -182,6 +194,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
         obs = localization.obstacles_ego_to_road(
             vision.update(image, dt, ego.v, a_filt, ego.yaw_rate) if rig
             else vision.update(), ego)
+        st_image = st_rh                 # citra tick ini diambil pada pose ini
 
         # Geometri lajur & dimensi kendaraan dari perception, bukan dari peta HD
         # maupun bounding box simulator (bagian 28). None selama jalur GT atau
@@ -307,7 +320,13 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
                         float(mpc.last_iter), t_plan, mpc.last_eps, mpc.last_eps_lat,
                         y_plan_05, y_plan_20, ego_map.x, ego_map.y,
                         float('nan') if drivable is None else drivable,
-                        *((float('nan'),) * 2 if road is None else road)])
+                        *((float('nan'),) * 2 if road is None else road),
+                        float('nan') if psi_road is None else
+                        math.degrees(localization.wrap(psi_road - map_frame.psi0)),
+                        psi_meas_err,
+                        float('nan') if geo is None else float(len(geo.offset)),
+                        float('nan') if geo is None or geo.lattice_residual is None
+                        else geo.lattice_residual])
             states.append(fsm.state)
             positions.append(pos)
 

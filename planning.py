@@ -328,30 +328,31 @@ class BehaviorFSM:
         """
         # `lane` = (y tengah lajur ego di frame jalan, lebar) hasil ukur, atau None.
         #
-        # HANYA disegarkan saat LANE_KEEPING, lalu DIKUNCI sepanjang manuver.
-        # Alasannya keras: `lane_dev` mengukur simpangan dari lajur TERDEKAT,
-        # jadi begitu ego menyeberang, lajur terdekat berubah menjadi lajur salip
-        # dan "tengah lajur asal" ikut melompat satu lajur. `y_goal` lalu
-        # menunjuk satu lajur lebih jauh lagi, dan ego mengejar sasaran yang terus
-        # lari. Terukur: ego melayang sampai -14,48 m -- empat lajur -- lalu
-        # menabrak tiang.
-        #
-        # Pelajarannya umum: ukuran RELATIF terhadap yang terdekat tidak bisa
-        # mendefinisikan sasaran ABSOLUT selama manuver yang mengubah mana yang
-        # terdekat. Ia harus dikunci sebelum manuver dimulai.
-        if lane is not None and self.state == LANE_KEEPING:
-            # DITAPIS, bukan disalin: tengah lajur adalah sifat jalan, jadi ia tidak
-            # boleh melompat. Mentah, `y_goal` berkedut sampai 0,147 m antar replan
-            # dan MPC mengejar acuan yang bergerigi. Tapisnya harus di SINI, dengan
-            # gerbang state yang sama dengan latch-nya: ditapis di pemanggil, ia
-            # ikut berjalan selama manuver -- ketika `lane_dev` mengacu ke lajur
-            # SALIP -- dan lompatannya justru naik ke 0,693 m.
+        # Yang dikunci IDENTITAS lajur asal, bukan koordinatnya. `lane_dev` mengukur
+        # simpangan dari lajur TERDEKAT, jadi begitu ego menyeberang ukurannya
+        # melompat satu lajur; disalin mentah, `y_goal` ikut melompat dan ego
+        # mengejar sasaran yang terus lari (terukur: melayang sampai -14,48 m).
+        # Dulu karena itu tengah lajur hanya disegarkan saat LANE_KEEPING lalu
+        # dibekukan selama manuver -- tetapi frame jalan sendiri berputar pelan
+        # (bias arah 0,1-0,3 deg), sehingga koordinat beku itu meleset ~0,3 m dari
+        # tengah lajur sebenarnya saat ego kembali dan ego melampauinya (bagian 32).
+        # Kini tiap ukuran diasosiasikan ke lajur asal: dari kandidat
+        # y_ukur + n*lebar diambil yang terdekat ke tengah lajur asal terakhir.
+        # Lompatan satu lajur hilang karena n menyerapnya; pergeseran frame ikut
+        # terjejak karena ukurannya tetap disegarkan sepanjang manuver.
+        if lane is not None:
             if self._lane is None:
-                self._lane = lane
+                if self.state == LANE_KEEPING:
+                    self._lane = lane
             else:
+                y_meas, w_meas = lane
+                n = round((self._lane[0] - y_meas) / w_meas)
+                fresh = (y_meas + n * w_meas, w_meas)
+                # DITAPIS, bukan disalin: tengah lajur adalah sifat jalan. Mentah,
+                # `y_goal` berkedut sampai 0,147 m antar replan (bagian 29.5).
                 a = config.ALPHA_LANE_CENTER
-                self._lane = tuple(old + a * (fresh - old)
-                                    for old, fresh in zip(self._lane, lane))
+                self._lane = tuple(old + a * (new - old)
+                                   for old, new in zip(self._lane, fresh))
         lw, y_origin = self.lane_width, self.y_origin
         d = d - y_origin                 # -> simpangan dari tengah lajur asal TERUKUR
         y_dest = y_origin + self.side_sign * lw
