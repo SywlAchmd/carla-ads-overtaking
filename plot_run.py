@@ -90,9 +90,7 @@ def main():
 
     fig.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=w) for w in COLORS.values()],
                labels=list(COLORS), loc='upper center', ncol=5, fontsize=8, frameon=False)
-    name_p = 'ground truth perception' if args.perception == 'gt' else 'vision perception (YOLOPX + depth)'
-    fig.suptitle(f'End-to-end overtaking result — Scenario {args.scenario}, MPC + {name_p}',
-                 y=0.975)
+    fig.suptitle('End-to-end overtaking result', y=0.975)
     fig.tight_layout(rect=(0, 0, 1, 0.945))
     out = os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.png')
     fig.savefig(out, dpi=150)
