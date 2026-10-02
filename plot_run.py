@@ -55,8 +55,13 @@ def main():
     ax[0].axhline(config.SIDE_SIGN * config.LANE_WIDTH, color='0.5', lw=.8)
     for edges in (0.5, -0.5, -1.5):
         ax[0].axhline(edges * config.LANE_WIDTH, color='0.75', ls=':', lw=.8)
-    ax[0].plot(t, y, lw=2, label='ego (rear axle)')
-    ax[0].plot(t, L[:, k['y_goal']], '--', lw=1.2, label='FSM target lane centre')
+    # Menurut PETA, bukan frame kendali: frame jalur vision dijangkarkan kamera dan
+    # ikut berputar oleh bias arah, jadi `y`-nya bisa tampak 0,3 m dari tengah
+    # padahal ego tepat di tengah. Sasaran FSM digeser offset yang sama supaya
+    # keduanya tetap sebanding. Untuk GT kedua frame identik.
+    y_map = L[:, k['y_map']] if 'y_map' in k else y
+    ax[0].plot(t, y_map, lw=2, label='ego (rear axle)')
+    ax[0].plot(t, L[:, k['y_goal']] + (y_map - y), '--', lw=1.2, label='FSM target lane centre')
     ax[0].set_ylabel('lateral deviation (m)'); ax[0].legend(loc='upper right', fontsize=8)
 
     ax[1].plot(t, L[:, k['v']] * 3.6, lw=2, label='ego speed')
@@ -86,7 +91,8 @@ def main():
     fig.legend(handles=[plt.Rectangle((0, 0), 1, 1, color=w) for w in COLORS.values()],
                labels=list(COLORS), loc='upper center', ncol=5, fontsize=8, frameon=False)
     name_p = 'ground truth perception' if args.perception == 'gt' else 'vision perception (YOLOPX + depth)'
-    fig.suptitle(f'Scenario {args.scenario} — MPC + {name_p}', y=0.975)
+    fig.suptitle(f'End-to-end overtaking result — Scenario {args.scenario}, MPC + {name_p}',
+                 y=0.975)
     fig.tight_layout(rect=(0, 0, 1, 0.945))
     out = os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.png')
     fig.savefig(out, dpi=150)

@@ -3203,7 +3203,9 @@ dicatat, bukan disembunyikan.
 **Ikut diperbaiki: `plot_compare.py`** memplot simpangan lateral di frame
 KENDALI. Untuk vision frame itu ikut berputar, sehingga garisnya tampak berhenti
 0,3 m dari tengah padahal ego tepat di tengah. Kini dari `y_map`, sama dengan
-penilaian -- alat ukur terpisah dari yang diukur.
+penilaian -- alat ukur terpisah dari yang diukur. `plot_run.py` diperlakukan sama
+(sasaran FSM digeser offset yang sama supaya tetap sebanding), dan judulnya kini
+"End-to-end overtaking result".
 
 ---
 
