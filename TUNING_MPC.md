@@ -797,6 +797,10 @@ ketiadaan model.
 
 ## 12. Behavior FSM — mengikuti kendaraan depan dan menyalip ulang
 
+> **ERA NISSAN PATROL.** Dimensi kendaraan lain di bagian ini masih Nissan Patrol.
+> Sejak 18 Sep 2026 targetnya Lincoln MKZ 2020 dan zona aman memakai kendaraan
+> desain (`WRITING_SUMMARY.md` bagian 28.2). Penurunannya tetap berlaku.
+
 11 September 2026. Skenario uji: S3 (`config.SCENARIOS`) -- target 7,0 m/s 60 m di
 depan pada lajur ego, dan kendaraan di lajur tujuan mulai 10 m di belakang ego
 pada 13,9 m/s. Ego tidak boleh langsung menyalip; ia harus menunggu.
@@ -941,6 +945,10 @@ diverifikasi ulang. Belum dikerjakan.
 ---
 
 ## 13. Zona aman, gerbang kembali, dan lup planner-MPC
+
+> **ERA NISSAN PATROL.** Dimensi kendaraan lain di bagian ini masih Nissan Patrol.
+> Sejak 18 Sep 2026 targetnya Lincoln MKZ 2020 dan zona aman memakai kendaraan
+> desain (`WRITING_SUMMARY.md` bagian 28.2). Penurunannya tetap berlaku.
 
 11-12 September 2026. Berangkat dari satu pertanyaan: apakah constraint yang
 dipakai planner dan MPC benar-benar menjamin syarat lulus jarak aman 1,0 m?

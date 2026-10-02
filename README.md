@@ -75,7 +75,9 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python plot_lane_fit.py` | shear salah vs tercocok, plus pencocokan kisi |
 | `python plot_lane_pipeline.py` | tiga tahap lanes.py, dua model anotasi berdampingan |
 
-**Checkpoint YOLOPX.** Dipakai `yolopx-marking.pt` (anotasi per-marka). Varian
+**Checkpoint YOLOPX.** Sejak 2 Oktober 2026 dipakai `weights/best.pth` **epoch 92**,
+pengganti checkpoint epoch 263; angka perbandingannya di `WRITING_SUMMARY.md`
+bagian 31. Sebelumnya dipakai `yolopx-marking.pt` (anotasi per-marka). Varian
 `yolopx-continuous.pt` (anotasi batas lajur menerus) diuji dan **ditolak**: ia
 menarik garis lajur di tempat yang tidak ada markanya -- termasuk di atas rel
 kereta -- dan ketelitian geometri lajurnya dua kali lebih buruk meski pikselnya
@@ -163,36 +165,36 @@ yang identik dengan sebelum migrasi.
 | 5 | MPC + tuning bobot | selesai |
 | 6 | Integrasi end-to-end | selesai: S1 dan S3 BERHASIL, deterministik |
 | 7 | Baseline Pure Pursuit/Stanley | **dibatalkan** (keputusan penulis) |
-| 8 | Perception lengkap (YOLOPX) | S1 selesai: BERHASIL, terulang, sudah dituning ulang |
+| 8 | Perception lengkap (YOLOPX) | S1 selesai: BERHASIL, terulang; drivable area dipakai kendali (bagian 31) |
 | 9 | Eksperimen penuh | S1 selesai: GT 5/5, vision 10/10 (100%); S2-S5 belum |
 
-Hasil terakhir (MPC + GT perception, 16 Sep 2026), identik bit-per-bit antar-run:
+Hasil terakhir (MPC + GT perception, 2 Okt 2026, kendaraan target **Lincoln MKZ
+2020**), identik bit-per-bit antar-run:
 
 | Skenario | Vonis | Jarak min antar bodi | Deviasi lajur | Durasi manuver | Catatan |
 |---|---|---|---|---|---|
-| S1 | **BERHASIL** | 1,42 m | 0,015 m | 11,6 s | flying overtaking |
-| S3 | **BERHASIL** | 1,47 m | 0,018 m | 19,0 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
+| S1 | **BERHASIL** | 1,43 m | 0,015 m | 11,6 s | flying overtaking |
+| S3 | **BERHASIL** | 1,52 m | 0,018 m | 19,1 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
 
-Hasil S1 setelah perception tanpa peta HD (28 Sep 2026, `WRITING_SUMMARY.md`
-bagian 29). Kendaraan yang disalip **Lincoln MKZ 2020**, render `quality-level=Low`:
+Hasil S1 dengan perception tanpa peta HD, checkpoint epoch 92, dan drivable area
+(2 Okt 2026, `WRITING_SUMMARY.md` bagian 31). Render `quality-level=Low`:
 
 | Metrik | MPC + vision (10 run) | MPC + GT (5 run) |
 |---|---|---|
 | Vonis | **10/10 BERHASIL** | **5/5 BERHASIL** |
-| Jarak min antar bodi | 1,797 ± 0,017 m | 1,432 m (sd 0,000) |
-| Durasi manuver | 12,12 ± 0,05 s | 11,65 s |
-| **Deviasi lajur, SEBELUM manuver** | **0,0176 ± 0,0016 m** | **0,0000 m** |
-| Deviasi lajur, ekor SESUDAH manuver | 0,1303 ± 0,0012 m | 0,0286 m |
-| Galat prediksi @ 0,5 s, RMS | 0,0394 m | 0,0203 m |
-| XTE ke lajur terdekat, RMS | 0,570 m | 0,535 m |
+| Jarak min antar bodi | 1,858 ± 0,017 m | 1,432 m (sd 0,000) |
+| Durasi manuver | 12,26 ± 0,08 s | 11,65 s |
+| **Deviasi lajur, SEBELUM manuver** | **0,0111 ± 0,0005 m** | **0,0000 m** |
+| Deviasi lajur, ekor SESUDAH manuver | 0,1274 ± 0,0010 m | 0,0286 m |
+| Galat prediksi @ 0,5 s, RMS | 0,0361 m | 0,0203 m |
+| XTE ke lajur terdekat, RMS | 0,581 m | 0,535 m |
 | Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
 
 Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
 seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian
 15.5 dan 29.1).
 
-Jalur GT tetap deterministik penuh: lima run identik bit-per-bit. Tabel S1/S3 di
-atas memakai kendaraan target LAMA (Nissan Patrol) dan belum diukur ulang.
+Jalur GT tetap deterministik penuh: lima run identik bit-per-bit.
 
 Angka GT di atas setelah perbaikan jangkar halangan 1,433 m (16 Sep). Sebelumnya
 1,43 / 1,51 m: zona aman dulu lebih konservatif daripada rancangannya.
@@ -250,9 +252,9 @@ maupun kualitas prediksi.
 Untuk perbandingan bersih, konfigurasi lama harus dijalankan dengan MKZ. Belum
 dikerjakan, dan harus dinyatakan bila selisihnya dikutip.
 
-### 5. Tabel hasil S1/S3 ground truth memakai kendaraan lama
-Baris S1 dan S3 di bagian Status masih Nissan Patrol; S3 belum pernah diukur ulang
-dengan MKZ sama sekali.
+### 5. ~~Tabel hasil S1/S3 ground truth memakai kendaraan lama~~ -- selesai 2 Okt 2026
+S1 dan S3 diukur ulang dengan MKZ: 1,43 m / 11,6 s dan 1,52 m / 19,1 s, keduanya
+BERHASIL. Tabel di bagian Status sudah memakai angka ini.
 
 ### 6. Validasi perception saat berdampingan belum terkendali
 `check_estimation.py` menyapu 55 → 9 m tetapi seluruhnya di lajur ego dengan ego

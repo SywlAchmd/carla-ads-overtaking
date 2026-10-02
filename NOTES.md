@@ -3232,3 +3232,54 @@ deteksi yang sempurna pun jaraknya tidak akan teliti.
 
 Dua sebab yang kebetulan bertemu di angka yang sama. Lebih jujur ditulis begitu
 daripada menyalahkan detektornya saja.
+
+---
+
+## Drivable Area Masuk Kendali, dan Checkpoint Baru — 2 Oktober 2026
+
+**Pertanyaan awal penulis:** apa peran drivable area? Jawabannya: tidak ada di
+kendali. Masker `da` hanya dipakai overlay video dan diagnosis positif palsu.
+Penulis meminta tiga hal: garis lajur hanya yang di dalam area jalan, lajur
+tujuan dicek dengan area jalan sebelum pindah lajur, dan kandidat planner
+dibatasi tepi jalan.
+
+**Percobaan pertama, checkpoint epoch 263.** Masker 520 tick S1 direkam lalu
+dianalisis offline. 18% piksel garis lajur jatuh di luar area jalan, seluruhnya
+di garis TEPI (kiri 26%, kanan 13%) -- area jalan berhenti tepat di marka tepi.
+Dipotong mentah, lebar lajur bergeser sampai 0,10 m, jadi dipakai toleransi 4
+piksel (integral image, ~1 ms). Sempat saya beri alasan yang salah, "lane_dev
+melompat 3,5 m": itu satu tick saat ego tepat di atas garis, posisi yang sama
+dilihat dari lajur terdekat yang berganti. Dikoreksi di WRITING_SUMMARY 31.5.
+
+**Lalu penulis mengganti `weights/best.pth` (epoch 92) dan meminta semuanya
+diulang dari awal.** Branch lama disimpan sebagai `feat/drivable-area-oldmodel`.
+
+Diukur ulang, gambarnya berubah:
+- garis tepi kini 0% di luar area jalan -> toleransi dibuang, irisan mentah;
+- area jalan kini menutup bahu jalan kiri sampai pembatas (porsi drivable sisi
+  kiri 0,00 -> 1,00). Secara fisik benar -- bahu itu aspal -- tetapi artinya
+  area jalan saja tidak bisa membedakan lajur dari bahu.
+
+**Pembeda yang dipakai: marka di kedua sisi.** Percobaan pertama memakai puncak
+kisi; garis luar lajur salip putus-putus dan hanya jadi puncak di 54% frame --
+gerbangnya akan menahan menyalip separuh waktu. Dihitung dari piksel di sekitar
+posisi garis: >= 109 di setiap frame untuk lajur salip, 0 untuk bahu. Ambangnya
+`MIN_PIXELS` yang sudah ada.
+
+**Tepi jalan: median gagal karena kendaraan.** Saat ego pindah ke kanan, mobil
+yang disalip ada di kiri-depan dan membolongi area jalan; median baris melaporkan
+sisi mobil itu sebagai tepi (0,39 m dengan checkpoint lama, 0,54 m dengan yang
+baru). Persentil 90 ke luar bertahan. Ujinya dibuat sampai median benar-benar
+gagal (lubang dua pertiga baris), supaya uji itu memang membedakan keduanya.
+
+**Hasil.** GT S1/S3 identik bit-per-bit. Vision 10 vs 10 ulangan dengan
+checkpoint yang sama: setara dalam derau, 10/10 keduanya. Di S1 gerbang dan
+saringan tepi tidak pernah menolak -- lajur kanan memang selalu ada dan kosong.
+
+**Regenerasi.** Seluruh log, eksperimen, dan gambar yang punya skrip pembuat
+dibangkitkan ulang dengan checkpoint baru (24 langkah, semua rc=0). Enam gambar
+lama tidak punya skrip pembuat; tidak satu pun bergantung pada checkpoint.
+
+**Ikut ketahuan dari checkpoint baru:** keyakinan deteksi pada 40 m turun ke
+~0,7 (dulu ~0,97), dan taksiran lebar kendaraan memburuk ke -21,8%. Yang kedua
+tidak menyentuh keselamatan karena zona aman memakai kendaraan desain.

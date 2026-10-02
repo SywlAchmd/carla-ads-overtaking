@@ -24,8 +24,10 @@ Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
 | 8 | Perception lengkap (YOLOPX + depth + tracking) | **selesai untuk S1** |
 | 9 | Eksperimen penuh | **selesai untuk S1**; S2-S5 belum |
 
-Kode: 5.394 baris, 91 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
-Terakhir diperbarui 17 September 2026.
+Kode: 8.466 baris, 133 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+Terakhir diperbarui 2 Oktober 2026: checkpoint YOLOPX epoch 92 dan drivable area
+di jalur kendali (bagian 31). Angka perception bagian 18 dan 29 memakai
+checkpoint lama; pembandingnya di bagian 31.1-31.2.
 
 **Yang boleh ditulis sekarang:** seluruh bab 3 (metodologi), dan bab 4 untuk
 skenario S1 secara penuh — success rate dari ulangan yang sah (bagian 21),
@@ -37,6 +39,18 @@ temuan metodologis (bagian 15, 19, 20).
 dengan vision (butuh kamera belakang), dan **angka pelatihan YOLOPX** di bagian
 18.1 — split-nya masih bocor. Yang sah dari perception adalah pengukuran
 terhadap simulator: bagian 18.2-18.4 dan 19.2.
+
+### Angka mana yang berlaku?
+
+| Bagian | Kendaraan target | Checkpoint YOLOPX | Status angka |
+|---|---|---|---|
+| **31** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** |
+| 28-30 | Lincoln MKZ 2020 | epoch 263 (lama) | riwayat checkpoint lama; metodenya berlaku |
+| 14-27 | **Nissan Patrol (lama)** | epoch 263 (lama) | riwayat; temuannya berlaku, angkanya TIDAK |
+| 1-13 | -- | -- | parameter ego, lingkungan, sitasi: berlaku |
+
+Bagian era Nissan Patrol diberi spanduk di judulnya. Kalau ragu: angka yang
+dikutip di skripsi harus dari bagian 31 (atau 29 untuk metode tanpa angka baru).
 
 ---
 
@@ -497,6 +511,10 @@ itu sumbu perbandingan yang lebih pusat daripada baseline kendali.
 
 ## 14. Hasil kendali dan parameter final (Tahap 5 & 6)
 
+> **ERA NISSAN PATROL (sebelum 18 Sep 2026).** Angka di bagian ini diukur dengan
+> kendaraan target lama dan checkpoint lama. Temuannya tetap berlaku; angka yang
+> berlaku ada di **bagian 31**.
+
 Diukur ulang 16 September 2026 (setelah perbaikan jangkar halangan, bagian 19),
 CARLA 0.9.16 kualitas Low, satu run per skenario.
 Simulasinya deterministik: dua run berkonfigurasi sama memberi log **identik
@@ -580,6 +598,10 @@ mencoba menyalip lagi.
 ---
 
 ## 15. Temuan metodologis (12 September 2026)
+
+> **ERA NISSAN PATROL (sebelum 18 Sep 2026).** Angka di bagian ini diukur dengan
+> kendaraan target lama dan checkpoint lama. Temuannya tetap berlaku; angka yang
+> berlaku ada di **bagian 31**.
 
 Lima temuan berikut layak masuk bab pembahasan. Semuanya punya pola sama:
 **angka yang terlihat baik karena alasan yang salah.**
@@ -722,6 +744,10 @@ butir di bagian 16.
 
 ## 18. Kalibrasi deteksi YOLOPX terhadap ground truth (Tahap 8)
 
+> **ERA NISSAN PATROL (sebelum 18 Sep 2026).** Angka di bagian ini diukur dengan
+> kendaraan target lama dan checkpoint lama. Temuannya tetap berlaku; angka yang
+> berlaku ada di **bagian 31**.
+
 15 September 2026, `check_detection.py`. Nissan Patrol ditaruh pada sembilan jarak di
 depan ego, di lajur ego dan lajur menyalip; tiap frame dibandingkan dengan kotak
 2D hasil proyeksi bounding box 3D-nya. Ini pengukuran terhadap **simulator**, di
@@ -812,6 +838,8 @@ mengikuti konvensi anotasi data latih, bukan kekeliruan model.
 
 Karena kendali skripsi ini memakai geometri lajur dari peta, dua keluaran
 segmentasi itu berperan sebagai bahan pembahasan, bukan masukan kendali.
+*(Usang: sejak bagian 28 garis lajur, dan sejak bagian 31 area jalan, menjadi
+masukan kendali.)*
 
 Gambar: `out/detection_30m_lane0.png` (fine-tuned), `out/detection_30m_lane0_bdd.png`
 (BDD, pembanding), `out/detection_15m_lane1.png` (lajur menyalip).
@@ -820,6 +848,10 @@ Gambar: `out/detection_30m_lane0.png` (fine-tuned), `out/detection_30m_lane0_bdd
 ---
 
 ## 19. VisionPerception dan perbaikan jangkar halangan (Tahap 8)
+
+> **ERA NISSAN PATROL (sebelum 18 Sep 2026).** Angka di bagian ini diukur dengan
+> kendaraan target lama dan checkpoint lama. Temuannya tetap berlaku; angka yang
+> berlaku ada di **bagian 31**.
 
 16 September 2026.
 
@@ -1238,6 +1270,10 @@ lebarnya. Dan 38 tick nol kandidat masih jauh di atas 4 tick milik GT.
 
 ## 20. Tuning ulang di atas vision (Tahap 8, bagian 10.6)
 
+> **ERA NISSAN PATROL (sebelum 18 Sep 2026).** Angka di bagian ini diukur dengan
+> kendaraan target lama dan checkpoint lama. Temuannya tetap berlaku; angka yang
+> berlaku ada di **bagian 31**.
+
 16 September 2026, `tune_vision.py`.
 
 ### 20.1 Sapuan skenario penuh kini sah
@@ -1355,7 +1391,7 @@ menuntut perubahan rancangan, bukan bobot.
 
 > **DIGANTIKAN. Angka di bagian ini diukur dengan kendaraan target lama (Nissan
 > Patrol) dan jalur perception lama.** Dipertahankan sebagai riwayat, bukan
-> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 29**.
+> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 31**.
 
 
 16 September 2026, `experiment.py`. Server CARLA **direstart tepat sebelum
@@ -1565,7 +1601,7 @@ mobil boleh berisik.
 
 > **DIGANTIKAN. Angka di bagian ini diukur dengan kendaraan target lama (Nissan
 > Patrol) dan jalur perception lama.** Dipertahankan sebagai riwayat, bukan
-> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 29**.
+> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 31**.
 
 
 16 September 2026, `experiment.py` + `metrics.py --layer --experiment`.
@@ -1723,7 +1759,7 @@ belakang ego). Itu keterbatasan yang dinyatakan, bukan gambar yang tertinggal.
 
 > **DIGANTIKAN. Angka di bagian ini diukur dengan kendaraan target lama (Nissan
 > Patrol) dan jalur perception lama.** Dipertahankan sebagai riwayat, bukan
-> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 29**.
+> sebagai hasil. Yang berlaku untuk skripsi ada di **bagian 31**.
 
 
 17 September 2026. Menjawab janji proposal soal XTE dan IAE, dengan definisi
@@ -1805,6 +1841,10 @@ bukan karena pengendalinya lebih baik — jangan diklaim terbalik.
 ---
 
 ## 26. Dua cacat jalur vision, ditemukan 17 September 2026
+
+> **ERA NISSAN PATROL (sebelum 18 Sep 2026).** Angka di bagian ini diukur dengan
+> kendaraan target lama dan checkpoint lama. Temuannya tetap berlaku; angka yang
+> berlaku ada di **bagian 31**.
 
 > **KEDUANYA SUDAH DIPERBAIKI** pada hari yang sama -- lihat **bagian 27** untuk
 > perbaikannya dan hasil ulangnya. Bagian ini sengaja dipertahankan utuh sebagai
@@ -1977,7 +2017,7 @@ terbuka dan akan menutup sisa yang dicatat di bagian 27.7.
 
 > **DIGANTIKAN untuk ANGKANYA. Kendaraan target masih Nissan Patrol di sini, dan
 > peta HD masih dipakai.** Metodenya tetap berlaku dan penting; angkanya sudah
-> digantikan **bagian 29**.
+> digantikan **bagian 31**.
 
 **Bagian 26 mendiagnosis, bagian ini memperbaiki.** Keduanya dikerjakan, lalu
 seluruh jalur vision diukur ulang: 10 run Tahap 9 plus satu run rekaman video.
@@ -2452,9 +2492,9 @@ Uji otomatis naik 91 -> **125**. Zona aman berubah menjadi 7,758 / 3,180 m
 
 ## 29. Hasil Tahap 9 setelah perception tanpa peta HD (28 September 2026)
 
-**Ini angka yang berlaku untuk bab 4.** Bagian 21-27 diukur dengan kendaraan
-target lama (Nissan Patrol) dan jalur perception lama; bagian itu dipertahankan
-sebagai riwayat, bukan sebagai hasil.
+> **CHECKPOINT LAMA (epoch 263).** Angka vision di bagian ini digantikan
+> **bagian 31** (checkpoint epoch 92). Angka GT tidak bergantung checkpoint dan
+> tetap sama. Bagian 21-27 lebih lama lagi: era Nissan Patrol.
 
 Konfigurasi: Lincoln MKZ 2020 sebagai kendaraan yang disalip, render
 `-quality-level=Low`, jangkar frame jalan dari kamera, arah jalan dijejak,
@@ -2895,3 +2935,167 @@ kendaraan jauh, bagian 18). Kurva itu menunjukkan **geometrinya juga habis di
 tempat yang sama**: pada 44 m satu piksel sudah bernilai 1,84 m, jadi deteksi
 yang sempurna pun jaraknya tidak akan teliti. Dua sebab yang kebetulan bertemu di
 angka yang sama -- dan itu lebih jujur daripada menyalahkan detektornya saja.
+
+---
+
+## 31. Checkpoint baru dan drivable area (2 Oktober 2026)
+
+Dua perubahan di hari yang sama, dicatat terpisah supaya sebab tiap selisih
+angka jelas: **checkpoint YOLOPX diganti** (31.1-31.2) dan **drivable area masuk
+jalur kendali** (31.3-31.4). Perbandingan 31.4 memakai checkpoint yang SAMA di
+kedua sisi, jadi selisih bagian 29 -> 31.2 adalah efek checkpoint, bukan efek
+drivable area.
+
+Seluruh angka bisa dibangkitkan ulang: `experiment.py`, `metrics.py`,
+`check_detection.py`, `check_estimation.py`, `check_lanes.py`. Seluruh gambar
+di `out/` yang punya skrip pembuat sudah dibangkitkan ulang dengan keadaan ini.
+
+### 31.1 Checkpoint YOLOPX epoch 92
+
+`weights/best.pth` diganti penulis: epoch 263 -> **epoch 92**. Angka bagian 18
+dan 29 memakai checkpoint lama.
+
+**Ketelitian perception, terhadap bagian 29.4** (target sama, Lincoln MKZ 2020):
+
+| Besaran | epoch 263 (bagian 29.4) | **epoch 92** |
+|---|---|---|
+| x memanjang, bias / RMS | +0,321 / 0,323 m | +0,313 / 0,317 m |
+| y melintang, RMS | 0,018 m | 0,014 m |
+| vx, RMS | 0,021 m/s | 0,038 m/s |
+| Deteksi pertama (sapuan 53 -> 9 m) | 44,0 m (111/140 tick) | 41,7 m (104/140 tick) |
+| Lebar lajur, bias / RMS | -0,053 / 0,076 m | -0,049 / 0,076 m |
+| Simpangan ego, RMS | 0,018 m | 0,020 m |
+| Sudut hadap, RMS | 0,086 deg | 0,091 deg |
+| Dimensi: tinggi | 1,507 m (+1,1%) | 1,529 m (+2,6%) |
+| Dimensi: lebar | 1,642 m (-10,6%) | 1,437 m (-21,8%) |
+| Dimensi: panjang | 4,046 m (-17,3%) | 4,233 m (-13,5%) |
+
+**Deteksi terhadap jarak** (`check_detection.py`, MKZ). Tabel bagian 18.2
+diukur dengan Nissan Patrol, jadi TIDAK bisa dibandingkan langsung:
+
+| Jarak | Lajur ego, conf | Lajur menyalip, conf |
+|---|---|---|
+| 10-30 m | 0,98-0,99 | 0,98-0,99 |
+| 40 m | **0,70** | **0,68** |
+| 50-80 m | tidak terdeteksi | tidak terdeteksi |
+
+Positif palsu nol di semua ambang 0,3-0,7. Jangkauan 40 m sama dengan
+sebelumnya, tetapi keyakinan pada 40 m tinggal ~0,7: masih di atas
+`DETECTION_CONF = 0,5`, marginnya lebih tipis.
+
+**Lebar kendaraan memburuk (-21,8%)**, tetapi tidak menyentuh keselamatan: zona
+aman memakai kendaraan desain, bukan taksiran (bagian 28.2). Taksiran dimensi
+hanya masuk `face_correction`, dan bias jarak memanjang justru sedikit membaik.
+
+**Segmentasi berubah watak.** Area jalan kini mencakup **bahu jalan kiri sampai
+pembatas beton** dan ikut menandai garis tepi jalan. Checkpoint lama berhenti di
+garis tepi dan menarik "garis lajur" di atas pembatas. Gambar:
+`out/detection_30m_lane0.png`.
+
+### 31.2 Tahap 9 dengan checkpoint baru
+
+| Metrik S1 | MPC + vision, epoch 263 (bagian 29) | **MPC + vision, epoch 92** | MPC + GT |
+|---|---|---|---|
+| Vonis | 10/10 | **10/10** | 5/5 |
+| Jarak min antar bodi | 1,797 ± 0,017 m | **1,858 ± 0,017 m** | 1,432 m |
+| Durasi manuver | 12,12 ± 0,05 s | 12,26 ± 0,08 s | 11,65 s |
+| Deviasi lajur, SEBELUM manuver | 0,0176 ± 0,0016 m | **0,0111 ± 0,0005 m** | 0,0000 m |
+| Deviasi lajur, ekor SESUDAH | 0,1303 ± 0,0012 m | 0,1274 ± 0,0010 m | 0,0286 m |
+| Perlambatan terdalam | -2,75 ± 0,26 m/s² | -2,87 ± 0,18 m/s² | -0,14 m/s² |
+| Tick tanpa kandidat planner | 36,6 ± 0,9 | 37,6 ± 0,8 | 4 |
+| Galat prediksi @ 0,5 s, RMS | 0,0394 m | 0,0361 m | 0,0203 m |
+| XTE ke lajur terdekat, RMS | 0,570 m | 0,581 m | 0,535 m |
+| Kegagalan solver | 0 | 0 | 0 |
+
+Jalur GT tidak bergantung checkpoint dan tetap identik bit-per-bit. S3 GT kini
+juga diukur dengan MKZ: **BERHASIL, 1,52 m, 19,1 s**.
+
+### 31.3 Drivable area masuk jalur kendali
+
+Sampai bagian 30 masker area jalan (`da`) hanya dipakai overlay video. Kini ia
+dipakai di tiga tahap, seluruhnya di `lanes.py` (numpy murni, teruji tanpa
+simulator), dan seluruhnya `None` di jalur GT:
+
+1. **Garis lajur disaring.** `from_mask(ll, ..., drivable=da)` hanya memakai
+   piksel `ll ∩ da`. Garis di atas pembatas, rel, atau jalur seberang dibuang
+   sebelum kisi dicocokkan.
+2. **Lajur tujuan harus sah.** Dua syarat, keduanya wajib sebelum FSM masuk
+   `LANE_CHANGE_OVERTAKE`:
+   - *ada* -- `lane_marked`: diapit marka di KEDUA sisi, >= `MIN_PIXELS` (40)
+     piksel per garis;
+   - *lapang* -- `drivable_fraction`: petak lajur tujuan (x 6-30 m, setengah
+     lebar lajur) >= `DRIVABLE_MIN` (0,9) bertanda area jalan.
+   Sebelumnya cukup "daftar deteksi kosong", yang tidak bisa membedakan "kosong"
+   dari "tidak terlihat".
+3. **Kandidat planner dibatasi tepi jalan.** `road_edges` membaca tepi area jalan
+   per baris jarak; planner membuang kandidat yang bodinya -- termasuk sapuan
+   pojok saat berbelok, `L/2·|sin psi| + W/2·cos psi` -- keluar dari tepi itu.
+
+**Pengukuran yang menentukan rancangannya** (520 tick S1, kedua checkpoint):
+
+| Besaran | epoch 263 | epoch 92 |
+|---|---|---|
+| Piksel garis tepi KIRI di luar area jalan | 26% | **0%** |
+| Piksel garis tepi KANAN di luar area jalan | 13% | **0%** |
+| Piksel garis antar-lajur di luar area jalan | 0% | 0% |
+| Piksel garis "di luar jalan" di luar area jalan | 100% | 90% |
+| Porsi drivable lajur salip (kanan) | 1,00 | 1,00 |
+| Porsi drivable sisi KIRI (bahu, tanpa lajur) | **0,00** | **1,00** |
+| Porsi drivable lajur yang berisi kendaraan | 0,38 | 0,40 |
+
+Tiga keputusan lahir dari tabel itu:
+
+- **Tanpa toleransi piksel.** Dengan checkpoint lama garis tepi tergerus karena
+  area jalan berhenti tepat di marka tepi, sehingga sempat dipakai toleransi 4
+  piksel. Dengan epoch 92 garis tepi ikut area jalan; irisan mentah hanya
+  membuang 0,3% piksel (semuanya garis di luar jalan) dan menggeser lebar lajur
+  paling banyak 0,01 m.
+- **"Ada" dipisah dari "lapang".** Epoch 92 menandai bahu jalan sebagai aspal --
+  secara fisik benar -- sehingga porsi drivable saja tidak lagi bisa membedakan
+  lajur dari bahu. Marka bisa: garis luar lajur salip terukur **>= 109 piksel di
+  setiap frame**, bahu jalan **0**. Dihitung dari piksel, bukan dari puncak kisi:
+  garis luar itu putus-putus dan hanya menjadi puncak di **54%** frame.
+- **Tepi jalan persentil 90, bukan median.** Kendaraan di sebelah ego membolongi
+  area jalan di baris yang ditutupinya; median ikut melaporkan sisi kendaraan
+  sebagai tepi jalan (persentil 1: **0,54 m**). Persentil 90 ke luar: persentil
+  1 **2,72 m**, median 5,09 m, yaitu pembatas beton.
+
+**Biaya:** ~1 ms per tick perception.
+
+### 31.4 Verifikasi
+
+- **133 uji** lolos tanpa simulator, enam di antaranya untuk drivable area. Uji
+  tepi jalan sengaja memakai kendaraan yang menutup dua pertiga baris: median
+  gagal di sana (-1,00 m), persentil 90 lolos (+1,79 m terhadap 1,75 m).
+- **Jalur GT S1 dan S3 identik bit-per-bit** dengan kode sebelum drivable area.
+- **Jalur vision, checkpoint SAMA (epoch 92), 10 ulangan per sisi:**
+
+| | Tanpa drivable area | **Dengan drivable area** |
+|---|---|---|
+| Vonis | 10/10 | 10/10 |
+| Jarak min antar bodi | 1,855 ± 0,019 m | 1,849 ± 0,021 m |
+| Durasi manuver | 12,26 ± 0,08 s | 12,24 ± 0,09 s |
+| Deviasi lajur, SEBELUM manuver | 0,012 ± 0,001 m | 0,012 ± 0,000 m |
+| Tick tanpa kandidat planner | 37,6 ± 0,8 | 37,4 ± 0,9 |
+| Kegagalan solver | 0 | 0 |
+
+Setara dalam derau. Di S1 gerbang lajur dan saringan tepi jalan dihitung tiap
+tick tetapi **tidak pernah menolak**: nilai gerbang sebelum manuver selalu 1,00
+dan tepi jalan selalu jauh dari kandidat. Itu benar untuk S1 -- lajur kanan
+memang ada dan kosong -- dan harus ditulis apa adanya.
+
+### 31.5 Catatan
+
+- Sebuah klaim saya sendiri yang keliru, dikoreksi: dengan checkpoint lama saya
+  menyebut irisan tanpa toleransi membuat `lane_dev` "melompat 3,5 m". Lompatan
+  itu terjadi di SATU tick, saat ego tepat di atas garis ketika pindah lajur --
+  +1,77 dan -1,76 m menunjuk posisi yang sama dari lajur terdekat yang berganti.
+  Bukan galat. Alasan sebenarnya untuk toleransi waktu itu adalah bias kecil di
+  garis tepi (lebar lajur 0,10 m).
+- Enam berkas di `out/` tidak punya skrip pembuat dan tidak dibangkitkan ulang:
+  `lane_annotation_comparison.png`, `town04_test_section.png`,
+  `why_q_psi_450.png`, `ttc_threshold.png`, `sensor_rgb_yaw.png`,
+  `model_validation_18kmh.*`. Tidak satu pun bergantung pada checkpoint atau
+  drivable area.
+- Berkas `*_before.*` sengaja tidak dibangkitkan ulang: isinya keadaan SEBELUM
+  perbaikan bagian 27.
