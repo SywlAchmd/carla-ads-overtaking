@@ -35,10 +35,10 @@ metrik per layer dan per fase (bagian 23), perbandingan MPC+GT versus MPC+vision
 tuning bobot (`TUNING_MPC.md` bagian 10-11 dan bagian 20 di sini), serta seluruh
 temuan metodologis (bagian 15, 19, 20).
 
-**Belum boleh ditulis:** skenario S2/S4/S5 (definisinya tidak ada), hasil S3
-dengan vision (butuh kamera belakang), dan **angka pelatihan YOLOPX** di bagian
-18.1 — split-nya masih bocor. Yang sah dari perception adalah pengukuran
-terhadap simulator: bagian 18.2-18.4 dan 19.2.
+**Belum boleh ditulis:** skenario S2/S4/S5 (definisinya tidak ada) dan hasil S3
+dengan vision (butuh kamera belakang). **Angka pelatihan YOLOPX kini sah** dari
+split test checkpoint epoch 92 (bagian 33); angka bagian 18.1 tetap jangan
+dikutip -- itu training lama dengan split bocor.
 
 ### Angka mana yang berlaku?
 
@@ -46,6 +46,7 @@ terhadap simulator: bagian 18.2-18.4 dan 19.2.
 |---|---|---|---|
 | **32** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** (hasil vision terbaru) |
 | **31** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU** (perception, drivable area, GT); hasil vision digantikan 32 |
+| **33** | -- | **epoch 92** | **BERLAKU**: split dataset dan angka training/test YOLOPX |
 | 28-30 | Lincoln MKZ 2020 | epoch 263 (lama) | riwayat checkpoint lama; metodenya berlaku |
 | 14-27 | **Nissan Patrol (lama)** | epoch 263 (lama) | riwayat; temuannya berlaku, angkanya TIDAK |
 | 1-13 | -- | -- | parameter ego, lingkungan, sitasi: berlaku |
@@ -3203,3 +3204,70 @@ dicatat, bukan disembunyikan.
 KENDALI. Untuk vision frame itu ikut berputar, sehingga garisnya tampak berhenti
 0,3 m dari tengah padahal ego tepat di tengah. Kini dari `y_map`, sama dengan
 penilaian -- alat ukur terpisah dari yang diukur.
+
+---
+
+## 33. Data latih checkpoint epoch 92: split per rekaman, dan angka test (2 Oktober 2026)
+
+Menutup masalah keabsahan bagian 18.1 (README pekerjaan terbuka nomor 2): split
+lama per FRAME sehingga frame berurutan satu rekaman masuk train dan val
+sekaligus. Checkpoint epoch 92 dilatih ulang dengan **split per REKAMAN** -- satu
+rekaman tidak pernah dipecah ke dua split. Dataset dan alatnya:
+`github.com/SywlAchmd/carla-data-acquisition`.
+
+**Checkpoint yang dipakai skripsi adalah checkpoint training ini:** sha256
+`weights/best.pth` sama dengan `runs/yolopx/best.pth` keluaran training.
+
+### 33.1 Split
+
+| Split | Fungsi | Rekaman | Gambar | Objek (car) |
+|---|---|---|---|---|
+| train | melatih model | 27 | 3.384 | 7.994 |
+| val | memilih checkpoint terbaik | 7 | 573 | 865 |
+| test | angka akhir; tidak dipakai saat training maupun memilih checkpoint | 1 | 125 | 184 |
+
+| Split | Town01 | Town02_Opt | Town05_Opt | Town10HD_Opt | Town04 |
+|---|---|---|---|---|---|
+| train | 0-4, 6-8 | 9, 11-15 | 18-21 | 22-24, 26-27 | 28-31 |
+| val | 5 | 10 | 16-17 | 25 | 33-34 |
+| test | -- | -- | -- | -- | **32** |
+
+Train : val ~ 85 : 15 dari 3.957 gambar; rasio itu hasil pemilihan rekaman,
+bukan persentase yang ditetapkan lebih dulu.
+
+### 33.2 Pemilihan checkpoint
+
+192 epoch, berhenti dini setelah 100 validasi tanpa perbaikan. **Epoch 92** dipilih
+otomatis sebagai fitness tertinggi pada split **val** (0,8766). Log:
+`~/sawal/YOLOPX Training/asusgx10/output_ll_marking/logs/run_20260930_163937.log`;
+kurva per epoch: `out/yolopx_train_results_epoch92.csv`. (`out/yolopx_finetune_results.csv`
+adalah training LAMA dengan split bocor -- jangan dikutip.)
+
+### 33.3 Angka akhir -- split TEST (Town04, rekaman 32)
+
+| Kepala | Metrik | Val (epoch 92) | **Test** |
+|---|---|---|---|
+| Deteksi | Precision | 0,952 | **1,000** |
+| Deteksi | Recall | 0,918 | **0,962** |
+| Deteksi | mAP@0,5 | 0,976 | **0,994** |
+| Deteksi | mAP@0,5:0,95 | 0,866 | **0,943** |
+| Area jalan | Accuracy / IoU / mIoU | 0,994 / 0,977 / 0,984 | **0,995 / 0,985 / 0,989** |
+| Garis lajur | Accuracy / IoU / mIoU | 0,970 / 0,588 / 0,792 | **0,976 / 0,551 / 0,773** |
+
+**Ini angka pelatihan yang sah untuk bab 4**, dengan tiga catatan yang harus ikut
+ditulis:
+
+1. **Test hanya satu rekaman** (125 gambar, 184 objek). Angkanya sah tetapi
+   ketidakpastiannya besar; jangan dibaca sampai digit ketiga.
+2. **Test lebih tinggi daripada val** (mAP@0,5:0,95 0,943 vs 0,866). Wajar: test
+   seluruhnya jalan tol Town04, val mencampur jalan kota dari lima peta. Test
+   mengukur kinerja di DOMAIN UJI, bukan kemampuan menggeneralisasi ke peta lain.
+3. **Town04 juga ada di train (28-31) dan val (33-34).** Split per rekaman
+   menghapus kebocoran antar-frame, tetapi lingkungan uji loop tertutup (ruas
+   tol Town04) bukan lingkungan yang belum pernah dilihat model. Pengukuran
+   simulator di bagian 31 karena itu mengukur kinerja *dalam domain latih*.
+
+IoU garis lajur 0,55 rendah bukan karena garisnya meleset: garis lajur tipis,
+selisih satu-dua piksel ketebalan sudah memangkas IoU banyak. Yang dipakai kendali
+adalah geometrinya, dan itu diukur langsung terhadap peta HD (bagian 31.1: lebar
+lajur RMS 0,076 m, sudut hadap RMS 0,091 deg).

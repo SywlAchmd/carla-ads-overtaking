@@ -218,13 +218,12 @@ profil kecepatan terjadwal di `main.spawn_vehicles`. Definisi S1 dan S3 di
 `config.SCENARIOS` pun rekonstruksi, bukan salinan bagian 11.3 rencana kerja —
 cocokkan dulu sebelum ditulis di skripsi.
 
-### 2. Data leakage YOLOPX — masalah KEABSAHAN, bukan performa
-Split per-frame membuat frame berurutan dari sesi rekaman yang sama masuk train
-dan val sekaligus. Angka pelatihan (mAP50 0,991, `WRITING_SUMMARY.md` 18.1)
-**tidak boleh diklaim apa adanya**. Dua jalan: latih ulang dengan split per-sesi,
-atau nyatakan eksplisit bahwa angka pelatihan tidak sah dan bersandar sepenuhnya
-pada pengukuran terhadap simulator (bagian 18.2-18.4 dan 19.2), yang memang
-bersih karena diukur di lingkungan uji, bukan di data latih.
+### 2. ~~Data leakage YOLOPX~~ -- selesai 2 Okt 2026
+Checkpoint epoch 92 dilatih dengan split per REKAMAN (27 train / 7 val / 1 test).
+Angka test (Town04, rekaman 32): mAP@0,5 0,994, mAP@0,5:0,95 0,943, IoU area jalan
+0,985 (`WRITING_SUMMARY.md` bagian 33). Catatan yang harus ikut ditulis: test
+hanya satu rekaman, dan Town04 juga ada di train/val -- evaluasi simulator
+mengukur kinerja dalam domain latih, bukan generalisasi ke peta baru.
 
 ### 3. Kamera belakang — sisa dari dua cacat yang sudah diperbaiki
 Dua cacat jalur vision ditemukan dan **diperbaiki** 17 September 2026
