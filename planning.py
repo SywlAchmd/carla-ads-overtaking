@@ -170,15 +170,15 @@ def plan_lane_change(y0, dy0, ddy0, x0, v0, a0, v_desired, obstacles=None,
 
     feasible = []
     for offset in config.LATERAL_OFFSETS:
-        # Dikurangi LANE_WIDTH nominal, BUKAN lebar lajur hasil ukur. `LATERAL_OFFSETS`
-        # adalah magnitudo terhadap lebar lajur nominal, jadi selisihnya = {-0,5; 0;
+        # Dikurangi offset TENGAH, BUKAN lebar lajur hasil ukur. Selisihnya = {-0,5; 0;
         # +0,5} m dari tengah lajur tujuan -- dan kandidat tengahnya tepat di tengah.
+        # Tidak menyentuh konstanta peta, jadi jalur vision tetap bebas peta.
         # Memakai `lw` hasil ukur menggeser seluruh kisi kandidat sebesar galat ukur
         # lebar lajur, sehingga TIDAK ADA kandidat yang jatuh di tengah lajur:
         # terukur planner membidik 0,125 m dari tengah, dan MPC mengikutinya dengan
         # tepat (galat lacak 0,0001 m). Regresi yang masuk bersama bagian 28, saat
         # lebar lajur berubah dari konstanta menjadi hasil ukur.
-        y_target = y_lane_center + direction * (offset - config.LANE_WIDTH)
+        y_target = y_lane_center + direction * (offset - config.LATERAL_OFFSETS[1])
         for T in config.MANEUVER_TIMES:
             if peak_lateral_accel(y_target - y0, T) > config.MAX_LATERAL_ACCEL:
                 continue                                  # saringan analitik, murah

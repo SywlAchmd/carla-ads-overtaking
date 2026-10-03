@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 134 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 135 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -133,7 +133,7 @@ carla-ads-overtaking/
 │   ├── record_maneuver.py  video playback manuver                      [butuh ffmpeg]
 │   └── record_path.py      video lintasan acuan global planner         [butuh ffmpeg]
 │
-├── tests/                  134 uji, dijalankan sebagai skrip           [tanpa server]
+├── tests/                  135 uji, dijalankan sebagai skrip           [tanpa server]
 │   ├── test_architecture.py  aturan 2.4: modul numerik tidak menyentuh carla
 │   ├── test_bicycle_model.py, test_dimensions.py, test_evaluation.py, test_fsm.py
 │   └── test_lanes.py, test_localization.py, test_mpc.py, test_perception.py,
@@ -177,19 +177,21 @@ Hasil terakhir (MPC + GT perception, 2 Okt 2026, kendaraan target **Lincoln MKZ
 | S3 | **BERHASIL** | 1,52 m | 0,018 m | 19,1 s | mengikuti, lalu menyalip ulang; FSM lama GAGAL (0,00 m) |
 
 Hasil S1 dengan perception tanpa peta HD, checkpoint epoch 92, drivable area, dan
-perbaikan kembali ke tengah lajur (2 Okt 2026, `WRITING_SUMMARY.md` bagian 32).
-Render `quality-level=Low`:
+perbaikan kembali ke tengah lajur, tanpa fallback ke konstanta peta (3 Okt 2026,
+`WRITING_SUMMARY.md` bagian 32 dan 34). Render `quality-level=Low`:
 
 | Metrik | MPC + vision (10 run) | MPC + GT (5 run) |
 |---|---|---|
 | Vonis | **10/10 BERHASIL** | **5/5 BERHASIL** |
-| Jarak min antar bodi | 1,808 ± 0,020 m | 1,432 m (sd 0,000) |
-| Durasi manuver | 12,51 ± 0,08 s | 11,65 s |
-| **Deviasi lajur, SEBELUM manuver** | **0,0110 ± 0,0003 m** | **0,0000 m** |
-| Deviasi lajur, ekor SESUDAH manuver | 0,0502 ± 0,0013 m | 0,0286 m |
+| Jarak min antar bodi | 1,812 ± 0,026 m | 1,432 m (sd 0,000) |
+| Durasi manuver | 12,52 ± 0,09 s | 11,65 s |
+| **Deviasi lajur, SEBELUM manuver** | **0,0110 ± 0,0004 m** | **0,0000 m** |
+| Deviasi lajur, ekor SESUDAH manuver | 0,0501 ± 0,0012 m | 0,0286 m |
 | Galat prediksi @ 0,5 s, RMS | 0,0407 m | 0,0203 m |
 | XTE ke lajur terdekat, RMS | 0,563 m | 0,535 m |
 | Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
+| Waktu solve rata-rata / maks | 16,81 / 31,37 ms | 15,67 / 28,83 ms |
+| Lebar lajur yang dipakai FSM | 3,512-3,559 m (ukur) | 3,50 m (peta) |
 
 Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
 seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian
@@ -312,11 +314,10 @@ kembali **+0,37 -> +0,11 m**, ekor deviasi **0,132 -> 0,050 m**.
 Yang tersisa: bias arah statis 0,1-0,2 deg yang bergantung lajur. Tiga dugaan
 gugur (pitch, roll, jalan menurun); sebabnya belum ketemu.
 
-### 11. Waktu solve maksimum perlu diukur di mesin senggang
-Terukur 36,18 ± 9,97 ms dengan satu run menyentuh **55,20 ms**, melewati anggaran
-tick 50 ms. Diambil saat mesin menjalankan 13 langkah beruntun, dan rata-ratanya
-justru turun ke 17,21 ms -- jadi kemungkinan besar kontensi, bukan regresi
-solver. Harus diulang sebelum dikutip.
+### 11. ~~Waktu solve maksimum perlu diukur di mesin senggang~~ -- selesai 3 Okt 2026
+Diulang dengan server CARLA baru dinyalakan, tanpa beban lain: maksimum **31,37 ms**
+(vision, 10 run) dan 28,83 ms (GT, 5 run), semua di bawah anggaran 50 ms. Angka
+55,20 ms lama memang kontensi (`WRITING_SUMMARY.md` bagian 34).
 
 ### 12. Kalibrasi tinggi kamera belum dilakukan
 `check_ipm.py` mengukur tinggi kamera efektif **1,6368 m** terhadap 1,6500 m yang

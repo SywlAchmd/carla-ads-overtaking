@@ -184,6 +184,21 @@ def test_middle_candidate_exactly_at_lane_center():
         assert min(end) < 0.02, (width_meas, min(end))
 
 
+
+def test_measured_lane_ignores_map_constant():
+    """Jalur vision memasok lebar & tujuan hasil ukur: konstanta peta tak boleh berpengaruh."""
+    def ends():
+        _, feasible = plan_lane_change(0.0, 0.0, 0.0, 0.0, 13.4, 0.0, 13.4,
+                                       y_goal=-3.42, lane_width=3.42)
+        return [t.states[1, -1] for _, _, _, t in feasible]
+    before, saved = ends(), config.LANE_WIDTH
+    try:
+        config.LANE_WIDTH = 99.0
+        assert ends() == before
+    finally:
+        config.LANE_WIDTH = saved
+
+
 if __name__ == '__main__':
     for name, fn in sorted(globals().items()):
         if name.startswith('test_'):

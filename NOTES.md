@@ -3325,3 +3325,23 @@ tampak berhenti 0,3 m dari tengah padahal ego tepat di tengah. Kini dari `y_map`
 **Pelajaran:** dua kali dalam sesi ini dugaan yang cocok di data sintetis atau di
 korelasi gugur di pengukuran terkendali. Ukur dulu dengan pembanding yang bersih;
 memperbaiki sebab yang salah memperburuk hasil.
+
+---
+
+## Vision Tanpa Konstanta Peta, dan Waktu Solve Diukur Ulang — 3 Oktober 2026
+
+**Pertanyaan penulis:** apakah 3,50 m masih masuk ke FSM? Dari `check_lanes.npz`,
+lebar hasil ukur hanya 1 dari 320 frame bernilai 3,50 -- jadi tidak. Tetapi
+cadangannya masih ada: frame tanpa lebar lajur jatuh ke konstanta peta, dan jangkar
+tanpa garis lajur jatuh diam-diam ke frame peta. Penulis meminta vision independen.
+
+Diganti: tahan ukuran terakhir, belum merencanakan sebelum ukuran pertama, jangkar
+gagal = galat. Kisi kandidat planner kini diacu ke offset tengahnya sendiri,
+bukan `LANE_WIDTH`. Kolom log `lane_width` ditambahkan.
+
+Diukur ulang setelah restart server: GT identik bit-per-bit dengan log lama;
+vision 10/10, setara dalam derau. Cadangan ukuran terakhir tidak pernah terpakai
+di S1 (0 tick tanpa dua garis), jadi perubahannya menutup celah, bukan mengubah
+hasil. Waktu solve maks 31,37 ms (vision) / 28,83 ms (GT): angka 55,20 ms lama
+memang kontensi. WRITING_SUMMARY bagian 34.
+

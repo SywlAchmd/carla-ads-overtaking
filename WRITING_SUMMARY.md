@@ -3273,3 +3273,48 @@ IoU garis lajur 0,55 rendah bukan karena garisnya meleset: garis lajur tipis,
 selisih satu-dua piksel ketebalan sudah memangkas IoU banyak. Yang dipakai kendali
 adalah geometrinya, dan itu diukur langsung terhadap peta HD (bagian 31.1: lebar
 lajur RMS 0,076 m, sudut hadap RMS 0,091 deg).
+
+---
+
+## 34. Jalur vision tanpa fallback ke lebar lajur peta, dan waktu solve diukur ulang (3 Oktober 2026)
+
+**Perubahan.** Sebelumnya jalur vision jatuh ke `config.LANE_WIDTH = 3,50` (peta)
+setiap kali satu frame tidak menghasilkan lebar lajur, dan diam-diam memakai frame
+peta bila jangkar awal tidak menemukan garis lajur. Kini:
+
+- frame tanpa lebar lajur memakai **ukuran terakhir**, bukan konstanta peta;
+- planner dan FSM baru berjalan setelah ada ukuran pertama;
+- jangkar tanpa geometri lajur = galat, bukan frame peta;
+- jarak antar kandidat planner diambil dari offset tengah `LATERAL_OFFSETS`, bukan
+  `LANE_WIDTH` (nilai identik, -0,5 / 0 / +0,5 m).
+
+Jalur GT tetap memakai peta, dan lima run GT **identik bit-per-bit** dengan log
+sebelum perubahan (di luar kolom waktu). Kolom log baru `lane_width` = lebar
+lajur yang dipakai FSM.
+
+**Lebar lajur yang dipakai FSM** (vision, 10 run, 4.000 tick): 3,512-3,559 m,
+rerata 3,539 m; **tidak satu tick pun 3,50**. Dalam S1 cadangan "ukuran terakhir"
+tidak pernah terpakai: 0 dari 4.000 tick dengan kurang dari dua garis lajur.
+Karena itu hasilnya setara dalam derau dengan bagian 32:
+
+| Metrik (vision, 10 run) | Bagian 32 | **Sekarang** |
+|---|---|---|
+| Vonis | 10/10 | **10/10** |
+| Jarak min antar bodi | 1,808 ± 0,020 m | 1,812 ± 0,026 m |
+| Durasi manuver | 12,51 ± 0,08 s | 12,52 ± 0,09 s |
+| Deviasi lajur sebelum manuver | 0,0110 ± 0,0003 m | 0,0110 ± 0,0004 m |
+| Deviasi lajur, ekor sesudah | 0,0502 ± 0,0013 m | 0,0501 ± 0,0012 m |
+| Tick tanpa kandidat planner | 37,6 ± 0,8 | 37,8 ± 1,1 |
+
+**Waktu solve, mesin senggang** (server CARLA baru dinyalakan, tidak ada proses
+berat lain). Menutup catatan bagian 29.1:
+
+| | Rata-rata | Maks per run | Maks keseluruhan |
+|---|---|---|---|
+| MPC + vision (10 run) | 16,81 ± 0,07 ms | 27,57 ± 1,79 ms | **31,37 ms** |
+| MPC + GT (5 run) | 15,67 ± 0,15 ms | 25,55 ± 1,68 ms | **28,83 ms** |
+
+Semua di bawah anggaran tick 50 ms. Angka 55,20 ms di bagian 29.1 memang
+kontensi, bukan sifat solver. Dengan kamera belakang (+14,4 ms) kasus terburuknya
+31,37 + 14,4 = 45,8 ms, masih di bawah 50 ms.
+

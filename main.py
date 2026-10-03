@@ -43,7 +43,9 @@ COLUMNS = ['t', 'x', 'y', 'yaw', 'v', 'y_ref', 'y_goal', 'lane_dev', 'a_cmd',
          # Diagnosa arah jalan (frame kamera) terhadap peta, deg: setelah tapis
          # (yang dipakai kendali) dan mentah per frame dari garis lajur. Plus
          # mutu garis lajur frame itu. NaN di jalur GT.
-         'psi_err', 'psi_meas_err', 'n_lines', 'lattice_res']
+         'psi_err', 'psi_meas_err', 'n_lines', 'lattice_res',
+         # Lebar lajur yang dipakai FSM: hasil ukur (vision) atau peta (GT).
+         'lane_width']
 
 
 def to_carla(cmd):
@@ -118,6 +120,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
     traj, t_traj, v_prev = None, 0.0, None
     psi_road = None              # arah jalan hasil ukur, ditapis (None = jalur GT)
     st_image = None              # pose ego saat citra yang menghasilkan `vision.lane` diambil
+    w_seen = None                # lebar lajur terukur terakhir (vision); None = jalur GT
     a_filt, a_cmd_prev = 0.0, 0.0
     n_feasible, offset_chosen, feasible_end = 0, 0.0, []
     t_plan = float('nan')
@@ -158,6 +161,9 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
                 print(f'anchor from perception: road heading '
                       f'{math.degrees(localization.wrap(frame.psi0 - map_frame.psi0)):+.3f} deg '
                       f'vs map, lane axis {p_seen.y - p_map.y:+.3f} m')
+            else:
+                # Vision tidak boleh diam-diam jatuh ke frame peta.
+                raise RuntimeError('vision: no lane geometry at the anchor tick')
 
         st_rh = loc.update()
         ego = frame.ego(st_rh)                               # 20 Hz
@@ -213,7 +219,9 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
             # SALIP, sehingga saat kembali ia membawa nilai yang sudah tertarik ke
             # lajur seberang -- lompatan `y_goal` justru naik 0,147 -> 0,693 m.
             lane = (ego.y - geo.lane_dev, geo.lane_width)
-            lane_width = geo.lane_width
+            w_seen = geo.lane_width
+        # Frame tanpa garis lajur memakai ukuran TERAKHIR, bukan konstanta peta.
+        lane_width = w_seen
         if getattr(vision, 'dimensions', None) is not None:
             # Zona aman memakai KENDARAAN DESAIN, bukan taksiran per-frame.
             # Taksiran dimensi dipakai untuk KETELITIAN (`face_correction`), zona aman
@@ -225,7 +233,8 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
             zone = config.zone_from_dimensions(config.PRIOR_LENGTH, config.PRIOR_WIDTH,
                                             lane_width)
 
-        if k % 2 == 0:                                       # 10 Hz
+        # Vision belum pernah mengukur lebar lajur -> belum merencanakan.
+        if k % 2 == 0 and (rig is None or w_seen is not None):   # 10 Hz
             obs_rel = obs.copy()
             if len(obs_rel):
                 obs_rel[:, 0] -= ego.x        # FSM memakai x relatif terhadap ego
@@ -326,7 +335,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
                         psi_meas_err,
                         float('nan') if geo is None else float(len(geo.offset)),
                         float('nan') if geo is None or geo.lattice_residual is None
-                        else geo.lattice_residual])
+                        else geo.lattice_residual, fsm.lane_width])
             states.append(fsm.state)
             positions.append(pos)
 
