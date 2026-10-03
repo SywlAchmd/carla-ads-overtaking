@@ -2238,7 +2238,7 @@ batasan, dan dua sisanya memang bukan ketergantungan.
 
 Yang tersisa di jalur kendali: depth ideal, lokalisasi ego, dan `LANE_WIDTH`
 sebagai nilai cadangan yang -- terukur -- tidak pernah aktif setelah frame
-pertama. Peta HD masih dipakai untuk menempatkan kendaraan skenario dan sebagai
+pertama. (Cadangan itu dihapus di bagian 34: vision kini menahan ukuran terakhir.) Peta HD masih dipakai untuk menempatkan kendaraan skenario dan sebagai
 pembanding penilaian; keduanya alat ukur, bukan masukan kendali.
 
 ### 28.1 Geometri lajur: tiga lapis, dan yang tengah adalah kuncinya
@@ -2535,7 +2535,7 @@ pertanyaan lain.
 menyentuh 55,20 ms, melewati anggaran tick 50 ms. Pengukuran diambil saat mesin
 menjalankan 13 langkah beruntun, jadi kemungkinan besar itu kontensi dan bukan
 regresi solver -- rata-ratanya justru turun ke 17,21 ms. **Harus diukur ulang di
-mesin senggang sebelum dikutip.**
+mesin senggang sebelum dikutip.** -> Diukur ulang di bagian 34: maks 31,37 ms.
 
 ### 29.2 Metrik per layer
 
@@ -3289,7 +3289,7 @@ peta bila jangkar awal tidak menemukan garis lajur. Kini:
   `LANE_WIDTH` (nilai identik, -0,5 / 0 / +0,5 m).
 
 Jalur GT tetap memakai peta, dan lima run GT **identik bit-per-bit** dengan log
-sebelum perubahan (di luar kolom waktu). Kolom log baru `lane_width` = lebar
+sebelum perubahan (di luar kolom waktu), begitu juga run tunggal S1 dan S3. Kolom log baru `lane_width` = lebar
 lajur yang dipakai FSM.
 
 **Lebar lajur yang dipakai FSM** (vision, 10 run, 4.000 tick): 3,512-3,559 m,
@@ -3305,6 +3305,10 @@ Karena itu hasilnya setara dalam derau dengan bagian 32:
 | Deviasi lajur sebelum manuver | 0,0110 ± 0,0003 m | 0,0110 ± 0,0004 m |
 | Deviasi lajur, ekor sesudah | 0,0502 ± 0,0013 m | 0,0501 ± 0,0012 m |
 | Tick tanpa kandidat planner | 37,6 ± 0,8 | 37,8 ± 1,1 |
+| IAE lateral saat LANE_KEEPING | 0,275 m.s | 0,274 m.s |
+| ITAE lateral ke lajur terdekat | 44,1 m.s² | 44,2 m.s² |
+| Galat prediksi @ 0,5 s, RMS | 0,0407 m | 0,0405 m |
+| XTE ke lajur terdekat, RMS | 0,563 m | 0,563 m |
 
 **Waktu solve, mesin senggang** (server CARLA baru dinyalakan, tidak ada proses
 berat lain). Menutup catatan bagian 29.1:
@@ -3317,4 +3321,9 @@ berat lain). Menutup catatan bagian 29.1:
 Semua di bawah anggaran tick 50 ms. Angka 55,20 ms di bagian 29.1 memang
 kontensi, bukan sifat solver. Dengan kamera belakang (+14,4 ms) kasus terburuknya
 31,37 + 14,4 = 45,8 ms, masih di bawah 50 ms.
+
+**Dibangkitkan ulang** dengan keadaan ini: `out/run_s1_mpc_gt`, `run_s3_mpc_gt`,
+`run_s1_mpc_vision` (`.npz` + `.png`), `compare_s1.png`, `vision_s1.mp4`, dan
+kedua `experiment_s1_*.npz`. Gambar lain di `out/` (deteksi, sensor, IPM, lajur)
+tidak melewati loop kendali, jadi tidak tersentuh perubahan ini.
 

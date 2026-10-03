@@ -187,7 +187,7 @@ perbaikan kembali ke tengah lajur, tanpa fallback ke konstanta peta (3 Okt 2026,
 | Durasi manuver | 12,52 ± 0,09 s | 11,65 s |
 | **Deviasi lajur, SEBELUM manuver** | **0,0110 ± 0,0004 m** | **0,0000 m** |
 | Deviasi lajur, ekor SESUDAH manuver | 0,0501 ± 0,0012 m | 0,0286 m |
-| Galat prediksi @ 0,5 s, RMS | 0,0407 m | 0,0203 m |
+| Galat prediksi @ 0,5 s, RMS | 0,0405 m | 0,0203 m |
 | XTE ke lajur terdekat, RMS | 0,563 m | 0,535 m |
 | Kegagalan solver | 0 dari 4.000 | 0 dari 2.000 |
 | Waktu solve rata-rata / maks | 16,81 / 31,37 ms | 15,67 / 28,83 ms |
@@ -211,7 +211,7 @@ menabrak guardrail.
 
 ## Pekerjaan yang Belum Selesai
 
-Diurutkan dari yang paling mendesak. Terakhir diperbarui 17 September 2026.
+Diurutkan dari yang paling mendesak. Terakhir diperbarui 3 Oktober 2026.
 
 ### 1. Skenario S2, S4, S5 tidak punya definisi
 Bukan "belum diimplementasikan" — **naskahnya tidak ada di repo ini sama sekali**.
