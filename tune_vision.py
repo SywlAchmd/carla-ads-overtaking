@@ -49,8 +49,9 @@ def _dev(log, states, k, before):
     return float(np.abs(log[m, k['lane_dev']]).mean()) if m.any() else float('nan')
 
 
-def once(world, net, params, ref, ref5, seconds=None):
+def once(world, net, params, ref, ref5, seconds=None, odom=False):
     """Satu run S1 -> metrik. `net` None berarti ground truth, bukan vision.
+    `odom` = lokalisasi odometri (GNSS awal + IMU + speedometer), bukan pose GT.
 
     Ego dan rig baru tiap panggilan -- pelajaran `tuning.py`: putaran roda
     terbawa antar konfigurasi dan hasilnya jadi bergantung urutan.
@@ -60,11 +61,13 @@ def once(world, net, params, ref, ref5, seconds=None):
     with simulation.ego_vehicle(world) as ego:
         simulation.tick(world, [simulation.velocity(ego, config.EGO_V0)])
         rig = sensors.CameraRig(world, ego, params) if net is not None else None
+        odo = sensors.OdometryRig(world, ego) if odom else None
         actors = []
         try:
             with evaluation.watch_collisions(world, ego) as monitor:
                 log, states, actors, positions = main.run(
-                    world, ego, monitor, params, ref, ref5, seconds, vehicles, rig, net)
+                    world, ego, monitor, params, ref, ref5, seconds, vehicles, rig, net,
+                    odo=odo)
                 dims = [(2 * a.bounding_box.extent.x, 2 * a.bounding_box.extent.y)
                         for a in actors]
         finally:
@@ -72,19 +75,27 @@ def once(world, net, params, ref, ref5, seconds=None):
                 a.destroy()
             if rig is not None:
                 rig.destroy()
+            if odo is not None:
+                odo.destroy()
 
     k = {n: i for i, n in enumerate(main.COLUMNS)}
+    # Penilai memakai pose GT (`*_gt`): di --localization odom `x`/`y` adalah pose
+    # yang DIYAKINI ego. Di jalur GT keduanya identik.
     success, category, details = evaluation.evaluate_run(
-        log[:, k['t']], log[:, k['x']], log[:, k['y']], states,
+        log[:, k['t']], log[:, k['x_gt']], log[:, k['y_gt']], states,
         log[:, k['x_tgt']], log[:, k['y_tgt']], monitor.collisions,
         (params['length'], params['width']), dims[0], [],
-        yaw=log[:, k['yaw']], yaw_tgt=positions[:, 0, 2])
+        yaw=log[:, k['yaw_gt']], yaw_tgt=positions[:, 0, 2])
     present = log[:, k['n_feasible']] > 0
     g = present[::2]                                   # planner bekerja 10 Hz
     return dict(
         verdict='SUCCESS' if success else f'FAILED ({category})',
         min_dist=details.get('min_dist', float('nan')),
-        lateral=log[:, k['y']].min(),
+        lateral=log[:, k['y_gt']].min(),
+        # galat lokalisasi terhadap GT; nol di jalur GT
+        loc_lat=float(np.abs(log[:, k['y']] - log[:, k['y_gt']]).max()),
+        loc_yaw=float(np.degrees(np.abs(np.angle(np.exp(
+            1j * (log[:, k['yaw']] - log[:, k['yaw_gt']]))))).max()),
         no_candidates=int((~present).sum()),
         flicker=sum(1 for i in range(len(g) - 1) if g[i] != g[i + 1]),
         decel=log[:, k['a_cmd']].min(),

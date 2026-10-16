@@ -6,6 +6,7 @@ tiap metrik. Kriteria lulus ditetapkan di `config` SEBELUM eksperimen dijalankan
 
     python experiment.py --perception gt --repeat 5
     python experiment.py --perception vision --repeat 10
+    SKRIPSI_OUT=out/localization_branch python experiment.py --localization odom
 
 Berapa ulangan yang perlu berbeda menurut mode:
 
@@ -38,13 +39,16 @@ METRICS = [('min_dist', 'min body-to-body distance [m]', '{:.3f}'),
           ('decel', 'deepest deceleration [m/s2]', '{:.2f}'),
           ('no_candidates', 'ticks without planner candidates', '{:.1f}'),
           ('solve_mean', 'mean solve time [ms]', '{:.2f}'),
-          ('solve_max', 'max solve time [ms]', '{:.2f}')]
+          ('solve_max', 'max solve time [ms]', '{:.2f}'),
+          ('loc_lat', 'localization lateral error, max [m]', '{:.3f}'),
+          ('loc_yaw', 'localization heading error, max [deg]', '{:.3f}')]
 
 
 def main_():
     ap = argparse.ArgumentParser()
     ap.add_argument('--perception', default='vision', choices=('gt', 'vision'))
     ap.add_argument('--repeat', type=int, default=10)
+    ap.add_argument('--localization', default='gt', choices=('gt', 'odom'))
     ap.add_argument('--suffix', default='',
                     help='output file name suffix, e.g. _bytetrack -- so a variant '
                          'does not overwrite the reference results')
@@ -54,7 +58,9 @@ def main_():
     net = yolopx.YOLOPX() if args.perception == 'vision' else None
     if net is not None:
         print(f'YOLOPX epoch {net.epoch}, {net.device}')
-    print(f'S1, MPC + {args.perception}, {args.repeat} repeats\n')
+    odom = args.localization == 'odom'
+    print(f'S1, MPC + {args.perception}, localization {args.localization}, '
+          f'{args.repeat} repeats\n')
 
     result = []
     with simulation.carla_world() as world:
@@ -63,7 +69,7 @@ def main_():
               f'{"zero cand":>10}{"solve mean":>12}{"solve max":>12}{"failed":>7}{"seconds":>8}')
         for i in range(args.repeat):
             t0 = time.time()
-            m = tune_vision.once(world, net, params, ref, ref5)
+            m = tune_vision.once(world, net, params, ref, ref5, odom=odom)
             result.append(m)
             print(f'{i + 1:>4}{m["verdict"]:>10}{m["min_dist"]:>11.3f}{m["duration"]:>8.2f}'
                   f'{m["lateral"]:>9.3f}{m["no_candidates"]:>10d}{m["solve_mean"]:>12.2f}'
@@ -92,7 +98,8 @@ def main_():
     # cukup: metrik bab 4 baru didefinisikan saat menulis, dan bagian 15.5
     # menunjukkan metrik yang tampak wajar bisa mengukur hal lain -- tanpa data
     # mentah, mendefinisikan ulang berarti menjalankan ulang seluruh eksperimen.
-    path = f'{config.OUT_DIR}/experiment_s1_{args.perception}{args.suffix}.npz'
+    path = (f'{config.OUT_DIR}/experiment_s1_{args.perception}'
+            f'{"_odom" if odom else ""}{args.suffix}.npz')
     np.savez(path, **{k: np.array([m[k] for m in result]) for k, _, _ in METRICS},
              verdict=np.array([m['verdict'] for m in result]),
              solver_failures=np.array([m['solver_failures'] for m in result]),

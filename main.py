@@ -472,7 +472,8 @@ def main():
     print()
     print(evaluation.summarize_verdict(success, category, details))
     if recorder is not None:
-        recorder.save(f'vision_{args.scenario.lower()}{args.suffix}.mp4')
+        recorder.save(f'vision_{args.scenario.lower()}'
+                      f'{"_odom" if args.localization == "odom" else ""}{args.suffix}.mp4')
     print(f'\nlog: {path}')
 
 

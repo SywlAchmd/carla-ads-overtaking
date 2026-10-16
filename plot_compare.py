@@ -3,6 +3,7 @@
 Dibaca dari log mentah; tidak perlu menjalankan ulang simulasi.
 
     python plot_compare.py                  # S1 -> out/compare_s1.png
+    python plot_compare.py --modes vision vision_odom   # -> compare_s1_vision_vision_odom.png
 """
 import argparse
 import os
@@ -16,16 +17,21 @@ import config
 import evaluation
 
 STYLE = {'gt': dict(color='tab:blue', lw=2.0, label='MPC + ground truth'),
-        'vision': dict(color='tab:red', lw=1.8, ls='--', label='MPC + vision')}
+        'vision': dict(color='tab:red', lw=1.8, ls='--', label='MPC + vision'),
+        # oranye, bukan hijau: merah-hijau ΔE 3,9 untuk deutan, merah-oranye 16,8
+        'vision_odom': dict(color='tab:orange', lw=1.8, ls='-.',
+                            label='MPC + vision, odometry localization')}
+OFFSET = [(-64, 26), (16, -6), (16, 22)]     # posisi anotasi minimum, per urutan mode
 
 
 def load_run(sk, mode):
     f = np.load(os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{mode}.npz'))
     k = {n: i for i, n in enumerate(f['columns'])}
     L, pos = f['log'], f['vehicle_positions']
-    yaw = L[:, k['yaw']]
-    xc = L[:, k['x']] + config.AXLE_TO_CENTER * np.cos(yaw)
-    yc = L[:, k['y']] + config.AXLE_TO_CENTER * np.sin(yaw)
+    # pose GT bila ada: di log odom `x`/`y` adalah pose yang DIYAKINI ego
+    gx, gy, yaw = (L[:, k.get(n + '_gt', k[n])] for n in ('x', 'y', 'yaw'))
+    xc = gx + config.AXLE_TO_CENTER * np.cos(yaw)
+    yc = gy + config.AXLE_TO_CENTER * np.sin(yaw)
     dist = evaluation.box_distance(pos[:, 0, 0] - xc, pos[:, 0, 1] - yc,
                                    f['dim_ego'], f['vehicle_dims'][0], yaw, pos[:, 0, 2])
     # Simpangan lateral menurut PETA, bukan frame kendali: frame jalur vision
@@ -39,9 +45,10 @@ def load_run(sk, mode):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--scenario', default='S1', choices=list(config.SCENARIOS))
+    ap.add_argument('--modes', nargs='+', default=['gt', 'vision'], choices=list(STYLE))
     args = ap.parse_args()
     sk = args.scenario.lower()
-    d = {m: load_run(sk, m) for m in ('gt', 'vision')}
+    d = {m: load_run(sk, m) for m in args.modes}
 
     fig, ax = plt.subplots(4, 1, figsize=(10, 11), sharex=True)
     for a in ax:
@@ -69,31 +76,33 @@ def main():
     ax[3].set_xlabel('t (s)')
     ax[3].set_ylim(-0.4, 9.6)
 
-    for m, g in STYLE.items():
-        x = d[m]
+    for m in args.modes:
+        x, g = d[m], STYLE[m]
         ax[0].plot(x['t'], x['y'], **g)
         ax[1].plot(x['t'], x['v'], **g)
         ax[2].plot(x['t'], x['dist'], **g)
         ax[3].plot(x['t'], x['n_feasible'], **g)
 
-    for m, color, xy in (('gt', 'tab:blue', (-64, 26)), ('vision', 'tab:red', (16, -6))):
-        x = d[m]
+    for j, m in enumerate(args.modes):
+        x, color, xy = d[m], STYLE[m]['color'], OFFSET[j]
         i = int(np.argmin(x['dist']))
         ax[2].annotate(f"minimum {x['dist'][i]:.2f} m", (x['t'][i], x['dist'][i]),
                        textcoords='offset points', xytext=xy, color=color,
                        fontsize=9, fontweight='bold',
                        arrowprops=dict(arrowstyle='->', color=color, lw=1))
         zero = int((x['n_feasible'] == 0).sum())
-        ax[3].annotate(f'{zero} ticks with no candidate', (0.99, 0.30 + 0.16 * (m == 'gt')),
+        ax[3].annotate(f'{zero} ticks with no candidate', (0.99, 0.30 + 0.16 * j),
                        xycoords='axes fraction', ha='right', color=color, fontsize=9)
 
     ax[0].legend(loc='upper right', fontsize=9)
     for a in ax[1:3]:
         a.legend(loc='upper right', fontsize=8)
-    fig.suptitle(f'Scenario {args.scenario} — effect of the perception source on control',
-                 y=0.985)
+    title = ('effect of the perception source on control' if args.modes == ['gt', 'vision']
+             else 'effect of the localization source on control')
+    fig.suptitle(f'Scenario {args.scenario} — {title}', y=0.985)
     fig.tight_layout(rect=(0, 0, 1, 0.97))
-    out = os.path.join(config.OUT_DIR, f'compare_{sk}.png')
+    out = os.path.join(config.OUT_DIR, f'compare_{sk}.png' if args.modes == ['gt', 'vision']
+                       else f'compare_{sk}_{"_".join(args.modes)}.png')
     fig.savefig(out, dpi=150)
     print(f'Plot: {out}')
 

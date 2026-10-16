@@ -5,6 +5,7 @@ Dibaca dari log mentah supaya tidak perlu menjalankan ulang simulasi.
     python plot_run.py                        # GT  -> out/run_s1_mpc_gt.png
     python plot_run.py --perception vision    # -> out/run_s1_mpc_vision.png
     python plot_run.py --scenario S3
+    python plot_run.py --perception vision_odom   # lokalisasi odometri
 """
 import argparse
 import os
@@ -35,16 +36,20 @@ def shade_states(ax, t, st):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--scenario', default='S1', choices=list(config.SCENARIOS))
-    ap.add_argument('--perception', default='gt', choices=('gt', 'vision'))
+    ap.add_argument('--perception', default='gt',
+                    choices=('gt', 'vision', 'gt_odom', 'vision_odom'))
     args = ap.parse_args()
     sk = args.scenario.lower()
 
     f = np.load(os.path.join(config.OUT_DIR, f'run_{sk}_mpc_{args.perception}.npz'))
     L, st, pos = f['log'], f['fsm_state'], f['vehicle_positions']
     k = {name: i for i, name in enumerate(f['columns'])}
-    t, y, yaw = L[:, 0], L[:, k['y']], L[:, k['yaw']]
-    xc = L[:, k['x']] + config.AXLE_TO_CENTER * np.cos(yaw)
-    yc = y + config.AXLE_TO_CENTER * np.sin(yaw)
+    t, y = L[:, 0], L[:, k['y']]
+    # Jarak antar bodi dari pose GT (`*_gt`) bila ada -- di log odom `x`/`y` adalah
+    # pose yang DIYAKINI ego. Log lama tanpa kolom itu memang GT.
+    gx, gy, yaw = (L[:, k.get(n + '_gt', k[n])] for n in ('x', 'y', 'yaw'))
+    xc = gx + config.AXLE_TO_CENTER * np.cos(yaw)
+    yc = gy + config.AXLE_TO_CENTER * np.sin(yaw)
 
     fig, ax = plt.subplots(4, 1, figsize=(10, 11), sharex=True)
     for a in ax:

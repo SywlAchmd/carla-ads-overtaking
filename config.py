@@ -36,9 +36,11 @@ VALIDATION_THROTTLE = 0.56           # menahan ~50 km/jam; 0.4 melambat, 0.75 te
 VALIDATION_STEER = 0.033            # + = kanan; R ~90 m, a_lat ~2.1 m/s² @ 50 km/jam
 VALIDATION_WARMUP = 1.0             # detik, roda menyesuaikan setelah set_target_velocity
 
-# Path
-OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'out')
-VEHICLE_PARAMS_JSON = os.path.join(OUT_DIR, 'vehicle_params.json')
+# Path. SKRIPSI_OUT memisahkan keluaran satu branch, mis.
+# SKRIPSI_OUT=out/localization_branch; parameter kendaraan tetap dari out/.
+_BASE_OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'out')
+OUT_DIR = os.path.abspath(os.environ.get('SKRIPSI_OUT', _BASE_OUT))
+VEHICLE_PARAMS_JSON = os.path.join(_BASE_OUT, 'vehicle_params.json')
 
 # Local planner (bagian 5.2-5.5)
 # Tetapan tapis arah jalan hasil ukur, per tick 20 Hz. Derau sudut hadap terukur
