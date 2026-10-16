@@ -24,8 +24,10 @@ Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
 | 8 | Perception lengkap (YOLOPX + depth + tracking) | **selesai untuk S1** |
 | 9 | Eksperimen penuh | **selesai untuk S1**; S2-S5 belum |
 
-138 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
-Terakhir diperbarui 16 Oktober 2026: pelacak diganti ByteTrack dengan Hungarian,
+139 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+Terakhir diperbarui 16 Oktober 2026: lokalisasi tanpa ground truth -- GNSS +
+kompas IMU untuk pose awal, lalu dead reckoning gyro IMU + speedometer (bagian 36).
+Sebelumnya, 16 Oktober 2026: pelacak diganti ByteTrack dengan Hungarian,
 parameter paper (bagian 35). Sebelumnya, 2 Oktober 2026: checkpoint YOLOPX epoch 92
 dan drivable area di jalur kendali (bagian 31). Angka perception bagian 18 dan 29 memakai
 checkpoint lama; pembandingnya di bagian 31.1-31.2.
@@ -401,9 +403,13 @@ Data mentah: `vehicle_params.json`, `model_validation.csv`,
 1. **Sumber parameter kendaraan = CARLA API**, bukan katalog. Spesifikasi Dodge
    Charger dunia nyata tidak dibutuhkan dan tidak boleh masuk skripsi — plant-nya
    CARLA, bukan mobil asli.
-2. **Localization memakai ground truth CARLA**, nyatakan eksplisit di batasan
-   masalah bahwa lokalisasi diasumsikan ideal. Tidak dievaluasi karena errornya
-   nol per definisi.
+2. **Localization tanpa ground truth** (bagian 36): pose awal dari GNSS + kompas
+   IMU, lalu dead reckoning gyro IMU + speedometer, dikoreksi relatif oleh deteksi
+   lajur kamera. GNSS **hanya untuk pose awal** -- alasannya bagian 36.3. Seluruh
+   sensor lokalisasi ideal (tanpa noise/bias), sama perlakuannya dengan depth
+   camera; speedometer adalah pseudo-sensor. Galatnya kini **dievaluasi** terhadap
+   GT (bagian 36.2). Aturan lama ("GT, galat nol per definisi") berlaku untuk
+   `--localization gt` dan seluruh hasil sebelum bagian 36.
 3. **Depth camera adalah sensor ideal** tanpa padanan langsung di dunia nyata;
    sebutkan di batasan masalah bahwa implementasi nyata menggantinya dengan
    stereo camera atau LiDAR.
@@ -1488,6 +1494,9 @@ hasil). Perception dikecualikan: angkanya datang dari test set, bukan dari run
 skenario.
 
 ### 22.1 Localization Layer — apa yang sebenarnya bisa dievaluasi
+
+> **Diperbarui bagian 36:** dengan `--localization odom` layer ini tidak lagi GT
+> dan galatnya terukur. Isi di bawah tetap berlaku untuk `--localization gt`.
 
 **Peringatan lingkup.** Localization di skripsi ini memakai **transform ground
 truth dari server CARLA**, bukan fusi IMU + GNSS dengan EKF. Modul
@@ -3479,3 +3488,146 @@ ini. Hungarian di makalah ini disebut lewat SORT, bukan dirumuskan ulang.
 **Ditolak:** You dkk. (2024), *Electronics* 13(15):3033 -- isinya cocok (Hungarian
 + IoU + ByteTrack untuk kendaraan), tetapi penulis menolak jurnal MDPI. ICT
 Express (Elsevier) 2025 tidak bisa dibuka isinya, jadi tidak dipakai.
+
+
+---
+
+## 36. Lokalisasi tanpa ground truth: GNSS awal + dead reckoning (16 Oktober 2026)
+
+Branch `feat/lokalisasi-tanpa-gt`, opsi `python main.py --localization odom`.
+Bawaan tetap `gt`, dan jalur itu terverifikasi **identik bit-per-bit** dengan log
+S1 sebelumnya, jadi seluruh hasil bagian 1-35 tetap sah.
+
+### 36.1 Susunan
+
+| Besaran | Sumber | Catatan |
+|---|---|---|
+| Posisi awal | GNSS (`sensor.other.gnss`) -> `Map.geolocation_to_transform` | sekali saja; terukur 0,0000 m dari GT |
+| Arah awal | kompas IMU, yaw CARLA = kompas - 90 deg | sekali saja; terukur maks 0,004 deg dari GT |
+| `yaw_rate` | gyro z IMU, dinegasikan (CARLA left-handed) | tanda diukur: searah `get_angular_velocity().z`, beda maks 1e-4 rad/s |
+| `v` | speedometer (pseudo-sensor) | CARLA 0.9.16 tidak punya encoder roda |
+| `x, y, yaw` | integrasi trapesium di sumbu belakang, yaw tengah langkah | asumsi tanpa slip lateral = asumsi bicycle model MPC |
+| Koreksi drift | kamera: arah jalan (`psi_road`) dan posisi lajur (`lane_dev`) | sudah ada sejak bagian 28 |
+
+GT tidak lagi masuk lokalisasi. Ia tetap dipakai sebagai **alat ukur**:
+penempatan kendaraan skenario, penilai jarak (kolom baru `x_gt`, `y_gt`,
+`yaw_gt`), dan zona aman di `metrics.py`.
+
+Padanan industri: lapis *twist* Autoware (`gyro_odometer`) memakai gyro IMU +
+kecepatan kendaraan dari CAN -- susunan yang sama dengan di sini. Bedanya,
+Autoware punya pose absolut kontinu (NDT LiDAR + peta) yang difusi dengan EKF;
+di sini koreksinya relatif lajur dari kamera.
+
+### 36.2 Hasil, S1, satu run (sensor ideal)
+
+| Run | Lateral 95% / maks | Memanjang maks | Arah 95% / maks | Vonis | Jarak bodi min |
+|---|---|---|---|---|---|
+| perception GT | 0,115 / 0,127 m | 0,007 m | 0,029 / 0,037 deg | berhasil | 1,43 m (= run GT) |
+| perception vision | 0,142 / 0,153 m | 0,010 m | 0,037 / 0,088 deg | berhasil | 1,87 m |
+
+**Sumber galat padahal sensornya ideal: slip ban.** Dead reckoning menganggap
+sumbu belakang tidak slip lateral; fisika CARLA punya slip, terukur maks 0,456
+deg saat pindah lajur. Integral slip itu berkorelasi **1,000** dengan galat
+lateral. Galat model, bukan galat sensor -- dan kembali ke ~0 setelah manuver
+karena pindah lajur pergi-pulang simetris.
+
+**Dibandingkan syarat lokalisasi Reid dkk. (2019)** -- batas galat (95%):
+
+| Besaran | Hasil vision (95% / maks) | Jalan bebas hambatan | Jalan lokal |
+|---|---|---|---|
+| Lateral | 0,142 / 0,153 m | 0,57 m (0,20 m): **memenuhi** | 0,29 m (0,10 m): batas memenuhi, **95% tidak** |
+| Arah | 0,037 / 0,088 deg | 1,50 deg (0,51 deg): **memenuhi** | 0,50 deg (0,17 deg): **memenuhi** |
+
+Aturan penulisan no. 5: jangan klaim Town04 masuk kategori jalan tertentu.
+Tampilkan kedua kolom apa adanya, termasuk yang tidak terpenuhi.
+
+**Belum:** eksperimen 10 run (`experiment.py` belum meneruskan `--localization`).
+
+### 36.3 Kenapa GNSS hanya untuk pose awal -- argumen untuk sidang
+
+1. **Dead reckoning butuh posisi awal yang diketahui**, karena ia hanya
+   mengintegrasikan perubahan. Peran GNSS sebagai sumber pose awal adalah pola
+   baku: Autoware `pose_initializer` menerima "roughly estimated initial pose
+   from GNSS/user", meneruskannya ke `ndt_scan_matcher` sebagai tebakan awal,
+   lalu ke `ekf_localizer` -- sesudahnya pelacakan diambil alih estimator lain.
+2. **GNSS sendiri tidak memenuhi syarat loop kendali.** Spesifikasi GPS SPS:
+   <= 8 m horizontal (95%, rata-rata global), lebih dari satu orde besaran di atas
+   syarat level lajur Reid dkk. (0,20 m / 0,10 m pada 95%). Laju update GNSS
+   ~1 Hz di lingkungan sulit, sedangkan loop kendali 20 Hz; sinyal juga terputus
+   di perkotaan. Karena itu solusi baku kendaraan darat adalah integrasi
+   GNSS/INS, bukan GNSS saja.
+3. **GNSS kontinu di simulator merusak evaluasi** (argumen metodologi). GNSS
+   CARLA tanpa noise = GT (terukur 0,0000 m). Dipakai tiap tick, galat
+   lokalisasi menjadi nol karena konstruksi, dan alat ukur tidak lagi terpisah
+   dari yang diukur.
+4. **Hasilnya memenuhi syarat** (tabel 36.2), dengan drift yang sumbernya
+   terjelaskan (slip ban).
+
+**Pertanyaan penguji yang diantisipasi:**
+- *"Kenapa tidak fusi GNSS/INS dengan EKF?"* -- Itu praktik baku, tetapi dengan
+  sensor ideal GNSS = GT (argumen 3). Fusi baru bermakna bila GNSS dimodelkan
+  ber-noise; itu topik lokalisasi tersendiri, di luar cakupan manuver menyalip.
+- *"Dead reckoning kan drift?"* -- Ya. Arah dikoreksi kamera, posisi lateral
+  diukur relatif lajur; sisa drift terukur maks 0,153 m, di bawah batas Reid.
+- *"GNSS ideal, kenapa tidak dipakai terus?"* -- Argumen 3, ditambah GNSS nyata
+  <= 8 m (95%): bersandar pada GNSS ideal kontinu berarti bersandar pada hal yang
+  tidak realistis.
+
+### 36.4 Batasan masalah (siap pakai)
+
+> Pose awal kendaraan diperoleh dari GNSS dan kompas IMU; selanjutnya pose
+> diestimasi dengan dead reckoning dari gyroscope IMU dan speedometer, dikoreksi
+> secara relatif oleh deteksi lajur kamera. Seluruh sensor lokalisasi
+> diasumsikan ideal (tanpa noise dan bias). Speedometer merupakan pseudo-sensor
+> yang diturunkan dari kecepatan simulator; pada kendaraan nyata padanannya
+> adalah sensor kecepatan roda pada CAN bus. Lokalisasi absolut terhadap peta
+> berada di luar cakupan.
+
+### 36.5 Sitasi -- status terhadap aturan bagian 16 (<= 4 tahun, ber-URL, isi dibuka)
+
+**Memenuhi:**
+
+> Autoware Foundation. *autoware_pose_initializer* (v1.10.0, diperbarui Oktober
+> 2026). https://index.ros.org/p/autoware_pose_initializer/
+
+Dibuka langsung: kutipan argumen 1 dari halaman ini. Dokumentasi, bukan paper.
+
+**Isi dibuka, tetapi > 4 tahun -- perlu keputusan penulis** (pertanyaan yang sama
+dengan Werling/Hayward/Flash & Hogan di bagian 16):
+
+> Reid, T. G. R., Houts, S. E., Cammarata, R., Mills, G., Agarwal, S., Vora, A., &
+> Pandey, G. (2019). Localization Requirements for Autonomous Vehicles. *SAE
+> International Journal of Connected and Automated Vehicles*, 2(3), 173-190.
+> https://doi.org/10.4271/12-02-03-0012 (arXiv:1906.01061)
+
+Abstrak arXiv dibuka langsung; angka di 36.2 dari sana. Ini sumber asal
+angka-angka itu -- paper yang lebih baru mengutipnya, bukan menurunkan ulang.
+Daftar penulis, volume, dan halaman dicek di Crossref.
+
+> U.S. Department of Defense (2020). *Global Positioning System Standard
+> Positioning Service Performance Standard*, 5th ed. Angka <= 8 m dari
+> https://gps.gov/systems/gps/performance -- halaman itu belum dibuka langsung,
+> hanya lewat hasil pencarian.
+
+**<= 4 tahun, tetapi isi BELUM dibuka -- penulis buka sendiri sebelum dikutip**
+(IEEE memblokir unduhan otomatis):
+
+> He, Y., Li, J., & Liu, J. (2023). Research on GNSS INS & GNSS/INS Integrated
+> Navigation Method for Autonomous Vehicles: A Survey. *IEEE Access*, 11,
+> 79033-79055. https://doi.org/10.1109/ACCESS.2023.3299290
+
+Kandidat utama untuk argumen 2 (laju GNSS, keterputusan sinyal, sifat
+komplementer GNSS/INS). Metadata dicek di Crossref; open access.
+
+> Gao, Y. dkk. (2023). A Hybrid RISS/GNSS Method During GNSS Outage in the Land
+> Vehicle Navigation System. *IEEE Sensors Journal*. Abstrak saja: "INS/GNSS is a
+> standard solution in land vehicle navigation". DOI belum dicek.
+
+**Tidak dipakai:** Groves (2013, buku teks, > 4 tahun, isi tidak dibuka); Su dkk.
+(2019, ION ITM, 0 sitasi); Wang dkk. (2020) dan Cong dkk. (2020), keduanya > 4
+tahun dan hanya abstrak. Boguspayev dkk. (2023, *Applied Sciences*) cocok isinya
+tetapi MDPI.
+
+Pseudo-sensor speedometer: padanannya "Speedometer" di sensor yang diizinkan
+CARLA Leaderboard (https://leaderboard.carla.org/evaluation_v2_1/). Halaman itu
+belum dibuka langsung.
