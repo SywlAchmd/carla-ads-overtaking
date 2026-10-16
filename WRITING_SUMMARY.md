@@ -24,9 +24,10 @@ Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
 | 8 | Perception lengkap (YOLOPX + depth + tracking) | **selesai untuk S1** |
 | 9 | Eksperimen penuh | **selesai untuk S1**; S2-S5 belum |
 
-Kode: 8.466 baris, 134 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
-Terakhir diperbarui 2 Oktober 2026: checkpoint YOLOPX epoch 92 dan drivable area
-di jalur kendali (bagian 31). Angka perception bagian 18 dan 29 memakai
+138 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+Terakhir diperbarui 16 Oktober 2026: pelacak diganti ByteTrack dengan Hungarian,
+parameter paper (bagian 35). Sebelumnya, 2 Oktober 2026: checkpoint YOLOPX epoch 92
+dan drivable area di jalur kendali (bagian 31). Angka perception bagian 18 dan 29 memakai
 checkpoint lama; pembandingnya di bagian 31.1-31.2.
 
 **Yang boleh ditulis sekarang:** seluruh bab 3 (metodologi), dan bab 4 untuk
@@ -44,7 +45,8 @@ dikutip -- itu training lama dengan split bocor.
 
 | Bagian | Kendaraan target | Checkpoint YOLOPX | Status angka |
 |---|---|---|---|
-| **32** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** (hasil vision terbaru) |
+| **35** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** (hasil vision terbaru, pelacak ByteTrack) |
+| 32, 34 | Lincoln MKZ 2020 | epoch 92 | pelacak lama (serakah); pembanding bagian 35 |
 | **31** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU** (perception, drivable area, GT); hasil vision digantikan 32 |
 | **33** | -- | **epoch 92** | **BERLAKU**: split dataset dan angka training/test YOLOPX |
 | 28-30 | Lincoln MKZ 2020 | epoch 263 (lama) | riwayat checkpoint lama; metodenya berlaku |
@@ -458,9 +460,9 @@ Data mentah: `vehicle_params.json`, `model_validation.csv`,
 - **Validasi perception saat berdampingan** belum terkendali; angkanya diambil
   dari log loop tertutup, bukan sapuan terancang (bagian 19.8).
 - **S3 dengan vision** butuh kamera belakang (bagian 19.6).
-- **Sitasi ByteTrack** belum dibuka sumbernya, jadi sengaja belum masuk daftar
-  pustaka meski strateginya dipakai `tracking.py`. Terbit 2022 — tepat di batas
-  aturan empat tahun.
+- ~~**Sitasi ByteTrack** belum dibuka sumbernya~~ → dibuka, dan `tracking.py` kini
+  ByteTrack apa adanya dengan Hungarian (bagian 35). Pendukung <= 4 tahun: IEEE
+  Access 2024 (bagian 35.4).
 - **Anggaran tick** kasus terburuk 48,9 ms dari 50 ms (bagian 21.3). Harus
   ditulis apa adanya.
 
@@ -692,6 +694,9 @@ hasil pencarian.
 > systematic review to inform the interactive capabilities of highly automated
 > trucks. *Frontiers in Robotics and AI*, 9, 818019.
 > https://doi.org/10.3389/frobt.2022.818019
+
+**Pelacakan multi-objek (asosiasi BYTE, Hungarian):** lihat bagian 35.4 --
+Zhang dkk. (2022, ECCV) dan Bihanda dkk. (2024, *IEEE Access*).
 
 **Yang sengaja TIDAK dikutip:** nilai time gap ISO 15622 (standarnya 2018, dan
 sumber <= 4 tahun yang memuat angkanya tidak ditemukan), Rajamani (2012), serta
@@ -3327,3 +3332,150 @@ kontensi, bukan sifat solver. Dengan kamera belakang (+14,4 ms) kasus terburukny
 kedua `experiment_s1_*.npz`. Gambar lain di `out/` (deteksi, sensor, IPM, lajur)
 tidak melewati loop kendali, jadi tidak tersentuh perubahan ini.
 
+
+---
+
+## 35. Pelacak diganti ByteTrack dengan Hungarian, parameter paper (16 Oktober 2026)
+
+**Perubahan.** `tracking.py` sebelumnya hanya *terinspirasi* ByteTrack: asosiasi
+dua tahap, tetapi penugasannya serakah, IoU dihitung terhadap kotak TERAKHIR,
+dan seluruh ambangnya disetel sendiri (0,5 / 0,3 / IoU 0,15 / 3 frame lahir /
+5 frame melayang). Penugasan serakah tidak punya sumber sitasi. Keputusan
+penulis: pakai ByteTrack apa adanya, dengan Hungarian, dan **parameter tidak
+diubah sama sekali** dari jurnalnya.
+
+Kini `Tracker.update` mengikuti Algorithm 1 paper ByteTrack baris per baris:
+
+1. deteksi dipisah: D_high (skor > tau) dan D_low (sisanya);
+2. Kalman filter memprediksi kotak SEMUA track, termasuk yang hilang;
+3. asosiasi pertama: semua track vs D_high, IoU terhadap kotak PREDIKSI, Hungarian;
+4. asosiasi kedua: track sisa vs D_low, IoU, Hungarian; D_low sisa dibuang;
+5. track tanpa pasangan menjadi hilang, dihapus setelah 30 frame;
+6. D_high sisa melahirkan track baru;
+7. keluaran = semua track kecuali yang hilang.
+
+Hungarian = `scipy.optimize.linear_sum_assignment` pada biaya 1 - IoU, lalu
+pasangan dengan IoU < 0,2 ditolak.
+
+**Parameter.** Yang ditulis di paper diambil dari paper (bagian 4.1, "Implementation
+details"). Yang tidak ditulis diambil dari kode resmi penulisnya
+(github.com/ifzhang/ByteTrack), bukan disetel:
+
+| Parameter | Nilai | Sumber | Sebelumnya |
+|---|---|---|---|
+| tau, ambang skor tinggi | 0,6 | paper: "default detection score threshold" | 0,5 |
+| batas bawah D_low | 0,1 | kode: `inds_low = scores > 0.1` | 0,3 |
+| IoU minimum, kedua asosiasi | 0,2 | paper: "smaller than 0.2 ... rejected" | 0,15 |
+| track hilang disimpan | 30 frame (1,5 s di 20 Hz) | paper: "keep it for 30 frames" | 5 frame |
+| track baru dilaporkan | langsung | paper Algorithm 1 baris 23-24 | setelah 3 frame |
+| track hilang dilaporkan | tidak | paper: "we do not output ... T_lost" | ya, melayang |
+| Kalman kotak [cx, cy, a, h] + turunan | bobot derau 1/20 dan 1/160, dt = 1 frame | kode (`kalman_filter.py`) | tidak ada |
+
+**Yang sengaja TIDAK diambil dari kode** karena tidak ada di paper: ambang lahir
+tau + 0,1, IoU > 0,5 di asosiasi kedua, status "unconfirmed", `fuse_score`, dan
+penskalaan buffer dengan frame rate. Kode resmi sendiri tidak seragam: `track.py`
+memakai tau 0,6 / `match_thresh` 0,9, `demo_track.py` 0,5 / 0,8. Paper yang
+dipakai karena tiap angkanya bisa ditunjuk halamannya.
+
+**Kalman filter metrik tetap ada.** ByteTrack hanya melacak kotak citra; FSM dan
+MPC butuh posisi dan kecepatan dalam meter. Filter metrik frame ego (kompensasi
+gerak ego, bagian 10.3) dipertahankan tanpa perubahan parameter dan dikoreksi
+oleh deteksi yang sama yang dipasangkan BYTE. Ini harus ditulis jelas: yang
+diambil dari ByteTrack adalah ASOSIASI-nya, bukan penaksir kecepatannya.
+
+### 35.1 Hasil S1, MPC + vision, 10 run
+
+Server CARLA baru dinyalakan, `quality-level=Low`, checkpoint epoch 92. Pembanding
+= `out/experiment_s1_vision.npz` (bagian 34, pelacak lama). Hasil baru di
+`out/experiment_s1_vision_bytetrack.npz`.
+
+| Metrik | Pelacak lama (bagian 34) | **ByteTrack** |
+|---|---|---|
+| Vonis | 10/10 | **10/10** |
+| Jarak min antar bodi | 1,812 ± 0,026 m | **1,961 ± 0,006 m** |
+| Durasi manuver | 12,52 ± 0,09 s | 12,68 ± 0,03 s |
+| Simpangan lateral maks | -4,321 m | -4,339 m |
+| Deviasi lajur sebelum manuver | 0,0110 ± 0,0004 m | 0,0113 ± 0,0004 m |
+| Deviasi lajur, ekor sesudah | 0,0501 ± 0,0012 m | 0,0498 ± 0,0010 m |
+| Perlambatan terdalam | -3,17 ± 0,30 m/s² | **-3,99 ± 0,09 m/s²** |
+| Tick tanpa kandidat planner | 37,8 ± 1,1 | 42,2 ± 0,6 |
+| `g` zona aman minimum | 1,072 | 1,103 |
+| Galat prediksi @ 0,5 s, RMS | 0,0405 m | 0,0355 m |
+| XTE ke lajur terdekat, RMS | 0,563 m | 0,562 m |
+| Galat lateral MPC, RMS | 0,0149 m | 0,0133 m |
+| Galat kecepatan, RMS | 0,355 m/s | 0,595 m/s |
+| Kegagalan solver | 0 dari 4.000 | 0 dari 4.000 |
+| Waktu solve rata-rata / maks | 16,81 / 31,37 ms | 16,40 / **48,46 ms** |
+| Lebar lajur yang dipakai FSM | 3,512-3,559 m | 3,509-3,566 m |
+
+### 35.2 Perception: apa yang berubah
+
+Diukur dari kolom `x_est`/`y_est` terhadap `x_tgt`/`y_tgt` (ground truth):
+
+| | Lama | ByteTrack |
+|---|---|---|
+| target pertama dilaporkan pada | ~43,8 m | ~42,9 m (3 tick lebih lambat) |
+| target 5-60 m di depan: dilaporkan | 70,3% tick | 69,0% tick |
+| target 0-5 m di depan: dilaporkan | 62,0% tick | **33,2% tick** |
+| target di samping/belakang (-60..0 m) | 0% | 0% |
+| terakhir terlihat pada jarak relatif | +1,97 m | +3,37 m |
+| galat x (>5 m), RMS / bias | 0,666 / -0,137 m | 0,777 / -0,218 m |
+| galat y (>5 m), RMS / bias | 0,114 / -0,021 m | 0,126 / -0,036 m |
+| "kedipan" (target 5-60 m hilang lalu muncul lagi) | 0 tick | 0 tick |
+
+Lebih lambat terdeteksi karena tau naik 0,5 -> 0,6. Turunnya keterlihatan di
+0-5 m **bukan** karena ByteTrack lebih sering kehilangan target: target memang
+keluar dari citra kamera depan saat ego menyusulnya. Pelacak lama menutupinya
+dengan melaporkan track yang melayang 5 frame (0,25 s); ByteTrack, sesuai paper,
+tidak melaporkan track yang hilang. Sesudah itu keduanya sama-sama buta (tidak
+ada kamera belakang).
+
+### 35.3 Dampak, dan yang harus masuk batasan masalah
+
+- **Keputusan kembali ke lajur tidak memburuk.** FSM sudah meneruskan posisi
+  terakhir target dengan laju relatifnya saat target hilang (`planning.py`,
+  state OVERTAKING). Keputusan kembali terjadi pada target **-10,50 ± 0,20 m**
+  (lama -12,27 ± 0,27 m; GT -10,4 m), setelah buta 2,75 s (lama 2,47 s). Masih
+  di atas `PASS_MARGIN` 8 m.
+- **MPC kehilangan zona aman target ~0,2 s lebih awal** saat ego sudah di lajur
+  sebelah. Tidak menurunkan keselamatan di S1: jarak bodi justru naik.
+- **Rem lebih dalam bukan akibat track hilang.** Perlambatan terdalam terjadi di
+  LANE_CHANGE_OVERTAKE, target 6 m di depan dan terlihat penuh di keempat tick
+  sebelumnya. Dugaan: target terdeteksi lebih lambat (tau 0,6), jadi keputusan
+  menyalip sedikit terlambat. **Belum dibuktikan.**
+- **Risiko yang belum terukur: kedipan deteksi.** Tanpa track melayang, satu
+  frame deteksi gagal langsung menghapus halangan dari FSM dan MPC. `FSM_DWELL`
+  0,3 s meredam transisi state, tetapi `v_goal` dan zona aman MPC bereaksi
+  seketika. Di S1 tidak terjadi (0 tick kedipan), tetapi skenario dengan oklusi
+  (S3, S5) harus diperiksa ulang. Ini kelemahan bawaan paper, bukan cacat
+  implementasi, dan layak ditulis di batasan masalah.
+- **Waktu solve maks 48,46 ms** terjadi di satu run (run lain 24,75-41,04 ms).
+  Rata-rata tidak berubah, dan pelacak tidak menyentuh MPC, jadi kemungkinan
+  besar kontensi. **Ukur ulang setelah restart server sebelum dikutip.**
+
+### 35.4 Sitasi
+
+> Zhang, Y., Sun, P., Jiang, Y., Yu, D., Weng, F., Yuan, Z., Luo, P., Liu, W., &
+> Wang, X. (2022). ByteTrack: Multi-Object Tracking by Associating Every Detection
+> Box. *Computer Vision -- ECCV 2022*, LNCS 13682, 1-21. Springer.
+> https://doi.org/10.1007/978-3-031-20047-2_1
+
+Isinya dibuka langsung (arXiv:2110.06864v3). Sumber Algorithm 1, Hungarian ("we
+adopt Hungarian Algorithm to finish the matching"), IoU, tau 0,6, IoU 0,2, dan
+30 frame. **Batas aturan empat tahun tipis**: terbit Oktober 2022. Bila dihitung
+per tahun, bersandarlah pada sitasi berikut.
+
+> Bihanda, Y. G., Fatichah, C., & Yuniarti, A. (2024). Multi-Vehicle Tracking and
+> Counting Framework in Average Daily Traffic Survey Using RT-DETR and ByteTrack.
+> *IEEE Access*, 12, 121723-121737. https://doi.org/10.1109/ACCESS.2024.3453249
+
+Isinya dibuka langsung. ByteTrack diterapkan pada **kendaraan** mengikuti
+pseudocode paper aslinya (asosiasi pertama dengan semua track termasuk yang
+hilang, IoU terhadap prediksi Kalman, asosiasi kedua dengan deteksi lemah, track
+hilang dihapus setelah n frame), dan menyatakan "follows the default recipe of
+hyperparameters from each original paper" -- pendekatan yang sama dengan bagian
+ini. Hungarian di makalah ini disebut lewat SORT, bukan dirumuskan ulang.
+
+**Ditolak:** You dkk. (2024), *Electronics* 13(15):3033 -- isinya cocok (Hungarian
++ IoU + ByteTrack untuk kendaraan), tetapi penulis menolak jurnal MDPI. ICT
+Express (Elsevier) 2025 tidak bisa dibuka isinya, jadi tidak dipakai.

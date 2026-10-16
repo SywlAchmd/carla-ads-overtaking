@@ -3345,3 +3345,48 @@ di S1 (0 tick tanpa dua garis), jadi perubahannya menutup celah, bukan mengubah
 hasil. Waktu solve maks 31,37 ms (vision) / 28,83 ms (GT): angka 55,20 ms lama
 memang kontensi. WRITING_SUMMARY bagian 34.
 
+
+---
+
+## Pelacak Jadi ByteTrack Sungguhan — 16 Oktober 2026
+
+**Permintaan penulis:** ganti pelacak ke ByteTrack dengan Hungarian yang ada
+sitasinya, karena penugasan serakah tidak punya dasar pustaka. Pakai parameter
+apa adanya, rumus tetap dari jurnal.
+
+**Yang ternyata ada sebelumnya.** `tracking.py` hanya meminjam IDE ByteTrack
+(dua tahap, deteksi lemah tidak melahirkan track). Selebihnya buatan sendiri:
+penugasan serakah, IoU terhadap kotak TERAKHIR (bukan prediksi), dan ambang
+0,5 / 0,3 / 0,15 / 3 / 5 yang disetel di bagian 18.
+
+**Paper dibaca langsung** (arXiv v3). Angka yang tertulis: tau 0,6, IoU < 0,2
+ditolak, track hilang disimpan 30 frame, Hungarian. Yang TIDAK tertulis (batas
+bawah D_low, derau Kalman kotak) diambil dari kode resmi. Kode resmi ternyata
+tidak seragam dengan paper maupun dengan dirinya sendiri (`track.py` 0,6/0,9,
+`demo_track.py` 0,5/0,8, plus mekanisme "unconfirmed" dan `fuse_score` yang tidak
+ada di paper). Aturan yang dipakai: paper dulu, kode hanya untuk yang paper diam.
+
+**Kalman filter metrik dipertahankan.** ByteTrack hanya tahu piksel; FSM dan MPC
+butuh m/s. Jadi tiap track membawa dua filter: kotak citra (milik ByteTrack,
+untuk asosiasi) dan metrik frame ego (milik skripsi ini, untuk kendali).
+
+**Uji yang membuktikan perbedaannya**, bukan sekadar "jalan":
+- Hungarian vs serakah: matriks IoU [[0,9, 0,8], [0,85, 0,1]] -- serakah dapat
+  satu pasangan, Hungarian dua.
+- Kotak bergeser 20 px/frame lalu hilang 2 frame: IoU terhadap kotak terakhir 0,
+  terhadap prediksi Kalman hampir 1. Identitas harus bertahan.
+
+**Sitasi pendukung.** Pilihan pertama, *Electronics* (MDPI) 2024, cocok isinya
+tetapi ditolak penulis ("jangan MDPI"). Diganti *IEEE Access* 2024 (Bihanda dkk.,
+ITS) yang memakai ByteTrack pada kendaraan dengan hyperparameter bawaan paper.
+ScienceDirect memblokir akses, jadi survei ICT Express 2025 tidak dipakai.
+
+**Hasil S1 vision, 10 run:** 10/10, jarak bodi 1,81 -> 1,96 m. Rem lebih dalam
+(-3,2 -> -4,0 m/s²) dan tick tanpa kandidat naik (37,8 -> 42,2). Target saat
+berdampingan terlihat 33% (dulu 62%) -- karena track hilang tidak dilaporkan,
+sesuai paper. Diperiksa apakah itu merusak keputusan kembali: tidak, malah lebih
+dekat ke GT (-10,50 m vs GT -10,4 m; dulu -12,27 m). Rem terdalam terjadi saat
+target terlihat penuh, jadi bukan akibat track hilang. WRITING_SUMMARY bagian 35.
+
+**Yang masih terbuka:** waktu solve maks 48,46 ms di satu run (perlu diukur ulang
+setelah restart server), dan perilaku tanpa track melayang saat ada oklusi (S3/S5).

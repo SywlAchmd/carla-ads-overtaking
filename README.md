@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 135 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 138 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -54,6 +54,7 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python tuning.py --sweep Q_PSI 300,450,600` | harness tuning step response |
 | `python tune_vision.py --sweep K_DEV 10,20,40` | sapuan parameter di skenario penuh + vision |
 | `python experiment.py --perception vision --repeat 10` | Tahap 9: success rate + sebaran metrik |
+| `python experiment.py --perception vision --repeat 10 --suffix _bytetrack` | sama, tapi tidak menimpa berkas pembanding |
 | `python metrics.py --layer --experiment` | metrik per layer/fase dari log (tidak butuh server) |
 | `python metrics.py --layer --experiment --suffix _before` | metrik yang sama SEBELUM perbaikan bagian 27 |
 | `python validate_model.py` | validasi bicycle model terhadap plant |
@@ -98,7 +99,7 @@ carla-ads-overtaking/
 │   ├── sensors.py          CameraRig: kamera RGB + depth terpasang di ego
 │   ├── yolopx.py           pembungkus model YOLOPX (deteksi + segmentasi)       [butuh torch]
 │   ├── perception.py       GroundTruthPerception + VisionPerception -> halangan FRAME EGO
-│   ├── tracking.py         asosiasi dua tahap + Kalman filter halangan          [tanpa carla]
+│   ├── tracking.py         ByteTrack (BYTE + Hungarian) + Kalman filter halangan [tanpa carla]
 │   ├── lanes.py            garis lajur di area jalan -> IPM -> kisi; porsi lajur tujuan & tepi jalan [tanpa carla]
 │   ├── planning.py         quintic/quartic, local planner, BehaviorFSM          [tanpa carla]
 │   ├── control.py          MPCController (CasADi + IPOPT), ThrottlePI, steer    [tanpa carla]
@@ -133,7 +134,7 @@ carla-ads-overtaking/
 │   ├── record_maneuver.py  video playback manuver                      [butuh ffmpeg]
 │   └── record_path.py      video lintasan acuan global planner         [butuh ffmpeg]
 │
-├── tests/                  135 uji, dijalankan sebagai skrip           [tanpa server]
+├── tests/                  138 uji, dijalankan sebagai skrip           [tanpa server]
 │   ├── test_architecture.py  aturan 2.4: modul numerik tidak menyentuh carla
 │   ├── test_bicycle_model.py, test_dimensions.py, test_evaluation.py, test_fsm.py
 │   └── test_lanes.py, test_localization.py, test_mpc.py, test_perception.py,
@@ -165,7 +166,7 @@ yang identik dengan sebelum migrasi.
 | 5 | MPC + tuning bobot | selesai |
 | 6 | Integrasi end-to-end | selesai: S1 dan S3 BERHASIL, deterministik |
 | 7 | Baseline Pure Pursuit/Stanley | **dibatalkan** (keputusan penulis) |
-| 8 | Perception lengkap (YOLOPX) | S1 selesai: BERHASIL, terulang; drivable area dipakai kendali (bagian 31) |
+| 8 | Perception lengkap (YOLOPX) | S1 selesai: BERHASIL, terulang; drivable area dipakai kendali (bagian 31); pelacak ByteTrack (bagian 35) |
 | 9 | Eksperimen penuh | S1 selesai: GT 5/5, vision 10/10 (100%); S2-S5 belum |
 
 Hasil terakhir (MPC + GT perception, 2 Okt 2026, kendaraan target **Lincoln MKZ
@@ -193,6 +194,28 @@ perbaikan kembali ke tengah lajur, tanpa fallback ke konstanta peta (3 Okt 2026,
 | Waktu solve rata-rata / maks | 16,81 / 31,37 ms | 15,67 / 28,83 ms |
 | Lebar lajur yang dipakai FSM | 3,512-3,559 m (ukur) | 3,50 m (peta) |
 
+**Pelacak diganti ByteTrack** dengan Hungarian dan parameter paper tanpa
+perubahan (16 Okt 2026, `WRITING_SUMMARY.md` bagian 35). S1 vision, 10 run, server
+baru dinyalakan:
+
+| Metrik | Pelacak lama (tabel di atas) | **ByteTrack** |
+|---|---|---|
+| Vonis | 10/10 | **10/10 BERHASIL** |
+| Jarak min antar bodi | 1,812 ± 0,026 m | **1,961 ± 0,006 m** |
+| Durasi manuver | 12,52 ± 0,09 s | 12,68 ± 0,03 s |
+| Deviasi lajur, SEBELUM manuver | 0,0110 ± 0,0004 m | 0,0113 ± 0,0004 m |
+| Deviasi lajur, ekor SESUDAH manuver | 0,0501 ± 0,0012 m | 0,0498 ± 0,0010 m |
+| Perlambatan terdalam | -3,17 m/s² | -3,99 m/s² |
+| Tick tanpa kandidat planner | 37,8 | 42,2 |
+| Galat prediksi @ 0,5 s, RMS | 0,0405 m | 0,0355 m |
+| XTE ke lajur terdekat, RMS | 0,563 m | 0,562 m |
+| Kegagalan solver | 0 dari 4.000 | 0 dari 4.000 |
+| Waktu solve rata-rata / maks | 16,81 / 31,37 ms | 16,40 / 48,46 ms (satu run; ukur ulang) |
+| Keputusan kembali, posisi target | -12,27 m | -10,50 m (GT -10,4 m) |
+
+Log: `out/experiment_s1_vision_bytetrack.npz`. Pembandingnya
+`out/experiment_s1_vision.npz` sengaja tidak ditimpa.
+
 Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
 seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian
 15.5 dan 29.1).
@@ -211,7 +234,7 @@ menabrak guardrail.
 
 ## Pekerjaan yang Belum Selesai
 
-Diurutkan dari yang paling mendesak. Terakhir diperbarui 3 Oktober 2026.
+Diurutkan dari yang paling mendesak. Terakhir diperbarui 16 Oktober 2026.
 
 ### 1. Skenario S2, S4, S5 tidak punya definisi
 Bukan "belum diimplementasikan" — **naskahnya tidak ada di repo ini sama sekali**.
@@ -295,9 +318,10 @@ belakang `-1.4329...` alih-alih membaca `out/vehicle_params.json`.
 memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
 
 ### 9. Sitasi
-- **ByteTrack** — strateginya dipakai `tracking.py`, tapi sumbernya belum
-  dibuka, jadi sengaja tidak ditulis sebagai entri pustaka. Terbit 2022, tepat
-  di batas aturan empat tahun.
+- ~~**ByteTrack** — sumbernya belum dibuka~~ -- selesai 16 Okt 2026. Paper dibuka,
+  `tracking.py` kini ByteTrack apa adanya. Pendukung <= 4 tahun: Bihanda dkk.,
+  *IEEE Access* 2024. Batas empat tahun ECCV 2022 tipis (terbit 23 Okt 2022).
+  `WRITING_SUMMARY.md` bagian 35.4.
 - **Flash & Hogan (1985)** — dasar quintic minimum-jerk, belum diverifikasi ke
   sumber primer.
 - **Kebijakan aturan 4 tahun** untuk sumber asal konsep (Werling 2010,
@@ -328,7 +352,18 @@ Terukur juga: asumsi jalan datar berbiaya **~0,73 m galat jarak di 42 m**
 (kemiringan jalan ~0,076%). Itu bukan cacat melainkan harga asumsinya, dan kini
 ada angkanya untuk ditulis di batasan masalah.
 
-### 13. Lain-lain
+### 13. Sisa pergantian ke ByteTrack
+- **Waktu solve maks 48,46 ms** di satu run dari sepuluh (lainnya 24,75-41,04 ms).
+  Pelacak tidak menyentuh MPC, jadi kemungkinan kontensi. Ukur ulang setelah
+  restart server sebelum dikutip.
+- **Track hilang tidak dilaporkan** (sesuai paper). Di S1 tidak merugikan: tidak
+  ada kedipan deteksi sama sekali, dan keputusan kembali malah lebih dekat ke GT.
+  Tetapi di skenario dengan oklusi (S3, S5) satu frame deteksi gagal langsung
+  menghapus halangan dari `v_goal` dan zona aman MPC. Periksa ulang di sana.
+- **Rem lebih dalam** (-3,2 -> -4,0 m/s²) terjadi saat target terlihat penuh.
+  Dugaan: tau 0,6 membuat target terdeteksi 3 tick lebih lambat. Belum dibuktikan.
+
+### 14. Lain-lain
 - Klaim real-time sudah diukur (`WRITING_SUMMARY.md` 21.3), tetapi mesin **tidak
   benar-benar senggang** saat pengukuran (load ~3-5). Angka di mesin sepi
   kemungkinan sedikit lebih baik, bukan lebih buruk.
