@@ -56,6 +56,7 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python tune_vision.py --sweep K_DEV 10,20,40` | sapuan parameter di skenario penuh + vision |
 | `python experiment.py --perception vision --repeat 10` | Tahap 9: success rate + sebaran metrik |
 | `python experiment.py --perception vision --repeat 10 --suffix _bytetrack` | sama, tapi tidak menimpa berkas pembanding |
+| `SKRIPSI_OUT=out/localization_branch python experiment.py --localization odom` | eksperimen dengan lokalisasi odometri, keluaran di folder terpisah |
 | `python metrics.py --layer --experiment` | metrik per layer/fase dari log (tidak butuh server) |
 | `python metrics.py --layer --experiment --suffix _before` | metrik yang sama SEBELUM perbaikan bagian 27 |
 | `python validate_model.py` | validasi bicycle model terhadap plant |
@@ -65,6 +66,8 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 | `python show_lanes.py` | gambar lingkungan uji dan kandidat planner |
 | `python plot_run.py --scenario S3` | grafik hasil run dari log (tidak butuh server) |
 | `python plot_compare.py` | grafik pembanding GT vs vision (tidak butuh server) |
+| `python plot_compare.py --modes vision vision_odom` | pembanding lokalisasi GT vs odometri |
+| `python plot_localization.py` | galat lokalisasi odometri tiap ulangan eksperimen |
 | `python record_path.py` | video lintasan acuan global planner (butuh ffmpeg) |
 | `python check_sensors.py` | pasang rig kamera, verifikasi penempatan, simpan contoh frame |
 | `python show_rig.py` | konfigurasi sensor ala KITTI: foto ego + skema berdimensi |
@@ -126,6 +129,7 @@ carla-ads-overtaking/
 │   ├── metrics.py          metrik bab 4 per fase/layer dari log        [tanpa server]
 │   ├── plot_run.py         grafik satu run tertutup                    [tanpa server]
 │   ├── plot_compare.py     MPC + GT versus MPC + vision                [tanpa server]
+│   ├── plot_localization.py galat lokalisasi odometri vs GT              [tanpa server]
 │   ├── plot_concepts.py    gambar konsep: rig, frame, skenario, MPC    [tanpa server]
 │   ├── plot_ipm.py         IPM di atas frame kamera + warp pandangan atas
 │   ├── plot_lane_fit.py    kemiringan bersama + pencocokan kisi

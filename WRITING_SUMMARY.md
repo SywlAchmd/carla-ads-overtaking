@@ -3541,7 +3541,34 @@ karena pindah lajur pergi-pulang simetris.
 Aturan penulisan no. 5: jangan klaim Town04 masuk kategori jalan tertentu.
 Tampilkan kedua kolom apa adanya, termasuk yang tidak terpenuhi.
 
-**Belum:** eksperimen 10 run (`experiment.py` belum meneruskan `--localization`).
+**Eksperimen 10 run, S1 vision** (`out/localization_branch/`; baseline GT
+dijalankan ulang di sesi server yang sama):
+
+| Metrik | Lokalisasi GT | Odometri |
+|---|---|---|
+| Berhasil | 10/10 | 10/10 |
+| Jarak bodi min | 1,969 ± 0,025 m | 1,899 ± 0,030 m |
+| Durasi manuver | 12,66 ± 0,06 s | 12,74 ± 0,06 s |
+| Simpangan lateral maks | -4,333 ± 0,015 m | -4,237 ± 0,010 m |
+| Simpangan lajur sebelum / ekor sesudah | 0,011 / 0,050 m | 0,011 / 0,047 m |
+| Perlambatan terdalam | -3,90 ± 0,47 m/s² | -4,06 ± 0,14 m/s² |
+| Tick tanpa kandidat | 42,2 ± 0,6 | 42,4 ± 0,8 |
+| Waktu solve rata-rata / maks | 16,56 / 33,47 ms | 16,52 / 27,99 ms |
+| Galat lokalisasi lateral maks | 0 (per definisi) | 0,154 ± 0,002 m |
+| Galat lokalisasi arah maks | 0 | 0,088 ± 0,001 deg |
+
+Galat lokalisasi 10 run digabung: lateral 95% **0,142 m** / maks **0,158 m**, arah
+95% 0,038 / maks 0,091 deg -- angka tabel Reid di atas tetap berlaku.
+
+Satu-satunya beda di luar sebaran: jarak bodi -0,07 m dan simpangan lateral
+maks berkurang 0,096 m. Dugaan pertama -- ego MERASA sudah lebih jauh di lajur
+salip -- **gugur**: di titik simpangan terjauh galat lokalisasinya hanya -0,011 m.
+Ego memang merencanakan lewatan lebih kecil (0,65 m melewati tengah lajur tujuan,
+GT 0,81 m). Penyebabnya **belum dibuktikan**; besarnya jauh di atas syarat 1,0 m.
+
+Gambar: `localization_error_s1.png` (galat 10 run + integral slip + garis Reid),
+`compare_s1_vision_vision_odom.png`, `run_s1_mpc_vision_odom.png`. Video:
+`vision_s1_odom.mp4`.
 
 ### 36.3 Kenapa GNSS hanya untuk pose awal -- argumen untuk sidang
 

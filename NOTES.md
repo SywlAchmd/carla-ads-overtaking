@@ -3435,9 +3435,34 @@ berkorelasi 1,000 dengan galat lateral. Jadi ini galat model, bukan galat
 sensor. Ia kembali ke ~0 setelah manuver karena pindah lajur pergi-pulang
 simetris.
 
-**Yang masih terbuka:** eksperimen 10 run (`experiment.py` belum meneruskan
-`--localization`); aturan penulisan no. 2 di WRITING_SUMMARY baru diubah
-setelah keputusan mode mana yang jadi hasil utama.
+**Eksperimen 10 run, S1 vision, 16 Oktober 2026.** Keluaran di
+`out/localization_branch/` (`SKRIPSI_OUT`), baseline lokalisasi GT dijalankan
+ulang di sesi server yang sama supaya setara:
+
+| Metrik | Lokalisasi GT | Odometri |
+|---|---|---|
+| Berhasil | 10/10 | 10/10 |
+| Jarak bodi min | 1,969 ± 0,025 m | 1,899 ± 0,030 m |
+| Durasi manuver | 12,66 ± 0,06 s | 12,74 ± 0,06 s |
+| Simpangan lateral maks | -4,333 ± 0,015 m | -4,237 ± 0,010 m |
+| Simpangan lajur sebelum / ekor sesudah | 0,011 / 0,050 m | 0,011 / 0,047 m |
+| Perlambatan terdalam | -3,90 ± 0,47 m/s² | -4,06 ± 0,14 m/s² |
+| Tick tanpa kandidat | 42,2 ± 0,6 | 42,4 ± 0,8 |
+| Waktu solve rata-rata / maks | 16,56 / 33,47 ms | 16,52 / 27,99 ms |
+| Galat lokalisasi lateral maks | 0 (per definisi) | 0,154 ± 0,002 m |
+| Galat lokalisasi arah maks | 0 | 0,088 ± 0,001 deg |
+
+Satu-satunya beda di luar sebaran: jarak bodi -0,07 m dan simpangan lateral
+maks berkurang 0,096 m. Dugaan pertama -- ego MERASA sudah lebih jauh di lajur
+salip -- **gugur**: di titik simpangan terjauh galat lokalisasinya hanya -0,011 m.
+Ego memang merencanakan lewatan lebih kecil (0,65 m melewati tengah lajur tujuan,
+GT 0,81 m). Penyebabnya **belum dibuktikan**; besarnya jauh di atas syarat 1,0 m.
+
+Galat lokalisasi 10 run digabung: lateral 95% 0,142 m / maks 0,158 m, arah 95%
+0,038 / maks 0,091 deg. Korelasi galat lateral dengan integral slip per run min
+0,999. Odometri juga deterministik bit-per-bit (diuji 2 run perception GT).
+
+**Yang masih terbuka:** penyebab lewatan lateral yang lebih kecil.
 
 **Sensor ideal, keputusan penulis.** IMU dan speedometer tanpa noise, sama
 perlakuannya dengan depth camera. Kenop noise sempat ada lalu dihapus karena
