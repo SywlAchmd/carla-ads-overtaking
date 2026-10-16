@@ -47,6 +47,19 @@ def test_fsm_gap_measured_from_rear_axle():
     assert abs((out[0, 0] - ego.x) - (40.0 + config.AXLE_TO_CENTER)) < 1e-9
 
 
+def test_dead_reckon_closes_circle():
+    """Laju belok konstan satu putaran penuh harus kembali ke titik awal.
+    Dengan yaw AWAL langkah (Euler) galatnya ~v*dt per putaran; yaw TENGAH eksak."""
+    n, v, dt = 420, 13.4, 0.05
+    r = 2 * math.pi / (n * dt)              # tepat satu putaran dalam n langkah
+    x, y, yaw = 5.0, -2.0, 0.4
+    for _ in range(n):
+        x, y, yaw = localization.dead_reckon(x, y, yaw, v, r, dt)
+    # Euler memberi ~v*dt*pi = 2,1 m di sini
+    assert math.hypot(x - 5.0, y + 2.0) < 1e-6, (x, y)
+    assert abs(localization.wrap(yaw - 0.4)) < 1e-9
+
+
 def test_empty_keeps_shape():
     assert localization.obstacles_ego_to_road([], _ego()).shape == (0, 4)
 

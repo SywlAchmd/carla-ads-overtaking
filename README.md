@@ -48,6 +48,7 @@ Uji dijalankan sebagai skrip, bukan lewat pytest. `tests/test_mpc.py` butuh
 |---|---|
 | `python main.py` | skenario S1 lengkap, loop tertutup, vonis berhasil/gagal |
 | `python main.py --scenario S3 --seconds 25` | lajur tujuan terisi: mengikuti, lalu menyalip ulang |
+| `python main.py --perception vision --localization odom` | pose awal dari GNSS + kompas IMU, lalu dead reckoning gyro IMU + speedometer, bukan pose simulator |
 | `python main.py --perception vision --record` | S1 dengan YOLOPX + depth, plus video overlay |
 | `python main.py --perception vision --record --suffix _after` | sama, tapi keluarannya tidak menimpa berkas pembanding |
 | `python check_estimation.py` | ketelitian jarak & kecepatan vision vs ground truth |
@@ -95,8 +96,8 @@ carla-ads-overtaking/
 ├── Modul inti (dipanggil main loop)
 │   ├── config.py           semua konstanta: skenario, bobot MPC, ambang FSM, kamera
 │   ├── simulation.py       koneksi, mode sinkron, spawn, reference path, tick()
-│   ├── localization.py     ground truth CARLA -> frame right-handed, titik sumbu belakang
-│   ├── sensors.py          CameraRig: kamera RGB + depth terpasang di ego
+│   ├── localization.py     pose ego (GT atau odometri IMU + speedometer) -> frame right-handed, sumbu belakang
+│   ├── sensors.py          CameraRig (RGB + depth) dan OdometryRig (IMU + GNSS), terpasang di ego
 │   ├── yolopx.py           pembungkus model YOLOPX (deteksi + segmentasi)       [butuh torch]
 │   ├── perception.py       GroundTruthPerception + VisionPerception -> halangan FRAME EGO
 │   ├── tracking.py         ByteTrack (BYTE + Hungarian) + Kalman filter halangan [tanpa carla]

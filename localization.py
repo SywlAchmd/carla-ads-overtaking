@@ -179,3 +179,61 @@ class CarlaGTLocalization:
         yaw_rate = -math.radians(self.ego.get_angular_velocity().z)
         t = self.ego.get_world().get_snapshot().timestamp.elapsed_seconds
         return EgoState(x, y, yaw, v, yaw_rate, t)
+
+
+def speedometer(ego):
+    """Pseudo-sensor laju longitudinal, m/s.
+
+    CARLA tidak punya encoder roda; ini padanan "Speedometer" CARLA Leaderboard
+    (kecepatan diproyeksikan ke arah hadap). Di kendaraan nyata: sinyal kecepatan
+    roda di CAN bus. Nyatakan di batasan masalah.
+    """
+    v = ego.get_velocity()
+    yaw = math.radians(ego.get_transform().rotation.yaw)
+    return v.x * math.cos(yaw) + v.y * math.sin(yaw)
+
+
+def dead_reckon(x, y, yaw, v, r, dt):
+    """Satu langkah dead reckoning titik sumbu belakang, frame RH.
+
+    Sumbu belakang bergerak searah hadap (tanpa slip lateral) -- model yang sama
+    dengan bicycle model MPC. Yaw tengah langkah, bukan awal: pada laju belok
+    konstan lintasannya busur, dan tali busur searah yaw tengah.
+    """
+    yaw_mid = yaw + 0.5 * r * dt
+    return (x + v * dt * math.cos(yaw_mid), y + v * dt * math.sin(yaw_mid),
+            wrap(yaw + r * dt))
+
+
+class OdometryLocalization:
+    """Pose ego dari sensor saja: GNSS + kompas IMU sekali untuk pose awal,
+    lalu dead reckoning gyro IMU + speedometer. Tanpa pose ground truth.
+
+    Drift arahnya dikoreksi jalur vision lewat `psi_road`, bukan di sini.
+    """
+
+    def __init__(self, ego, rear_offset_x, rig):
+        self.ego, self.rig, self.rear_offset_x = ego, rig, rear_offset_x
+        self.state = None
+
+    def update(self) -> EgoState:
+        """Panggil SETELAH world.tick(), tepat sekali per tick (antrean IMU)."""
+        m = self.rig.grab()
+        # gyro.z CARLA searah get_angular_velocity().z (left-handed), terukur
+        # beda maks 1e-4 rad/s -- jadi dinegasikan sama seperti di GT.
+        r = -m.gyroscope.z
+        v = speedometer(self.ego)
+        if self.state is None:
+            # Pose awal. Kompas 0 = utara = -y CARLA, jadi yaw CARLA = kompas - 90
+            # deg; terukur beda maks 0,004 deg dari get_transform().
+            p, yaw_c = self.rig.fix(), m.compass - math.pi / 2
+            self.state = EgoState(p.x + self.rear_offset_x * math.cos(yaw_c),
+                                  -(p.y + self.rear_offset_x * math.sin(yaw_c)),
+                                  wrap(-yaw_c), v, r, m.timestamp)
+            return self.state
+        s = self.state
+        # trapesium: rata-rata awal dan akhir langkah
+        x, y, yaw = dead_reckon(s.x, s.y, s.yaw, 0.5 * (s.v + v),
+                               0.5 * (s.yaw_rate + r), m.timestamp - s.timestamp)
+        self.state = EgoState(x, y, yaw, v, r, m.timestamp)
+        return self.state

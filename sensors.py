@@ -65,6 +65,48 @@ class CameraRig:
         self.destroy()
 
 
+class OdometryRig:
+    """IMU + GNSS di titik asal aktor ego, untuk lokalisasi odometri. Pakai lewat `with`.
+
+    Sensor ideal: atribut noise CARLA dibiarkan bawaan (0), sama perlakuannya
+    dengan depth camera -- nyatakan di batasan masalah.
+
+    IMU: satu pengukuran per tick (mode sinkron), jadi `grab` WAJIB dipanggil
+    tiap tick -- sama seperti CameraRig -- supaya pengukuran tidak basi.
+    GNSS: dibaca SEKALI lewat `fix`, untuk pose awal.
+    """
+
+    def __init__(self, world, ego):
+        self.map = world.get_map()
+        self.sensor = {name: _attach(world, ego, f'sensor.other.{name}', carla.Transform())
+                       for name in ('imu', 'gnss')}
+        self.queues = {name: queue.Queue() for name in self.sensor}
+        for name, s in self.sensor.items():
+            s.listen(self.queues[name].put)
+
+    def grab(self, timeout=2.0):
+        return self.queues['imu'].get(timeout=timeout)
+
+    def fix(self, timeout=2.0):
+        """Posisi GNSS -> carla.Location dunia (left-handed). Terukur 0,0000 m
+        dari `get_transform()` -- konversi geo CARLA eksak untuk peta ini."""
+        g = self.queues['gnss'].get(timeout=timeout)
+        self.sensor['gnss'].stop()
+        return self.map.geolocation_to_transform(
+            carla.GeoLocation(g.latitude, g.longitude, g.altitude))
+
+    def destroy(self):
+        for s in self.sensor.values():
+            s.stop()
+            s.destroy()
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.destroy()
+
+
 def depth_meter(image):
     """Citra depth CARLA -> jarak dalam meter, ndarray (H, W).
 

@@ -45,7 +45,10 @@ COLUMNS = ['t', 'x', 'y', 'yaw', 'v', 'y_ref', 'y_goal', 'lane_dev', 'a_cmd',
          # mutu garis lajur frame itu. NaN di jalur GT.
          'psi_err', 'psi_meas_err', 'n_lines', 'lattice_res',
          # Lebar lajur yang dipakai FSM: hasil ukur (vision) atau peta (GT).
-         'lane_width']
+         'lane_width',
+         # Pose ego SEBENARNYA di frame kendali, untuk penilai jarak dan galat
+         # lokalisasi (x - x_gt). Identik dengan x/y/yaw di --localization gt.
+         'x_gt', 'y_gt', 'yaw_gt']
 
 
 def to_carla(cmd):
@@ -101,16 +104,20 @@ def prepare_road(world):
 
 
 def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, rig=None,
-        net=None, recorder=None):
+        net=None, recorder=None, odo=None):
     """`vehicles` = [(jarak, lajur, kecepatan), ...]; yang pertama = target.
 
     `rig` terisi -> perception berbasis vision; None -> ground truth.
+    `odo` (sensors.OdometryRig) terisi -> lokalisasi odometri; None -> ground truth.
     """
     # Frame PETA. Dipakai untuk menempatkan kendaraan skenario, menggambar overlay,
     # dan sebagai pembanding -- bukan untuk kendali di jalur vision (bagian 28.4).
     map_frame = localization.PathFrame(ref_rh)
     frame = map_frame
-    loc = localization.CarlaGTLocalization(ego_actor, params['rear_axle_offset_x'])
+    # GT tetap ada sebagai ALAT UKUR (spawn skenario, penilai), bukan masukan kendali.
+    gt = localization.CarlaGTLocalization(ego_actor, params['rear_axle_offset_x'])
+    loc = (localization.OdometryLocalization(ego_actor, params['rear_axle_offset_x'], odo)
+           if odo else gt)
     vision = (perception.VisionPerception(net, rig) if rig
              else perception.GroundTruthPerception(world, ego_actor))
     fsm = planning.BehaviorFSM()
@@ -133,7 +140,7 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
         if k == 0:
             # Kendaraan lain baru di-spawn setelah transien reda, relatif posisi
             # ego yang SEBENARNYA -- bukan relatif titik spawn.
-            ego_x = map_frame.ego(loc.update()).x
+            ego_x = map_frame.ego(gt.update()).x
             actors = [spawn_vehicles(world, ref5, ego_x, dist, lane)
                      for dist, lane, _ in vehicles]
         # Searah JALAN, bukan arah hadap aktor: hanya kecepatan yang dipaksa, jadi
@@ -166,8 +173,9 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
                 raise RuntimeError('vision: no lane geometry at the anchor tick')
 
         st_rh = loc.update()
+        st_gt = st_rh if loc is gt else gt.update()
         ego = frame.ego(st_rh)                               # 20 Hz
-        ego_map = map_frame.ego(st_rh)                     # hanya untuk penilaian
+        ego_map = map_frame.ego(st_gt)                     # hanya untuk penilaian
         # JEJAK arah jalan, jangan dibekukan. Titik asal digeser bersamaan supaya
         # (x, y) ego tidak melompat: yang dikoreksi hanya arah ke depan.
         # `vision.lane` di sini dari citra tick LALU, jadi dipasangkan dengan yaw ego
@@ -335,7 +343,8 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
                         psi_meas_err,
                         float('nan') if geo is None else float(len(geo.offset)),
                         float('nan') if geo is None or geo.lattice_residual is None
-                        else geo.lattice_residual, fsm.lane_width])
+                        else geo.lattice_residual, fsm.lane_width,
+                        *frame.ego(st_gt).as_vector()[:3]])
             states.append(fsm.state)
             positions.append(pos)
 
@@ -367,6 +376,9 @@ def main():
     ap.add_argument('--seconds', type=float, default=20.0)
     ap.add_argument('--scenario', default='S1', choices=list(config.SCENARIOS))
     ap.add_argument('--perception', default='gt', choices=('gt', 'vision'))
+    ap.add_argument('--localization', default='gt', choices=('gt', 'odom'),
+                    help='odom = GNSS + IMU compass start pose, then IMU gyro + speedometer '
+                         'dead reckoning, instead of simulator pose')
     ap.add_argument('--record', action='store_true',
                     help='camera video + detections + planner candidates (needs --perception vision)')
     ap.add_argument('--weight', default=None,
@@ -398,11 +410,12 @@ def main():
                     recorder = overlay.Recorder(localization.PathFrame(ref), ref5)
             elif args.record:
                 ap.error('--record needs --perception vision')
+            odo = sensors.OdometryRig(world, ego) if args.localization == 'odom' else None
             with evaluation.watch_collisions(world, ego) as monitor:
                 try:
                     log, states, actors, positions = run(world, ego, monitor, params, ref,
                                                      ref5, args.seconds, vehicles, rig,
-                                                     net, recorder)
+                                                     net, recorder, odo)
                     dims = [(2 * a.bounding_box.extent.x, 2 * a.bounding_box.extent.y)
                             for a in actors]
                 finally:
@@ -410,10 +423,13 @@ def main():
                         a.destroy()
                     if rig:
                         rig.destroy()
+                    if odo:
+                        odo.destroy()
 
     path = os.path.join(
         config.OUT_DIR,
-        f'run_{args.scenario.lower()}_mpc_{args.perception}{args.suffix}.npz')
+        f'run_{args.scenario.lower()}_mpc_{args.perception}'
+        f'{"_odom" if args.localization == "odom" else ""}{args.suffix}.npz')
     np.savez(path, log=log, fsm_state=states, columns=COLUMNS, vehicle_positions=positions,
              vehicle_dims=np.array(dims), dim_ego=np.array([params['length'], params['width']]))
     k = {name: i for i, name in enumerate(COLUMNS)}     # indeks lewat nama, bukan angka
@@ -437,13 +453,19 @@ def main():
               f'  (zero candidates: {int((n_feas == 0).sum())} tick)')
         print(f'chosen offsets: {sorted(set(np.round(off[off > 0], 1)))}')
     print(f'collisions: {monitor.summary()}')
+    if args.localization == 'odom':
+        e_pos = np.hypot(log[:, k['x']] - log[:, k['x_gt']], log[:, k['y']] - log[:, k['y_gt']])
+        e_yaw = np.degrees(np.abs(np.angle(np.exp(1j * (log[:, k['yaw']] - log[:, k['yaw_gt']])))))
+        print(f'localization error vs GT: position mean {e_pos.mean():.3f} m, '
+              f'max {e_pos.max():.3f} m, end {e_pos[-1]:.3f} m; '
+              f'yaw max {e_yaw.max():.3f} deg')
     dim_ego = (params['length'], params['width'])
     other = [(positions[:, i, 0], positions[:, i, 1], positions[:, i, 2], dims[i])
             for i in range(1, len(actors))]
     success, category, details = evaluation.evaluate_run(
-        log[:, k['t']], log[:, k['x']], log[:, k['y']], states,
+        log[:, k['t']], log[:, k['x_gt']], log[:, k['y_gt']], states,
         log[:, k['x_tgt']], log[:, k['y_tgt']], monitor.collisions, dim_ego, dims[0], other,
-        yaw=log[:, k['yaw']], yaw_tgt=positions[:, 0, 2],
+        yaw=log[:, k['yaw_gt']], yaw_tgt=positions[:, 0, 2],
         # Jarak antar bodi tidak bergantung frame -- ia selisih dua titik. Syarat
         # LAJUR bergantung, jadi ia dan hanya ia dinilai di frame peta.
         y_lane=log[:, k['y_map']])

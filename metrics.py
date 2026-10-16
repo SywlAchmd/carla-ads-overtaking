@@ -126,8 +126,11 @@ def per_layer(log, states, columns):
 
     # Zona aman yang benar-benar tercapai: g >= 1 berarti constraint dihormati.
     # Dihitung dari GROUND TRUTH, antar PUSAT bodi -- yang dinilai harus benar.
-    xc = log[:, k['x']] + config.AXLE_TO_CENTER * np.cos(yaw)
-    yc = y + config.AXLE_TO_CENTER * np.sin(yaw)
+    # Pose ego GT (`x_gt`) bila ada: di --localization odom `x` adalah pose yang
+    # DIYAKINI ego. Log lama tanpa kolom itu memakai GT, jadi sama saja.
+    gx, gy, gyaw = (log[:, k.get(n + '_gt', k[n])] for n in ('x', 'y', 'yaw'))
+    xc = gx + config.AXLE_TO_CENTER * np.cos(gyaw)
+    yc = gy + config.AXLE_TO_CENTER * np.sin(gyaw)
     g = planning.safety_zone(xc - log[:, k['x_tgt']], yc - log[:, k['y_tgt']])
 
     a_lat = v ** 2 * np.tan(log[:, k['delta_cmd']]) / WHEELBASE

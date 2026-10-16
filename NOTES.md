@@ -3390,3 +3390,55 @@ target terlihat penuh, jadi bukan akibat track hilang. WRITING_SUMMARY bagian 35
 
 **Yang masih terbuka:** waktu solve maks 48,46 ms di satu run (perlu diukur ulang
 setelah restart server), dan perilaku tanpa track melayang saat ada oklusi (S3/S5).
+
+## Lokalisasi Tanpa Ground Truth — 16 Oktober 2026
+
+**Permintaan penulis:** pose ego tidak lagi dari `get_transform()`. Branch
+`feat/lokalisasi-tanpa-gt`.
+
+**Yang ternyata sudah relatif sebelumnya.** Lajur (`ego.y - lane_dev`), halangan
+(`obs_rel[:, 0] -= ego.x`), dan arah jalan (`psi_road`, ditapis dari kamera)
+semuanya relatif terhadap ego. Galat posisi absolut ego saling meniadakan di
+ketiganya. Yang benar-benar dibutuhkan dari lokalisasi tinggal `v`, `yaw_rate`,
+dan konsistensi pose selama satu horizon rencana.
+
+**Sensor.** `yaw_rate` dari gyro z `sensor.other.imu`. `v` dari pseudo-sensor
+speedometer, karena CARLA 0.9.16 tidak punya encoder roda (API roda hanya
+`get_wheel_steer_angle`). Padanannya *Speedometer* di CARLA Leaderboard, yang
+dihitung sebagai sensor sah, bukan informasi privileged. Pose = integrasi
+trapesium, yaw tengah langkah. Pose awal dari GNSS (posisi, lewat
+`Map.geolocation_to_transform`) dan kompas IMU (arah, yaw CARLA = kompas - 90
+deg) -- terukur 0,0000 m dan maks 0,004 deg dari GT. Pose awal sempat diambil
+dari GT; diganti supaya GT keluar total dari lokalisasi dan tinggal jadi alat
+ukur. Opsi `--localization odom`; bawaan tetap `gt`.
+
+**Tanda gyro diukur, bukan diasumsikan.** `gyroscope.z` searah
+`get_angular_velocity().z` (left-handed), beda maks 1e-4 rad/s, jadi dinegasikan
+sama seperti di GT. Frame pengukuran IMU = frame tick.
+
+**Alat ukur dipisah dari yang diukur.** Kolom baru `x_gt`, `y_gt`, `yaw_gt` =
+pose GT di frame kendali. Penilai jarak dan zona aman di `metrics.py` memakai
+itu, bukan pose yang diyakini ego. `x_map`/`y_map` kini juga dari GT. Jalur
+`--localization gt` diperiksa identik bit-per-bit dengan log S1 sebelumnya.
+
+**Hasil, sensor ideal (noise 0), satu run masing-masing:**
+
+| Run | Galat posisi rata-rata / maks | Yaw maks | Vonis | Jarak bodi min |
+|---|---|---|---|---|
+| S1 GT perception | 0,037 / 0,128 m | 0,037 deg | berhasil | 1,43 m (= GT) |
+| S1 vision | 0,035 / 0,153 m | 0,088 deg | berhasil | 1,87 m |
+
+**Dari mana galat 0,13 m padahal sensornya ideal.** Dead reckoning menganggap
+sumbu belakang tidak slip lateral, sama dengan bicycle model MPC. Fisika CARLA
+punya slip ban: terukur maks 0,456 deg saat pindah lajur. Integral slip itu
+berkorelasi 1,000 dengan galat lateral. Jadi ini galat model, bukan galat
+sensor. Ia kembali ke ~0 setelah manuver karena pindah lajur pergi-pulang
+simetris.
+
+**Yang masih terbuka:** eksperimen 10 run (`experiment.py` belum meneruskan
+`--localization`); aturan penulisan no. 2 di WRITING_SUMMARY baru diubah
+setelah keputusan mode mana yang jadi hasil utama.
+
+**Sensor ideal, keputusan penulis.** IMU dan speedometer tanpa noise, sama
+perlakuannya dengan depth camera. Kenop noise sempat ada lalu dihapus karena
+tidak dipakai.
