@@ -123,19 +123,22 @@ DETECTION_CONF = 0.5                  # ambang keyakinan; ditentukan check_detec
 DETECTION_IOU = 0.45                  # ambang NMS
 
 # Pelacakan antar frame (Tahap 8, bagian 10.3). Lihat docstring tracking.py.
+# ByteTrack (Zhang dkk., ECCV 2022) TANPA perubahan parameter: angka yang ditulis
+# di paper diambil dari paper ("Implementation details", bagian 4.1); yang tidak
+# ditulis di paper diambil dari kode resmi penulisnya (github.com/ifzhang/ByteTrack).
 # Inferensi dijalankan di ambang RENDAH supaya deteksi lemah tersedia untuk tahap
-# dua ByteTrack; pemisahan tinggi/rendah terjadi di pelacak, bukan di NMS.
-TRACK_CONF_HIGH = DETECTION_CONF    # di atas ini deteksi boleh melahirkan track
-# 0,3 = ambang terendah yang masih memberi NOL positif palsu pada best.pth
-# (bagian 18.3). Di bawah itu model BDD mulai mengecat batu dan pagar.
-TRACK_CONF_LOW = 0.3             # hanya menahan track yang sudah ada
-TRACK_IOU_MIN = 0.15                # gerbang asosiasi; di bawah ini tidak dipasangkan
-TRACK_N_INIT = 3                    # frame berturut sebelum track dilaporkan
-# Melayang maksimum. Di 10 Hz, 5 frame = 0,5 s. Harus lebih pendek daripada
-# FSM_DWELL + waktu reaksi supaya halangan hantu tidak sempat mengubah keputusan,
-# tapi cukup panjang menutupi kedipan deteksi di tepi jangkauan (bagian 18.2).
-TRACK_MAX_LOST = 5
-TRACK_SIGMA_A = 2.0                 # m/s², derau proses: percepatan kendaraan lain
+# dua; pemisahan tinggi/rendah terjadi di pelacak, bukan di NMS.
+TRACK_CONF_HIGH = 0.6               # tau: "default detection score threshold" (paper)
+TRACK_CONF_LOW = 0.1                # batas bawah D_low; `inds_low = scores > 0.1` (kode)
+TRACK_IOU_MIN = 0.2                 # "IoU ... smaller than 0.2 ... rejected" (paper)
+TRACK_MAX_LOST = 30                 # "keep it for 30 frames" (paper)
+# Kalman filter kotak citra [cx, cy, a, h]; derau sebanding tinggi kotak (kode,
+# warisan DeepSORT). dt = 1 frame.
+TRACK_STD_WEIGHT_POSITION = 1.0 / 20
+TRACK_STD_WEIGHT_VELOCITY = 1.0 / 160
+# Kalman filter metrik frame ego -- BUKAN bagian ByteTrack (ByteTrack hanya
+# melacak kotak citra). Dipertahankan karena FSM dan MPC butuh kecepatan dalam m/s.
+TRACK_SIGMA_A = 2.0                # m/s², derau proses: percepatan kendaraan lain
 TRACK_SIGMA_V0 = 5.0                # m/s, ragu kecepatan awal (tak terukur dari 1 frame)
 # Derau ukur. Memanjang: galat depth terhadap muka kendaraan -0,48..+0,19 m
 # (bagian 18.4). Melintang: kuantisasi kotak, sigma_y = SIGMA_PIKSEL * d / f --

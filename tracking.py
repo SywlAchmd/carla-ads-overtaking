@@ -9,15 +9,36 @@ hanya bisa datang dari beda antar frame. Beda mentah dua frame berturut pada
 derau depth 0,5 m (bagian 18.4) di 10 Hz memberi derau kecepatan 5 m/s, sepuluh
 kali lipat `DV_TRIGGER`. Kalman filter constant-velocity yang meredamnya.
 
-**Asosiasi dua tahap, strategi ByteTrack.** Deteksi berkeyakinan tinggi
-dicocokkan lebih dulu; deteksi berkeyakinan rendah TIDAK melahirkan track baru,
-ia hanya menahan track yang sudah ada. Justifikasinya ada di data sendiri:
-bagian 18.2 mengukur keyakinan meluruh terhadap jarak dan model fine-tuned mulai
-kehilangan kendaraan di 40-50 m (0,62 pada 50 m). Tanpa tahap kedua, track di
-tepi jangkauan hilang-timbul tiap beberapa frame dan estimasi kecepatannya ikut
-rusak tepat ketika FSM mulai menghitung TTC.
+**Asosiasi: BYTE dari ByteTrack, apa adanya.** Zhang dkk., "ByteTrack:
+Multi-Object Tracking by Associating Every Detection Box", ECCV 2022,
+Algorithm 1. Penerapannya pada kendaraan dengan prosedur dan hyperparameter
+bawaan paper yang sama: Bihanda, Fatichah & Yuniarti, "Multi-Vehicle Tracking
+and Counting Framework in Average Daily Traffic Survey Using RT-DETR and
+ByteTrack", IEEE Access 12:121723-121737, 2024. Per frame:
 
-**State di frame ego, relatif terhadap ego** -- sama dengan kontrak
+  1. deteksi dipisah: D_high (skor > tau) dan D_low (sisanya);
+  2. Kalman filter memprediksi kotak SEMUA track, termasuk yang hilang;
+  3. asosiasi pertama: semua track vs D_high, kemiripan IoU antara kotak deteksi
+     dan kotak PREDIKSI track, diselesaikan dengan algoritma Hungarian;
+  4. asosiasi kedua: track sisa vs D_low, IoU dan Hungarian lagi. Deteksi lemah
+     yang tak tercocokkan dibuang sebagai latar;
+  5. track yang masih tersisa menjadi hilang, dan dihapus setelah 30 frame;
+  6. D_high yang tak tercocokkan melahirkan track baru;
+  7. keluaran = semua track KECUALI yang hilang.
+
+Pasangan dengan IoU < 0,2 ditolak di kedua asosiasi. Seluruh parameter tidak
+diubah dari paper; lihat `config.py`.
+
+**Dua Kalman filter per track, untuk dua tugas berbeda.**
+
+- *Kotak citra* [cx, cy, a, h, turunannya] -- bagian ByteTrack. Hanya dipakai
+  untuk memprediksi kotak yang diasosiasikan. Derau dan dt = 1 frame dari kode
+  resmi ByteTrack, tanpa perubahan.
+- *Metrik frame ego* [x, y, vx, vy] -- BUKAN bagian ByteTrack, yang tidak tahu
+  soal meter. Dipertahankan karena FSM dan MPC butuh posisi dan kecepatan dalam
+  m dan m/s. Ia dikoreksi oleh deteksi yang sama yang dipasangkan BYTE.
+
+**State metrik di frame ego, relatif terhadap ego** -- sama dengan kontrak
 `perception.py`. Constant-velocity berlaku untuk gerak MUTLAK kendaraan lain,
 bukan gerak relatifnya, jadi langkah prediksi wajib mengompensasi gerak ego:
 
@@ -30,14 +51,11 @@ bergeser di frame yang sama, jadi p + (v + v_ego) dt - v_ego dt = p + v dt. Yang
 tersisa cuma rotasi ego dan perubahan laju ego. Karena itu modul ini tidak perlu
 tahu posisi ego sama sekali -- cukup kinematikanya sendiri, persis yang dimiliki
 kendaraan tanpa peta (lihat kontrak di docstring `perception.py`).
-
-Penugasan memakai algoritma serakah menurut biaya menaik, bukan Hungarian:
-skenario bagian 11.1 paling banyak memuat 2 kendaraan lain dan keduanya terpisah
-jauh di citra, jadi keduanya memberi hasil sama tanpa menambah dependensi.
 """
 import math
 
 import numpy as np
+from scipy.optimize import linear_sum_assignment
 
 import config
 
@@ -58,30 +76,72 @@ def iou_matrix(a, b):
     return np.where(combine > 0, inter / np.where(combine > 0, combine, 1.0), 0.0)
 
 
-def assign(cost, limit):
-    """Penugasan serakah menurut biaya menaik -> [(baris, kolom), ...].
+def hungarian(iou, iou_min=None):
+    """Penugasan Hungarian pada biaya 1 - IoU -> [(baris, kolom), ...].
 
-    Pasangan dengan biaya di atas `limit` tidak pernah dibentuk: lebih baik satu
-    track kehilangan pembaruan (ia masih melayang) daripada dikoreksi oleh
-    deteksi milik kendaraan lain.
+    Meminimalkan TOTAL biaya seluruh pasangan sekaligus, lalu menolak pasangan
+    dengan IoU < `iou_min`: lebih baik satu track kehilangan pembaruan daripada
+    dikoreksi oleh deteksi milik kendaraan lain.
     """
-    cost = np.asarray(cost, dtype=float)
-    if cost.size == 0:
+    iou_min = config.TRACK_IOU_MIN if iou_min is None else iou_min
+    iou = np.asarray(iou, dtype=float)
+    if iou.size == 0:
         return []
-    pairs, rows, columns = [], set(), set()
-    for i, j in zip(*np.unravel_index(np.argsort(cost, axis=None), cost.shape)):
-        if cost[i, j] > limit:
-            break
-        if i in rows or j in columns:
-            continue
-        pairs.append((int(i), int(j)))
-        rows.add(i)
-        columns.add(j)
-    return pairs
+    rows, columns = linear_sum_assignment(1.0 - iou)
+    return [(int(i), int(j)) for i, j in zip(rows, columns) if iou[i, j] >= iou_min]
+
+
+def _xyah(box):
+    """[x1,y1,x2,y2] -> [cx, cy, a = w/h, h], ukuran Kalman filter ByteTrack."""
+    x1, y1, x2, y2 = box
+    w, h = x2 - x1, y2 - y1
+    return np.array([x1 + w / 2, y1 + h / 2, w / h, h], dtype=float)
+
+
+def _tlbr(xyah):
+    cx, cy, a, h = xyah[:4]
+    w = a * h
+    return np.array([cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2])
+
+
+class BoxFilter:
+    """Kalman filter kotak citra milik ByteTrack: state [cx, cy, a, h, vcx, vcy,
+    va, vh], constant-velocity, dt = 1 frame. Rumus dan derau dari kode resmi
+    ByteTrack (`yolox/tracker/kalman_filter.py`), tanpa perubahan."""
+
+    F = np.eye(8)
+    F[:4, 4:] = np.eye(4)
+    H = np.eye(4, 8)
+
+    def __init__(self, box):
+        z = _xyah(box)
+        wp, wv, h = config.TRACK_STD_WEIGHT_POSITION, config.TRACK_STD_WEIGHT_VELOCITY, z[3]
+        self.x = np.concatenate([z, np.zeros(4)])
+        std = [2 * wp * h, 2 * wp * h, 1e-2, 2 * wp * h,
+               10 * wv * h, 10 * wv * h, 1e-5, 10 * wv * h]
+        self.P = np.diag(np.square(std))
+
+    def prediction(self):
+        wp, wv, h = config.TRACK_STD_WEIGHT_POSITION, config.TRACK_STD_WEIGHT_VELOCITY, self.x[3]
+        std = [wp * h, wp * h, 1e-2, wp * h, wv * h, wv * h, 1e-5, wv * h]
+        self.x = self.F @ self.x
+        self.P = self.F @ self.P @ self.F.T + np.diag(np.square(std))
+
+    def correction(self, box):
+        wp, h = config.TRACK_STD_WEIGHT_POSITION, self.x[3]
+        R = np.diag(np.square([wp * h, wp * h, 1e-1, wp * h]))
+        S = self.H @ self.P @ self.H.T + R
+        K = np.linalg.solve(S, self.H @ self.P).T          # P H^T S^-1, S simetris
+        self.x = self.x + K @ (_xyah(box) - self.H @ self.x)
+        self.P = self.P - K @ S @ K.T
+
+    def box(self):
+        return _tlbr(self.x)
 
 
 class Track:
-    """Satu kendaraan yang sedang dilacak. State [x, y, vx, vy] frame ego."""
+    """Satu kendaraan yang sedang dilacak. `x` = state metrik [x, y, vx, vy]
+    frame ego; `kf` = Kalman filter kotak citra untuk asosiasi."""
 
     def __init__(self, id_, z, R, box, conf=0.0):
         self.id, self.conf = id_, float(conf)
@@ -91,10 +151,13 @@ class Track:
         # hampir seluruhnya menentukan kecepatan dan tidak tertahan prior.
         self.P = np.diag([R[0, 0], R[1, 1],
                           config.TRACK_SIGMA_V0 ** 2, config.TRACK_SIGMA_V0 ** 2])
+        self.kf = BoxFilter(box)
         self.box = np.asarray(box, dtype=float)
-        self.hit, self.lost, self.show = 1, 0, False
+        self.lost = 0                       # frame berturut tanpa pasangan
 
     def prediction(self, dt, u_ego, a_ego, w_ego):
+        self.kf.prediction()
+        self.box = self.kf.box()
         c, s = math.cos(-w_ego * dt), math.sin(-w_ego * dt)
         rot = np.array([[c, -s], [s, c]])
         F = np.block([[rot, rot * dt], [np.zeros((2, 2)), rot]])
@@ -115,13 +178,13 @@ class Track:
         K = self.P @ H.T @ np.linalg.inv(S)
         self.x = self.x + K @ (np.asarray(z, dtype=float) - H @ self.x)
         self.P = (np.eye(4) - K @ H) @ self.P
-        self.box = np.asarray(box, dtype=float)
-        self.hit += 1
+        self.kf.correction(box)
+        self.box = self.kf.box()
         self.lost = 0
 
 
 class Tracker:
-    """Pelacak multi-objek. Satu instance hidup selama satu run."""
+    """Pelacak multi-objek BYTE. Satu instance hidup selama satu run."""
 
     def __init__(self):
         self.track, self._last_id = [], 0
@@ -138,44 +201,45 @@ class Tracker:
         z = np.asarray(z, dtype=float).reshape(-1, 2)
         R = np.asarray(R, dtype=float).reshape(-1, 2, 2)
 
+        # Algorithm 1 baris 3-13: D_high dan D_low
+        high = conf > config.TRACK_CONF_HIGH
+        # baris 14-16: prediksi SEMUA track, termasuk yang hilang
         for t in self.track:
             t.prediction(dt, u_ego, a_ego, w_ego)
-            t.lost += 1                     # dibatalkan koreksi() bila nanti cocok
-
-        height = conf >= config.TRACK_CONF_HIGH
-        residual = self._match(np.flatnonzero(height), box, z, R, self.track, conf)
-        # Tahap dua: deteksi lemah hanya menahan track yang belum tercocokkan.
-        # Sengaja TIDAK melahirkan track baru -- di ambang 0,3 model fine-tuned
-        # memang nol positif palsu (bagian 18.3), tapi menjadikan deteksi lemah
-        # sebagai sumber halangan baru berarti mempertaruhkan rem mendadak MPC
-        # pada bukti paling tipis yang dimiliki sistem.
-        self._match(np.flatnonzero(~height), box, z, R,
-                       [t for t in self.track if t.lost > 0], conf)
-        for i in residual:
+        # baris 17-19: asosiasi pertama, semua track vs D_high
+        d_remain, t_remain = self._match(np.flatnonzero(high), box, z, R, conf, self.track)
+        # baris 20-21: asosiasi kedua, track sisa vs D_low. Deteksi lemah yang
+        # tak tercocokkan dibuang -- dianggap latar.
+        _, t_re_remain = self._match(np.flatnonzero(~high), box, z, R, conf, t_remain)
+        # baris 22: track tanpa pasangan menjadi hilang; dihapus setelah 30 frame
+        for t in t_re_remain:
+            t.lost += 1
+        self.track = [t for t in self.track if t.lost <= config.TRACK_MAX_LOST]
+        # baris 23-25: D_high sisa melahirkan track baru
+        for i in d_remain:
             self._last_id += 1
             self.track.append(Track(self._last_id, z[i], R[i], box[i], conf[i]))
-
-        self.track = [t for t in self.track if t.lost <= config.TRACK_MAX_LOST]
-        for t in self.track:
-            t.show = t.show or t.hit >= config.TRACK_N_INIT
-        # Track yang sedang melayang IKUT dilaporkan. Itu justru gunanya: halangan
-        # yang sekejap tidak terdeteksi tidak boleh lenyap dari pandangan FSM.
-        out = [t.x for t in self.track if t.show]
+        # keluaran: T tanpa T_lost
+        out = [t.x for t in self.track if t.lost == 0]
         return np.array(out) if out else np.empty((0, 4))
 
     def visible(self):
         """[(kotak, state, id, hilang, conf), ...] untuk track yang dilaporkan. Hanya
         untuk visualisasi -- kendali cukup memakai nilai kembalian `update`."""
-        return [(t.box, t.x, t.id, t.lost, t.conf) for t in self.track if t.show]
+        return [(t.box, t.x, t.id, t.lost, t.conf) for t in self.track if t.lost == 0]
 
-    def _match(self, idx, box, z, R, candidates, conf=None):
-        """Cocokkan deteksi `idx` ke `candidates`; kembali indeks yang tak tercocokkan."""
+    @staticmethod
+    def _match(idx, box, z, R, conf, candidates):
+        """Cocokkan deteksi `idx` ke `candidates` lewat IoU + Hungarian.
+
+        Kembali (indeks deteksi tak tercocokkan, track tak tercocokkan)."""
         if len(idx) == 0 or not candidates:
-            return list(idx)
-        cost = 1.0 - iou_matrix(box[idx], np.array([t.box for t in candidates]))
-        used = set()
-        for i, j in assign(cost, 1.0 - config.TRACK_IOU_MIN):
-            candidates[j].correction(z[idx[i]], R[idx[i]], box[idx[i]],
-                                None if conf is None else conf[idx[i]])
-            used.add(i)
-        return [idx[i] for i in range(len(idx)) if i not in used]
+            return list(idx), list(candidates)
+        iou = iou_matrix(box[idx], np.array([t.box for t in candidates]))
+        used_d, used_t = set(), set()
+        for i, j in hungarian(iou):
+            candidates[j].correction(z[idx[i]], R[idx[i]], box[idx[i]], conf[idx[i]])
+            used_d.add(i)
+            used_t.add(j)
+        return ([idx[i] for i in range(len(idx)) if i not in used_d],
+                [t for j, t in enumerate(candidates) if j not in used_t])

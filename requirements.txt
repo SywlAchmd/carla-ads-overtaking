@@ -15,6 +15,7 @@
 carla==0.9.16          # klien simulator; harus == versi server
 casadi==3.7.2          # MPC: Opti + IPOPT (control.py)
 numpy==2.2.6           # seluruh modul numerik
+scipy==1.15.3          # Hungarian (linear_sum_assignment) di tracking.py
 
 # Hanya untuk gambar dan video, tidak memengaruhi hasil kendali
 matplotlib==3.10.9     # validate_model.py, show_lanes.py

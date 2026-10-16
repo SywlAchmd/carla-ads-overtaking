@@ -45,6 +45,9 @@ def main_():
     ap = argparse.ArgumentParser()
     ap.add_argument('--perception', default='vision', choices=('gt', 'vision'))
     ap.add_argument('--repeat', type=int, default=10)
+    ap.add_argument('--suffix', default='',
+                    help='output file name suffix, e.g. _bytetrack -- so a variant '
+                         'does not overwrite the reference results')
     args = ap.parse_args()
 
     params = json.load(open(config.VEHICLE_PARAMS_JSON))
@@ -89,7 +92,7 @@ def main_():
     # cukup: metrik bab 4 baru didefinisikan saat menulis, dan bagian 15.5
     # menunjukkan metrik yang tampak wajar bisa mengukur hal lain -- tanpa data
     # mentah, mendefinisikan ulang berarti menjalankan ulang seluruh eksperimen.
-    path = f'{config.OUT_DIR}/experiment_s1_{args.perception}.npz'
+    path = f'{config.OUT_DIR}/experiment_s1_{args.perception}{args.suffix}.npz'
     np.savez(path, **{k: np.array([m[k] for m in result]) for k, _, _ in METRICS},
              verdict=np.array([m['verdict'] for m in result]),
              solver_failures=np.array([m['solver_failures'] for m in result]),
