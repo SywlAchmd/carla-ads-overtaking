@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 138 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 139 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -139,7 +139,7 @@ carla-ads-overtaking/
 │   ├── record_maneuver.py  video playback manuver                      [butuh ffmpeg]
 │   └── record_path.py      video lintasan acuan global planner         [butuh ffmpeg]
 │
-├── tests/                  138 uji, dijalankan sebagai skrip           [tanpa server]
+├── tests/                  139 uji, dijalankan sebagai skrip           [tanpa server]
 │   ├── test_architecture.py  aturan 2.4: modul numerik tidak menyentuh carla
 │   ├── test_bicycle_model.py, test_dimensions.py, test_evaluation.py, test_fsm.py
 │   └── test_lanes.py, test_localization.py, test_mpc.py, test_perception.py,
@@ -165,7 +165,7 @@ yang identik dengan sebelum migrasi.
 | Tahap | Isi | Status |
 |---|---|---|
 | 1 | Parameter kendaraan + validasi bicycle model | selesai |
-| 2 | Localization + global planner | selesai |
+| 2 | Localization + global planner | selesai; lokalisasi tanpa GT (GNSS awal + IMU + speedometer) tersedia lewat `--localization odom`, bawaan tetap GT (bagian 36) |
 | 3 | Local planner (quintic + quartic) | selesai |
 | 4 | Behavior FSM | selesai |
 | 5 | MPC + tuning bobot | selesai |
@@ -221,6 +221,25 @@ baru dinyalakan:
 Log: `out/experiment_s1_vision_bytetrack.npz`. Pembandingnya
 `out/experiment_s1_vision.npz` sengaja tidak ditimpa.
 
+**Lokalisasi tanpa ground truth** (16 Okt 2026, `WRITING_SUMMARY.md` bagian 36):
+pose awal dari GNSS + kompas IMU, lalu dead reckoning gyro IMU + speedometer,
+dikoreksi relatif oleh kamera. Sensor ideal. S1 vision, 10 run, baseline
+lokalisasi GT dijalankan ulang di sesi server yang sama:
+
+| Metrik | Lokalisasi GT | **Odometri** |
+|---|---|---|
+| Vonis | 10/10 | **10/10 BERHASIL** |
+| Jarak min antar bodi | 1,969 ± 0,025 m | 1,899 ± 0,030 m |
+| Durasi manuver | 12,66 ± 0,06 s | 12,74 ± 0,06 s |
+| Simpangan lateral maks | -4,333 m | -4,237 m |
+| Deviasi lajur sebelum / ekor sesudah | 0,011 / 0,050 m | 0,011 / 0,047 m |
+| Waktu solve rata-rata / maks | 16,56 / 33,47 ms | 16,52 / 27,99 ms |
+| Galat lokalisasi lateral, 95% / maks | 0 | 0,142 / 0,158 m |
+| Galat lokalisasi arah, 95% / maks | 0 | 0,038 / 0,091 deg |
+
+Sumber galat: slip ban (korelasi >= 0,999 dengan integral slip), bukan sensor.
+Log dan gambar: `out/localization_branch/`.
+
 Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
 seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian
 15.5 dan 29.1).
@@ -239,7 +258,7 @@ menabrak guardrail.
 
 ## Pekerjaan yang Belum Selesai
 
-Diurutkan dari yang paling mendesak. Terakhir diperbarui 16 Oktober 2026.
+Diurutkan dari yang paling mendesak. Terakhir diperbarui 17 Oktober 2026.
 
 ### 1. Skenario S2, S4, S5 tidak punya definisi
 Bukan "belum diimplementasikan" — **naskahnya tidak ada di repo ini sama sekali**.
@@ -368,7 +387,21 @@ ada angkanya untuk ditulis di batasan masalah.
 - **Rem lebih dalam** (-3,2 -> -4,0 m/s²) terjadi saat target terlihat penuh.
   Dugaan: tau 0,6 membuat target terdeteksi 3 tick lebih lambat. Belum dibuktikan.
 
-### 14. Lain-lain
+### 14. Sisa lokalisasi odometri (branch `feat/odometry-localization`)
+- **Belum di-merge ke `main`.** Bawaan tetap `--localization gt`, jadi angka bagian
+  35 tidak terpengaruh.
+- **Lewatan lateral lebih kecil** (-4,24 vs -4,33 m; jarak bodi -0,07 m) belum
+  dijelaskan. Dugaan "ego merasa sudah lebih jauh" gugur. Masih jauh di atas
+  syarat 1,0 m.
+- **Syarat Reid dkk. untuk jalan lokal** (lateral 0,10 m pada 95%) tidak terpenuhi
+  (0,142 m); jalan bebas hambatan terpenuhi. Tulis kedua kolom apa adanya.
+- **Sensor ideal**, tanpa noise dan bias, termasuk speedometer pseudo-sensor.
+  Masuk batasan masalah (teks siap pakai di bagian 36.4).
+- **Sitasi** (bagian 36.5): Reid dkk. 2019 lebih dari 4 tahun; He dkk. 2023
+  (*IEEE Access*) belum dibuka isinya; halaman spesifikasi GPS dan CARLA
+  Leaderboard belum dibuka langsung.
+
+### 15. Lain-lain
 - Klaim real-time sudah diukur (`WRITING_SUMMARY.md` 21.3), tetapi mesin **tidak
   benar-benar senggang** saat pengukuran (load ~3-5). Angka di mesin sepi
   kemungkinan sedikit lebih baik, bukan lebih buruk.

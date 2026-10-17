@@ -31,6 +31,14 @@ out/*
 # sebelum/sesudah di WRITING_SUMMARY.md hanya bisa dibaca, tidak bisa diperiksa.
 !out/run_s1_mpc_vision_before.npz
 
+# Eksperimen lokalisasi odometri (bagian 36, ~5 MB): data mentah 2 x 10 run, log
+# run tunggal sumber grafiknya, dan gambar yang dirujuk WRITING_SUMMARY.md.
+# Video (*.mp4) tetap diabaikan.
+!out/localization_branch/
+out/localization_branch/*
+!out/localization_branch/*.npz
+!out/localization_branch/*.png
+
 # Yang diabaikan: *.mp4 (~18 MB, bisa dibangkitkan ulang dengan record_*.py)
 # dan *.npz log run tunggal (bisa dibangkitkan ulang dengan main.py).
 

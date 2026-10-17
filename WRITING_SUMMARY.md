@@ -47,7 +47,8 @@ dikutip -- itu training lama dengan split bocor.
 
 | Bagian | Kendaraan target | Checkpoint YOLOPX | Status angka |
 |---|---|---|---|
-| **35** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** (hasil vision terbaru, pelacak ByteTrack) |
+| **36** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU** untuk lokalisasi odometri (`--localization odom`), dengan baseline lokalisasi GT dari sesi server yang sama |
+| **35** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** (hasil vision terbaru, pelacak ByteTrack, lokalisasi GT) |
 | 32, 34 | Lincoln MKZ 2020 | epoch 92 | pelacak lama (serakah); pembanding bagian 35 |
 | **31** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU** (perception, drivable area, GT); hasil vision digantikan 32 |
 | **33** | -- | **epoch 92** | **BERLAKU**: split dataset dan angka training/test YOLOPX |
@@ -3494,7 +3495,7 @@ Express (Elsevier) 2025 tidak bisa dibuka isinya, jadi tidak dipakai.
 
 ## 36. Lokalisasi tanpa ground truth: GNSS awal + dead reckoning (16 Oktober 2026)
 
-Branch `feat/lokalisasi-tanpa-gt`, opsi `python main.py --localization odom`.
+Branch `feat/odometry-localization`, opsi `python main.py --localization odom`.
 Bawaan tetap `gt`, dan jalur itu terverifikasi **identik bit-per-bit** dengan log
 S1 sebelumnya, jadi seluruh hasil bagian 1-35 tetap sah.
 

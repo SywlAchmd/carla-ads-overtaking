@@ -3394,7 +3394,7 @@ setelah restart server), dan perilaku tanpa track melayang saat ada oklusi (S3/S
 ## Lokalisasi Tanpa Ground Truth — 16 Oktober 2026
 
 **Permintaan penulis:** pose ego tidak lagi dari `get_transform()`. Branch
-`feat/lokalisasi-tanpa-gt`.
+`feat/odometry-localization`.
 
 **Yang ternyata sudah relatif sebelumnya.** Lajur (`ego.y - lane_dev`), halangan
 (`obs_rel[:, 0] -= ego.x`), dan arah jalan (`psi_road`, ditapis dari kamera)
