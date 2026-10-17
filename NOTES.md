@@ -3391,7 +3391,7 @@ target terlihat penuh, jadi bukan akibat track hilang. WRITING_SUMMARY bagian 35
 **Yang masih terbuka:** waktu solve maks 48,46 ms di satu run (perlu diukur ulang
 setelah restart server), dan perilaku tanpa track melayang saat ada oklusi (S3/S5).
 
-## Lokalisasi Tanpa Ground Truth — 16 Oktober 2026
+## Lokalisasi Tanpa Ground Truth — 16-17 Oktober 2026
 
 **Permintaan penulis:** pose ego tidak lagi dari `get_transform()`. Branch
 `feat/odometry-localization`.
@@ -3405,12 +3405,20 @@ dan konsistensi pose selama satu horizon rencana.
 **Sensor.** `yaw_rate` dari gyro z `sensor.other.imu`. `v` dari pseudo-sensor
 speedometer, karena CARLA 0.9.16 tidak punya encoder roda (API roda hanya
 `get_wheel_steer_angle`). Padanannya *Speedometer* di CARLA Leaderboard, yang
-dihitung sebagai sensor sah, bukan informasi privileged. Pose = integrasi
-trapesium, yaw tengah langkah. Pose awal dari GNSS (posisi, lewat
-`Map.geolocation_to_transform`) dan kompas IMU (arah, yaw CARLA = kompas - 90
-deg) -- terukur 0,0000 m dan maks 0,004 deg dari GT. Pose awal sempat diambil
-dari GT; diganti supaya GT keluar total dari lokalisasi dan tinggal jadi alat
-ukur. Opsi `--localization odom`; bawaan tetap `gt`.
+dihitung sebagai sensor sah, bukan informasi privileged. Pose awal dari GNSS
+(posisi, lewat `Map.geolocation_to_transform`) dan kompas IMU (arah, yaw CARLA =
+kompas - 90 deg) -- terukur 0,0000 m dan maks 0,004 deg dari GT. GT keluar total
+dari lokalisasi dan tinggal jadi alat ukur. Opsi `--localization odom`; bawaan
+tetap `gt`.
+
+**Rumus: Javed, Singh & Ahmed (2026), IEEE T-ITS 27(4), pers. (4)-(6).** Penulis
+meminta rumus dari jurnal kredibel <= 4 tahun yang isinya bisa dibuka; naskah
+dibuka lewat arXiv. Susunannya sama dengan di sini: laju sumbu belakang dari
+sensor kecepatan roda, yaw dari integral yaw rate, model kinematik sumbu
+belakang. Paper menyebut "numerical integration" tanpa menetapkan aturannya;
+`dead_reckon` menghitung pers. (6) lalu (5) dengan aturan trapesium. Kandidat
+lain gugur: terlalu tua (Eising dkk., daring Nov 2021), tanpa rumus posisi
+diskret (R-WhONet), berbayar, prosiding/preprint saja, atau MDPI.
 
 **Tanda gyro diukur, bukan diasumsikan.** `gyroscope.z` searah
 `get_angular_velocity().z` (left-handed), beda maks 1e-4 rad/s, jadi dinegasikan
@@ -3419,51 +3427,50 @@ sama seperti di GT. Frame pengukuran IMU = frame tick.
 **Alat ukur dipisah dari yang diukur.** Kolom baru `x_gt`, `y_gt`, `yaw_gt` =
 pose GT di frame kendali. Penilai jarak dan zona aman di `metrics.py` memakai
 itu, bukan pose yang diyakini ego. `x_map`/`y_map` kini juga dari GT. Jalur
-`--localization gt` diperiksa identik bit-per-bit dengan log S1 sebelumnya.
+`--localization gt` identik bit-per-bit dengan log S1 sebelum branch ini.
 
-**Hasil, sensor ideal (noise 0), satu run masing-masing:**
+**Hasil, sensor ideal (noise 0), satu run masing-masing** (17 Okt, server baru):
 
-| Run | Galat posisi rata-rata / maks | Yaw maks | Vonis | Jarak bodi min |
+| Run | Galat lateral 95% / maks | Yaw maks | Vonis | Jarak bodi min |
 |---|---|---|---|---|
-| S1 GT perception | 0,037 / 0,128 m | 0,037 deg | berhasil | 1,43 m (= GT) |
-| S1 vision | 0,035 / 0,153 m | 0,088 deg | berhasil | 1,87 m |
+| S1 GT perception | 0,115 / 0,128 m | 0,037 deg | berhasil | 1,43 m (= GT) |
+| S1 vision | 0,144 / 0,154 m | 0,087 deg | berhasil | 1,88 m |
 
 **Dari mana galat 0,13 m padahal sensornya ideal.** Dead reckoning menganggap
 sumbu belakang tidak slip lateral, sama dengan bicycle model MPC. Fisika CARLA
 punya slip ban: terukur maks 0,456 deg saat pindah lajur. Integral slip itu
-berkorelasi 1,000 dengan galat lateral. Jadi ini galat model, bukan galat
+berkorelasi 0,999 dengan galat lateral. Jadi ini galat model, bukan galat
 sensor. Ia kembali ke ~0 setelah manuver karena pindah lajur pergi-pulang
 simetris.
 
-**Eksperimen 10 run, S1 vision, 16 Oktober 2026.** Keluaran di
-`out/localization_branch/` (`SKRIPSI_OUT`), baseline lokalisasi GT dijalankan
-ulang di sesi server yang sama supaya setara:
+**Eksperimen 10 run, S1 vision, 17 Oktober 2026.** Keluaran di
+`out/localization_branch/` (`SKRIPSI_OUT`), baseline lokalisasi GT di sesi
+server yang sama:
 
 | Metrik | Lokalisasi GT | Odometri |
 |---|---|---|
 | Berhasil | 10/10 | 10/10 |
-| Jarak bodi min | 1,969 ± 0,025 m | 1,899 ± 0,030 m |
-| Durasi manuver | 12,66 ± 0,06 s | 12,74 ± 0,06 s |
-| Simpangan lateral maks | -4,333 ± 0,015 m | -4,237 ± 0,010 m |
-| Simpangan lajur sebelum / ekor sesudah | 0,011 / 0,050 m | 0,011 / 0,047 m |
-| Perlambatan terdalam | -3,90 ± 0,47 m/s² | -4,06 ± 0,14 m/s² |
-| Tick tanpa kandidat | 42,2 ± 0,6 | 42,4 ± 0,8 |
-| Waktu solve rata-rata / maks | 16,56 / 33,47 ms | 16,52 / 27,99 ms |
-| Galat lokalisasi lateral maks | 0 (per definisi) | 0,154 ± 0,002 m |
-| Galat lokalisasi arah maks | 0 | 0,088 ± 0,001 deg |
+| Jarak bodi min | 1,962 ± 0,003 m | 1,927 ± 0,034 m |
+| Durasi manuver | 12,67 ± 0,04 s | 12,74 ± 0,05 s |
+| Simpangan lateral maks | -4,331 ± 0,010 m | -4,233 ± 0,010 m |
+| Simpangan lajur sebelum / ekor sesudah | 0,011 / 0,051 m | 0,011 / 0,047 m |
+| Perlambatan terdalam | -4,06 ± 0,05 m/s² | -4,19 ± 0,18 m/s² |
+| Tick tanpa kandidat | 42,0 ± 0,0 | 43,4 ± 0,9 |
+| Waktu solve rata-rata / maks | 16,80 / 37,93 ms | 16,68 / 31,33 ms |
+| Galat lokalisasi lateral maks | 0 (per definisi) | 0,156 ± 0,003 m |
+| Galat lokalisasi arah maks | 0 | 0,089 ± 0,002 deg |
 
-Satu-satunya beda di luar sebaran: jarak bodi -0,07 m dan simpangan lateral
-maks berkurang 0,096 m. Dugaan pertama -- ego MERASA sudah lebih jauh di lajur
-salip -- **gugur**: di titik simpangan terjauh galat lokalisasinya hanya -0,011 m.
-Ego memang merencanakan lewatan lebih kecil (0,65 m melewati tengah lajur tujuan,
-GT 0,81 m). Penyebabnya **belum dibuktikan**; besarnya jauh di atas syarat 1,0 m.
+Galat lokalisasi 10 run digabung: lateral 95% 0,142 m / maks 0,160 m, arah 95%
+0,038 / maks 0,091 deg.
 
-Galat lokalisasi 10 run digabung: lateral 95% 0,142 m / maks 0,158 m, arah 95%
-0,038 / maks 0,091 deg. Korelasi galat lateral dengan integral slip per run min
-0,999. Odometri juga deterministik bit-per-bit (diuji 2 run perception GT).
+Beda yang jelas di luar sebaran: simpangan lateral maks berkurang 0,098 m. Jarak
+bodi turun 0,035 m, setara satu sd. Dugaan "ego MERASA sudah lebih jauh di lajur
+salip" **gugur**: di titik simpangan terjauh galat lokalisasinya hanya -0,013 m.
+Penyebabnya **belum dibuktikan**; besarnya jauh di atas syarat 1,0 m.
 
 **Yang masih terbuka:** penyebab lewatan lateral yang lebih kecil.
 
 **Sensor ideal, keputusan penulis.** IMU dan speedometer tanpa noise, sama
-perlakuannya dengan depth camera. Kenop noise sempat ada lalu dihapus karena
-tidak dipakai.
+perlakuannya dengan depth camera.
+
+WRITING_SUMMARY bagian 36.

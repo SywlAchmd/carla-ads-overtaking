@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 139 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 140 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -139,7 +139,7 @@ carla-ads-overtaking/
 │   ├── record_maneuver.py  video playback manuver                      [butuh ffmpeg]
 │   └── record_path.py      video lintasan acuan global planner         [butuh ffmpeg]
 │
-├── tests/                  139 uji, dijalankan sebagai skrip           [tanpa server]
+├── tests/                  140 uji, dijalankan sebagai skrip           [tanpa server]
 │   ├── test_architecture.py  aturan 2.4: modul numerik tidak menyentuh carla
 │   ├── test_bicycle_model.py, test_dimensions.py, test_evaluation.py, test_fsm.py
 │   └── test_lanes.py, test_localization.py, test_mpc.py, test_perception.py,
@@ -229,14 +229,17 @@ lokalisasi GT dijalankan ulang di sesi server yang sama:
 | Metrik | Lokalisasi GT | **Odometri** |
 |---|---|---|
 | Vonis | 10/10 | **10/10 BERHASIL** |
-| Jarak min antar bodi | 1,969 ± 0,025 m | 1,899 ± 0,030 m |
-| Durasi manuver | 12,66 ± 0,06 s | 12,74 ± 0,06 s |
-| Simpangan lateral maks | -4,333 m | -4,237 m |
-| Deviasi lajur sebelum / ekor sesudah | 0,011 / 0,050 m | 0,011 / 0,047 m |
-| Waktu solve rata-rata / maks | 16,56 / 33,47 ms | 16,52 / 27,99 ms |
-| Galat lokalisasi lateral, 95% / maks | 0 | 0,142 / 0,158 m |
+| Jarak min antar bodi | 1,962 ± 0,003 m | 1,927 ± 0,034 m |
+| Durasi manuver | 12,67 ± 0,04 s | 12,74 ± 0,05 s |
+| Simpangan lateral maks | -4,331 m | -4,233 m |
+| Deviasi lajur sebelum / ekor sesudah | 0,011 / 0,051 m | 0,011 / 0,047 m |
+| Waktu solve rata-rata / maks | 16,80 / 37,93 ms | 16,68 / 31,33 ms |
+| Galat lokalisasi lateral, 95% / maks | 0 | 0,142 / 0,160 m |
 | Galat lokalisasi arah, 95% / maks | 0 | 0,038 / 0,091 deg |
 
+Rumus dead reckoning mengikuti Javed, Singh & Ahmed (2026, *IEEE T-ITS*), pers.
+(4)-(6), diintegrasikan dengan aturan trapesium (`WRITING_SUMMARY.md` 36.6).
+Diukur 17 Okt 2026, server CARLA baru dinyalakan.
 Sumber galat: slip ban (korelasi >= 0,999 dengan integral slip), bukan sensor.
 Log dan gambar: `out/localization_branch/`.
 
@@ -390,14 +393,15 @@ ada angkanya untuk ditulis di batasan masalah.
 ### 14. Sisa lokalisasi odometri (branch `feat/odometry-localization`)
 - **Belum di-merge ke `main`.** Bawaan tetap `--localization gt`, jadi angka bagian
   35 tidak terpengaruh.
-- **Lewatan lateral lebih kecil** (-4,24 vs -4,33 m; jarak bodi -0,07 m) belum
+- **Lewatan lateral lebih kecil** (-4,23 vs -4,33 m; jarak bodi -0,035 m) belum
   dijelaskan. Dugaan "ego merasa sudah lebih jauh" gugur. Masih jauh di atas
   syarat 1,0 m.
 - **Syarat Reid dkk. untuk jalan lokal** (lateral 0,10 m pada 95%) tidak terpenuhi
   (0,142 m); jalan bebas hambatan terpenuhi. Tulis kedua kolom apa adanya.
 - **Sensor ideal**, tanpa noise dan bias, termasuk speedometer pseudo-sensor.
   Masuk batasan masalah (teks siap pakai di bagian 36.4).
-- **Sitasi** (bagian 36.5): Reid dkk. 2019 lebih dari 4 tahun; He dkk. 2023
+- **Sitasi** (bagian 36.5): rumus dead reckoning dari Javed dkk. 2026 (*IEEE
+  T-ITS*), memenuhi aturan 4 tahun. Reid dkk. 2019 lebih dari 4 tahun; He dkk. 2023
   (*IEEE Access*) belum dibuka isinya; halaman spesifikasi GPS dan CARLA
   Leaderboard belum dibuka langsung.
 

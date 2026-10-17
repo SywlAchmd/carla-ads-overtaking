@@ -24,7 +24,7 @@ Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
 | 8 | Perception lengkap (YOLOPX + depth + tracking) | **selesai untuk S1** |
 | 9 | Eksperimen penuh | **selesai untuk S1**; S2-S5 belum |
 
-139 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+140 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
 Terakhir diperbarui 16 Oktober 2026: lokalisasi tanpa ground truth -- GNSS +
 kompas IMU untuk pose awal, lalu dead reckoning gyro IMU + speedometer (bagian 36).
 Sebelumnya, 16 Oktober 2026: pelacak diganti ByteTrack dengan Hungarian,
@@ -3493,7 +3493,7 @@ Express (Elsevier) 2025 tidak bisa dibuka isinya, jadi tidak dipakai.
 
 ---
 
-## 36. Lokalisasi tanpa ground truth: GNSS awal + dead reckoning (16 Oktober 2026)
+## 36. Lokalisasi tanpa ground truth: GNSS awal + dead reckoning (16-17 Oktober 2026)
 
 Branch `feat/odometry-localization`, opsi `python main.py --localization odom`.
 Bawaan tetap `gt`, dan jalur itu terverifikasi **identik bit-per-bit** dengan log
@@ -3507,7 +3507,7 @@ S1 sebelumnya, jadi seluruh hasil bagian 1-35 tetap sah.
 | Arah awal | kompas IMU, yaw CARLA = kompas - 90 deg | sekali saja; terukur maks 0,004 deg dari GT |
 | `yaw_rate` | gyro z IMU, dinegasikan (CARLA left-handed) | tanda diukur: searah `get_angular_velocity().z`, beda maks 1e-4 rad/s |
 | `v` | speedometer (pseudo-sensor) | CARLA 0.9.16 tidak punya encoder roda |
-| `x, y, yaw` | integrasi trapesium di sumbu belakang, yaw tengah langkah | asumsi tanpa slip lateral = asumsi bicycle model MPC |
+| `x, y, yaw` | integral kinematika sumbu belakang, pers. (5)-(6) Javed dkk. (2026), aturan trapesium (bagian 36.6) | asumsi tanpa slip lateral = asumsi bicycle model MPC |
 | Koreksi drift | kamera: arah jalan (`psi_road`) dan posisi lajur (`lane_dev`) | sudah ada sejak bagian 28 |
 
 GT tidak lagi masuk lokalisasi. Ia tetap dipakai sebagai **alat ukur**:
@@ -3523,8 +3523,10 @@ di sini koreksinya relatif lajur dari kamera.
 
 | Run | Lateral 95% / maks | Memanjang maks | Arah 95% / maks | Vonis | Jarak bodi min |
 |---|---|---|---|---|---|
-| perception GT | 0,115 / 0,127 m | 0,007 m | 0,029 / 0,037 deg | berhasil | 1,43 m (= run GT) |
-| perception vision | 0,142 / 0,153 m | 0,010 m | 0,037 / 0,088 deg | berhasil | 1,87 m |
+| perception GT | 0,115 / 0,128 m | 0,007 m | 0,029 / 0,037 deg | berhasil | 1,43 m (= run GT) |
+| perception vision | 0,144 / 0,154 m | 0,011 m | 0,037 / 0,087 deg | berhasil | 1,88 m |
+
+Diukur 17 Oktober 2026 dengan rumus bagian 36.6, server baru dinyalakan.
 
 **Sumber galat padahal sensornya ideal: slip ban.** Dead reckoning menganggap
 sumbu belakang tidak slip lateral; fisika CARLA punya slip, terukur maks 0,456
@@ -3536,36 +3538,40 @@ karena pindah lajur pergi-pulang simetris.
 
 | Besaran | Hasil vision (95% / maks) | Jalan bebas hambatan | Jalan lokal |
 |---|---|---|---|
-| Lateral | 0,142 / 0,153 m | 0,57 m (0,20 m): **memenuhi** | 0,29 m (0,10 m): batas memenuhi, **95% tidak** |
-| Arah | 0,037 / 0,088 deg | 1,50 deg (0,51 deg): **memenuhi** | 0,50 deg (0,17 deg): **memenuhi** |
+| Lateral | 0,144 / 0,154 m | 0,57 m (0,20 m): **memenuhi** | 0,29 m (0,10 m): batas memenuhi, **95% tidak** |
+| Arah | 0,037 / 0,087 deg | 1,50 deg (0,51 deg): **memenuhi** | 0,50 deg (0,17 deg): **memenuhi** |
 
 Aturan penulisan no. 5: jangan klaim Town04 masuk kategori jalan tertentu.
 Tampilkan kedua kolom apa adanya, termasuk yang tidak terpenuhi.
 
 **Eksperimen 10 run, S1 vision** (`out/localization_branch/`; baseline GT
-dijalankan ulang di sesi server yang sama):
+dijalankan di sesi server yang sama). Diukur 17 Oktober 2026 dengan rumus
+bagian 36.6, server baru dinyalakan:
 
 | Metrik | Lokalisasi GT | Odometri |
 |---|---|---|
 | Berhasil | 10/10 | 10/10 |
-| Jarak bodi min | 1,969 ± 0,025 m | 1,899 ± 0,030 m |
-| Durasi manuver | 12,66 ± 0,06 s | 12,74 ± 0,06 s |
-| Simpangan lateral maks | -4,333 ± 0,015 m | -4,237 ± 0,010 m |
-| Simpangan lajur sebelum / ekor sesudah | 0,011 / 0,050 m | 0,011 / 0,047 m |
-| Perlambatan terdalam | -3,90 ± 0,47 m/s² | -4,06 ± 0,14 m/s² |
-| Tick tanpa kandidat | 42,2 ± 0,6 | 42,4 ± 0,8 |
-| Waktu solve rata-rata / maks | 16,56 / 33,47 ms | 16,52 / 27,99 ms |
-| Galat lokalisasi lateral maks | 0 (per definisi) | 0,154 ± 0,002 m |
-| Galat lokalisasi arah maks | 0 | 0,088 ± 0,001 deg |
+| Jarak bodi min | 1,962 ± 0,003 m | 1,927 ± 0,034 m |
+| Durasi manuver | 12,67 ± 0,04 s | 12,74 ± 0,05 s |
+| Simpangan lateral maks | -4,331 ± 0,010 m | -4,233 ± 0,010 m |
+| Simpangan lajur sebelum / ekor sesudah | 0,011 / 0,051 m | 0,011 / 0,047 m |
+| Perlambatan terdalam | -4,06 ± 0,05 m/s² | -4,19 ± 0,18 m/s² |
+| Tick tanpa kandidat | 42,0 ± 0,0 | 43,4 ± 0,9 |
+| Waktu solve rata-rata / maks | 16,80 / 37,93 ms | 16,68 / 31,33 ms |
+| Galat lokalisasi lateral maks | 0 (per definisi) | 0,156 ± 0,003 m |
+| Galat lokalisasi arah maks | 0 | 0,089 ± 0,002 deg |
 
-Galat lokalisasi 10 run digabung: lateral 95% **0,142 m** / maks **0,158 m**, arah
-95% 0,038 / maks 0,091 deg -- angka tabel Reid di atas tetap berlaku.
+Galat lokalisasi 10 run digabung: lateral 95% **0,142 m** / maks **0,160 m**,
+memanjang 95% 0,009 / maks 0,011 m, arah 95% 0,038 / maks 0,091 deg. Korelasi
+galat lateral dengan integral slip per run min 0,999. Kesimpulan tabel Reid di
+atas tidak berubah.
 
-Satu-satunya beda di luar sebaran: jarak bodi -0,07 m dan simpangan lateral
-maks berkurang 0,096 m. Dugaan pertama -- ego MERASA sudah lebih jauh di lajur
-salip -- **gugur**: di titik simpangan terjauh galat lokalisasinya hanya -0,011 m.
-Ego memang merencanakan lewatan lebih kecil (0,65 m melewati tengah lajur tujuan,
-GT 0,81 m). Penyebabnya **belum dibuktikan**; besarnya jauh di atas syarat 1,0 m.
+Beda yang jelas di luar sebaran: simpangan lateral maks berkurang 0,098 m. Jarak
+bodi turun 0,035 m, setara satu simpangan baku odometri, jadi batas. Dugaan
+pertama -- ego MERASA sudah lebih jauh di lajur salip -- **gugur**: di titik
+simpangan terjauh galat lokalisasinya hanya -0,013 m (rentang -0,015..-0,009 m),
+jadi ego memang merencanakan lewatan yang lebih kecil. Penyebabnya **belum
+dibuktikan**; besarnya jauh di atas syarat 1,0 m.
 
 Gambar: `localization_error_s1.png` (galat 10 run + integral slip + garis Reid),
 `compare_s1_vision_vision_odom.png`, `run_s1_mpc_vision_odom.png`. Video:
@@ -3596,7 +3602,7 @@ Gambar: `localization_error_s1.png` (galat 10 run + integral slip + garis Reid),
   sensor ideal GNSS = GT (argumen 3). Fusi baru bermakna bila GNSS dimodelkan
   ber-noise; itu topik lokalisasi tersendiri, di luar cakupan manuver menyalip.
 - *"Dead reckoning kan drift?"* -- Ya. Arah dikoreksi kamera, posisi lateral
-  diukur relatif lajur; sisa drift terukur maks 0,153 m, di bawah batas Reid.
+  diukur relatif lajur; sisa drift terukur maks 0,160 m, di bawah batas Reid.
 - *"GNSS ideal, kenapa tidak dipakai terus?"* -- Argumen 3, ditambah GNSS nyata
   <= 8 m (95%): bersandar pada GNSS ideal kontinu berarti bersandar pada hal yang
   tidak realistis.
@@ -3614,6 +3620,14 @@ Gambar: `localization_error_s1.png` (galat 10 run + integral slip + garis Reid),
 ### 36.5 Sitasi -- status terhadap aturan bagian 16 (<= 4 tahun, ber-URL, isi dibuka)
 
 **Memenuhi:**
+
+> Javed, N. U., Singh, Y., & Ahmed, Q. (2026). Vehicle Localization in GPS-Denied
+> Scenarios Using Arc-Length-Based Map Matching. *IEEE Transactions on Intelligent
+> Transportation Systems*, 27(4), 4924-4929.
+> https://doi.org/10.1109/TITS.2025.3648744 (arXiv:2410.12208)
+
+Sumber rumus dead reckoning (bagian 36.6). Isinya dibuka langsung lewat arXiv;
+metadata terbitan dicek di Crossref.
 
 > Autoware Foundation. *autoware_pose_initializer* (v1.10.0, diperbarui Oktober
 > 2026). https://index.ros.org/p/autoware_pose_initializer/
@@ -3659,3 +3673,37 @@ tetapi MDPI.
 Pseudo-sensor speedometer: padanannya "Speedometer" di sensor yang diizinkan
 CARLA Leaderboard (https://leaderboard.carla.org/evaluation_v2_1/). Halaman itu
 belum dibuka langsung.
+
+### 36.6 Rumus dead reckoning dan sumbernya (17 Oktober 2026)
+
+**Keputusan penulis:** rumus harus mengikuti jurnal kredibel <= 4 tahun yang
+isinya bisa dibuka. Kandidat lain yang diperiksa dan gugur: Eising dkk. (IET ITS,
+terbit daring Nov 2021: > 4 tahun), R-WhONet (Neural Computing and Applications
+2025: tanpa rumus posisi diskret), WING (IEEE T-IV 2024: tidak memuat bentuk
+diskret ini), makalah prosiding dan preprint tanpa terbitan jurnal, serta semua
+jurnal MDPI.
+
+**Sumber yang dipakai:** Javed, Singh & Ahmed (2026), *IEEE T-ITS* 27(4). Susunan
+sensornya sama dengan di sini: laju di sumbu belakang dari sensor kecepatan roda,
+yaw dari integral yaw rate, dan model kinematik sumbu belakang
+
+    x' = v cos(yaw),   y' = v sin(yaw)               baris x, y dari pers. (4)
+    (x, y)(t) = integral (x', y') dt                                 pers. (5)
+    yaw(t)    = integral yaw' dt  (mod 2 pi)                         pers. (6)
+
+dengan yaw' diambil dari pengukuran yaw rate ("Yaw rate ... is numerically
+integrated to obtain a measured estimate of yaw angle"). Paper menyebut
+"numerical integration" tanpa menetapkan aturannya. Di sini dipakai **aturan
+trapesium** antara ukuran awal (v0, r0) dan akhir (v1, r1) tiap tick, dt = 0,05 s:
+
+    yaw_k = yaw_{k-1} + (r0 + r1)/2 dt                               pers. (6)
+    x_k   = x_{k-1} + (v0 cos(yaw_{k-1}) + v1 cos(yaw_k))/2 dt       pers. (5)
+    y_k   = y_{k-1} + (v0 sin(yaw_{k-1}) + v1 sin(yaw_k))/2 dt
+
+Kode: `localization.dead_reckon`. Uji: trapesium eksak untuk masukan yang berubah
+linear (jarak 12 m tepat untuk v 10 -> 14 m/s dalam 1 s), dan menutup lingkaran.
+
+**Cara menulis di bab 3:** model kinematik dan integralnya dari Javed dkk. (2026);
+aturan trapesium disebut sebagai metode integrasi numerik yang dipilih, karena
+paper tidak menetapkannya. Jangan menulis bahwa paper itu memakai trapesium.
+
