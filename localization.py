@@ -193,16 +193,24 @@ def speedometer(ego):
     return v.x * math.cos(yaw) + v.y * math.sin(yaw)
 
 
-def dead_reckon(x, y, yaw, v, r, dt):
+def dead_reckon(x, y, yaw, v0, v1, r0, r1, dt):
     """Satu langkah dead reckoning titik sumbu belakang, frame RH.
 
-    Sumbu belakang bergerak searah hadap (tanpa slip lateral) -- model yang sama
-    dengan bicycle model MPC. Yaw tengah langkah, bukan awal: pada laju belok
-    konstan lintasannya busur, dan tali busur searah yaw tengah.
+    Mengikuti Javed, Singh & Ahmed (IEEE T-ITS 27(4), 2026), pers. (4)-(6):
+    laju sumbu belakang dari sensor kecepatan roda, yaw dari integral yaw rate,
+    lalu posisi dari integral kinematika x' = v cos(yaw), y' = v sin(yaw) --
+    tanpa slip lateral, model yang sama dengan bicycle model MPC. Paper menyebut
+    "numerical integration" tanpa menetapkan aturannya; dipakai aturan trapesium
+    antara ukuran awal (v0, r0) dan akhir (v1, r1) langkah:
+
+        yaw1 = yaw + (r0 + r1)/2 dt                                   pers. (6)
+        x1   = x + (v0 cos(yaw) + v1 cos(yaw1))/2 dt                  pers. (5)
+        y1   = y + (v0 sin(yaw) + v1 sin(yaw1))/2 dt
     """
-    yaw_mid = yaw + 0.5 * r * dt
-    return (x + v * dt * math.cos(yaw_mid), y + v * dt * math.sin(yaw_mid),
-            wrap(yaw + r * dt))
+    yaw1 = yaw + 0.5 * (r0 + r1) * dt
+    return (x + 0.5 * dt * (v0 * math.cos(yaw) + v1 * math.cos(yaw1)),
+            y + 0.5 * dt * (v0 * math.sin(yaw) + v1 * math.sin(yaw1)),
+            wrap(yaw1))
 
 
 class OdometryLocalization:
@@ -232,8 +240,7 @@ class OdometryLocalization:
                                   wrap(-yaw_c), v, r, m.timestamp)
             return self.state
         s = self.state
-        # trapesium: rata-rata awal dan akhir langkah
-        x, y, yaw = dead_reckon(s.x, s.y, s.yaw, 0.5 * (s.v + v),
-                               0.5 * (s.yaw_rate + r), m.timestamp - s.timestamp)
+        x, y, yaw = dead_reckon(s.x, s.y, s.yaw, s.v, v, s.yaw_rate, r,
+                               m.timestamp - s.timestamp)
         self.state = EgoState(x, y, yaw, v, r, m.timestamp)
         return self.state

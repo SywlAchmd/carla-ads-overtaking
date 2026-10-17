@@ -49,15 +49,34 @@ def test_fsm_gap_measured_from_rear_axle():
 
 def test_dead_reckon_closes_circle():
     """Laju belok konstan satu putaran penuh harus kembali ke titik awal.
-    Dengan yaw AWAL langkah (Euler) galatnya ~v*dt per putaran; yaw TENGAH eksak."""
+    Euler (yaw AWAL langkah saja) meleset ~v*dt*pi = 2,1 m di sini; trapesium
+    menutup karena suku cos/sin awal dan akhir langkah simetris sepanjang putaran.
+    Ini sifat simetri, bukan bukti eksak: panjang tiap langkah tetap aproksimasi."""
     n, v, dt = 420, 13.4, 0.05
     r = 2 * math.pi / (n * dt)              # tepat satu putaran dalam n langkah
     x, y, yaw = 5.0, -2.0, 0.4
     for _ in range(n):
-        x, y, yaw = localization.dead_reckon(x, y, yaw, v, r, dt)
-    # Euler memberi ~v*dt*pi = 2,1 m di sini
+        x, y, yaw = localization.dead_reckon(x, y, yaw, v, v, r, r, dt)
     assert math.hypot(x - 5.0, y + 2.0) < 1e-6, (x, y)
     assert abs(localization.wrap(yaw - 0.4)) < 1e-9
+
+
+def test_dead_reckon_trapezoid_exact_for_linear_inputs():
+    """Trapesium eksak untuk masukan yang berubah linear dalam waktu -- inilah
+    integral pers. (5)-(6) Javed dkk. yang dihitung, bukan rumus lain.
+    Lurus, v 10 -> 14 m/s dalam 1 s: jarak tepat 12 m. Yaw rate 0 -> 0,2 rad/s
+    dalam 1 s: yaw bertambah tepat 0,1 rad."""
+    dt, n = 0.05, 20
+    x = y = yaw = 0.0
+    for k in range(n):
+        v0, v1 = 10.0 + 4.0 * k * dt, 10.0 + 4.0 * (k + 1) * dt
+        x, y, yaw = localization.dead_reckon(x, y, yaw, v0, v1, 0.0, 0.0, dt)
+    assert abs(x - 12.0) < 1e-9 and abs(y) < 1e-12, (x, y)
+    yaw = 0.0
+    for k in range(n):
+        r0, r1 = 0.2 * k * dt, 0.2 * (k + 1) * dt
+        _, _, yaw = localization.dead_reckon(0.0, 0.0, yaw, 0.0, 0.0, r0, r1, dt)
+    assert abs(yaw - 0.1) < 1e-12, yaw
 
 
 def test_empty_keeps_shape():
