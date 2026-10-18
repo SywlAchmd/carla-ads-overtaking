@@ -193,12 +193,12 @@ def run(world, ego_actor, monitor, params, ref_rh, ref5, max_seconds, vehicles, 
         a_raw = float(np.clip(a_raw, config.A_MIN, config.A_MAX))
         a_filt += config.A_FILTER_ALPHA * (a_raw - a_filt)
         # perception melaporkan frame ego; konversi ke frame jalan di sini.
-        # Vision perlu kinematika ego (laju, percepatan, yaw rate) untuk
-        # mengompensasi gerak ego di langkah prediksi Kalman -- bukan posisi ego.
+        # Vision perlu kinematika ego (laju, yaw rate) untuk mengompensasi gerak
+        # ego di langkah prediksi Kalman, pers. (3) Baek dkk. -- bukan posisi ego.
         # Antrean kamera WAJIB dikuras tiap tick, termasuk saat pemanasan.
         image = rig.grab() if rig else None
         obs = localization.obstacles_ego_to_road(
-            vision.update(image, dt, ego.v, a_filt, ego.yaw_rate) if rig
+            vision.update(image, dt, ego.v, ego.yaw_rate) if rig
             else vision.update(), ego)
         st_image = st_rh                 # citra tick ini diambil pada pose ini
 

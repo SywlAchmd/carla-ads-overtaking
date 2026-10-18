@@ -3,7 +3,8 @@
 Yang diuji di sini bukan "apakah kodenya jalan", melainkan klaim yang dipakai
 docstring `tracking.py`:
 
-  1. kompensasi gerak ego benar -- translasi meniadakan, rotasi tidak;
+  1. kompensasi gerak ego mengikuti pers. (3) Baek dkk. (2024), dengan
+     translasi busur yang benar (cos, bukan sin seperti salah cetak paper);
   2. kecepatan relatif bisa dipulihkan dari deretan posisi;
   3. derau depth 0,5 m tidak menembus jadi derau kecepatan yang mengganggu FSM;
   4. asosiasi mengikuti BYTE (ByteTrack, Algorithm 1): Hungarian, IoU terhadap
@@ -62,31 +63,62 @@ def test_hungarian_rejects_below_iou_min():
     assert tracking.hungarian(np.empty((0, 3))) == []
 
 
-def test_ego_translation_cancels():
-    """Halangan yang diam RELATIF terhadap ego harus tetap di tempatnya, berapa
-    pun laju ego. Ini inti turunan di docstring: suku v_ego saling menghapus."""
+def test_ego_motion_matches_arc_geometry():
+    """Pers. (3): titik diam di dunia, ego menempuh busur. Hasilnya harus sama
+    dengan transformasi geometris eksak R(-th) (P - d), d = ujung busur. Salah
+    cetak paper -- (v/g) - (v/g) sin(g dt) di komponen kedua -- gagal di sini."""
+    u, w, dt = 13.4, 0.3, 0.5
+    th, rad = w * dt, u / w
+    d = np.array([rad * math.sin(th), rad * (1.0 - math.cos(th))])   # ujung busur
+    P = np.array([10.0, 2.0])
+    c, s = math.cos(th), math.sin(th)
+    expected = np.array([[c, s], [-s, c]]) @ (P - d)
+    rot, t = tracking.ego_motion(u, w, dt)
+    assert np.allclose(rot @ P + t, expected, atol=1e-12), (rot @ P + t, expected)
+    typo = np.array([-rad * s, rad - rad * s])
+    assert not np.allclose(rot @ P + typo, expected, atol=1e-3)
+
+
+def test_ego_motion_straight_limit():
+    """g -> 0: ego maju lurus u dt; tidak boleh membagi dengan nol."""
+    rot, t = tracking.ego_motion(13.4, 0.0, 0.1)
+    assert np.allclose(rot, np.eye(2)) and np.allclose(t, [-1.34, 0.0])
+    _, t_small = tracking.ego_motion(13.4, 1e-6, 0.1)
+    assert np.allclose(t_small, [-1.34, 0.0], atol=1e-6)
+
+
+def test_same_speed_vehicle_stays_put():
+    """Kendaraan yang melaju sama dengan ego (kecepatan absolut = laju ego) tetap
+    di posisi relatifnya, dan kecepatan relatif yang dilaporkan nol."""
     t = tracking.Track(1, [40.0, 0.0], _R(), _box(640))
-    t.x = np.array([40.0, 0.0, 0.0, 0.0])
-    t.prediction(0.1, u_ego=13.4, a_ego=0.0, w_ego=0.0)
-    assert np.allclose(t.x, [40.0, 0.0, 0.0, 0.0], atol=1e-12), t.x
+    t.x = np.array([40.0, 0.0, 13.4, 0.0])
+    t.prediction(0.1, u_ego=13.4, w_ego=0.0)
+    assert np.allclose(t.x, [40.0, 0.0, 13.4, 0.0], atol=1e-12), t.x
+    assert np.allclose(t.relative(13.4), [40.0, 0.0, 0.0, 0.0], atol=1e-12)
 
 
 def test_ego_acceleration_changes_relative_velocity():
-    """Ego menambah laju 3 m/s² selama 0,1 s -> halangan tampak melambat 0,3 m/s."""
+    """Kecepatan absolut tidak berubah oleh percepatan ego (pers. 4). Ego dari
+    13,4 ke 13,7 m/s -> kecepatan relatif yang dilaporkan turun 0,3 m/s."""
     t = tracking.Track(1, [40.0, 0.0], _R(), _box(640))
-    t.x = np.array([40.0, 0.0, 0.0, 0.0])
-    t.prediction(0.1, u_ego=13.4, a_ego=3.0, w_ego=0.0)
-    assert abs(t.x[2] - (-0.3)) < 1e-12, t.x
+    t.x = np.array([40.0, 0.0, 13.4, 0.0])
+    t.prediction(0.1, u_ego=13.7, w_ego=0.0)
+    assert abs(t.x[2] - 13.4) < 1e-12
+    assert abs(t.relative(13.7)[2] - (-0.3)) < 1e-12
 
 
 def test_ego_rotation_rotates_obstacle():
-    """Ego berbelok kiri (yaw rate positif RH) -> halangan bergeser ke y negatif."""
+    """Ego berbelok kiri (yaw rate positif RH) -> halangan di depan bergeser ke y
+    negatif, dan kecepatannya ikut diputar ke frame ego yang baru."""
     t = tracking.Track(1, [10.0, 0.0], _R(), _box(640))
-    t.x = np.array([10.0, 0.0, 0.0, 0.0])
-    t.prediction(0.1, u_ego=13.4, a_ego=0.0, w_ego=0.1)
-    assert abs(t.x[0] - 10.0 * math.cos(0.01)) < 1e-9
-    assert abs(t.x[1] + 10.0 * math.sin(0.01)) < 1e-9
+    t.x = np.array([10.0, 0.0, 0.0, 0.0])                 # diam di dunia
+    t.prediction(0.1, u_ego=13.4, w_ego=0.1)
+    rot, tr = tracking.ego_motion(13.4, 0.1, 0.1)
+    assert np.allclose(t.x[:2], rot @ np.array([10.0, 0.0]) + tr, atol=1e-12)
     assert t.x[1] < 0.0
+    t.x = np.array([10.0, 0.0, 5.0, 0.0])
+    t.prediction(0.1, u_ego=13.4, w_ego=0.1)
+    assert abs(t.x[3] + 5.0 * math.sin(0.01)) < 1e-12, t.x
 
 
 def test_new_track_reported_immediately():

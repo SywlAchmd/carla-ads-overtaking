@@ -219,7 +219,7 @@ class VisionPerception:
         self.drivable = None             # porsi lajur tujuan yang area jalan, 0..1
         self.edges = None                # (kanan, kiri) tepi jalan relatif ego, m
 
-    def update(self, frame, dt, ego_v=0.0, ego_a=0.0, ego_w=0.0):
+    def update(self, frame, dt, ego_v=0.0, ego_w=0.0):
         depth = sensors.depth_meter(frame['depth'])
         rgb = sensors.rgb_array(frame['rgb'])
         # Kepala segmentasi lajur ikut dipakai, bukan dibuang seperti sebelum
@@ -275,7 +275,7 @@ class VisionPerception:
                               (config.TRACK_SIGMA_PIXEL * d / F_PIXEL) ** 2]))
         if not use:
             return self.tracker.update(np.empty((0, 4)), [], np.empty((0, 2)),
-                                       np.empty((0, 2, 2)), dt, ego_v, ego_a, ego_w)
+                                       np.empty((0, 2, 2)), dt, ego_v, ego_w)
         use = np.array(use)
         return self.tracker.update(use[:, :4], use[:, 4], z, R,
-                                   dt, ego_v, ego_a, ego_w)
+                                   dt, ego_v, ego_w)

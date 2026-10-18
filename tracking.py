@@ -38,19 +38,31 @@ diubah dari paper; lihat `config.py`.
   soal meter. Dipertahankan karena FSM dan MPC butuh posisi dan kecepatan dalam
   m dan m/s. Ia dikoreksi oleh deteksi yang sama yang dipasangkan BYTE.
 
-**State metrik di frame ego, relatif terhadap ego** -- sama dengan kontrak
-`perception.py`. Constant-velocity berlaku untuk gerak MUTLAK kendaraan lain,
-bukan gerak relatifnya, jadi langkah prediksi wajib mengompensasi gerak ego:
+**Rumus kecepatan: Baek, Kim & Yi (2024).** "Robust tracking and detection
+based on radar camera fusion filtering in urban autonomous driving",
+*Intelligent Service Robotics* 17:1125-1141, doi:10.1007/s11370-024-00563-0.
+State [px, py, vx, vy] di frame ego SAAT INI; posisi relatif terhadap ego,
+kecepatan ABSOLUT kendaraan lain. Tiap tick, urutan sama dengan paper:
 
-    p' = Rot(-w dt) (p + v dt)
-    v' = Rot(-w dt) (v + [u, 0]) - [u + a dt, 0]
+1. Kompensasi gerak ego, pers. (3). Ego bergerak sepanjang busur dengan laju v
+   dan yaw rate g selama dt; posisi track dipindah ke frame ego yang baru:
 
-dengan p, v = posisi dan kecepatan relatif, u = laju ego, a = percepatan ego,
-w = yaw rate ego. Suku translasi ego **saling meniadakan**: objek dan ego
-bergeser di frame yang sama, jadi p + (v + v_ego) dt - v_ego dt = p + v dt. Yang
-tersisa cuma rotasi ego dan perubahan laju ego. Karena itu modul ini tidak perlu
-tahu posisi ego sama sekali -- cukup kinematikanya sendiri, persis yang dimiliki
-kendaraan tanpa peta (lihat kontrak di docstring `perception.py`).
+       p' = [[ cos(g dt), sin(g dt)],      [ -(v/g) sin(g dt)       ]
+             [-sin(g dt), cos(g dt)]] p  +  [  (v/g) (1 - cos(g dt)) ]
+
+   **Koreksi salah cetak paper:** komponen kedua translasi tercetak
+   (v/g) - (v/g) sin(g dt); geometri busur memberi (v/g)(1 - cos(g dt)) --
+   lihat `tests/test_tracking.py::test_ego_motion_matches_arc_geometry`.
+   Paper hanya mentransformasikan posisi; kecepatan absolut di sini ikut DIPUTAR
+   dengan matriks yang sama karena ia dinyatakan di frame ego (tambahan, bukan
+   dari paper).
+2. Prediksi target, pers. (4), constant velocity: p += v dt, v tetap; + Q.
+
+Karena kecepatan absolut, percepatan ego tidak masuk prediksi sama sekali.
+Kontrak keluaran `perception.py` tetap: `update` mengembalikan kecepatan
+RELATIF, v_rel = v_abs - [v_ego, 0]; `localization.obstacles_ego_to_road`
+menambahkan kecepatan ego kembali. Modul ini tetap tidak perlu tahu posisi ego,
+cukup laju dan yaw rate-nya.
 """
 import math
 
@@ -139,13 +151,35 @@ class BoxFilter:
         return _tlbr(self.x)
 
 
-class Track:
-    """Satu kendaraan yang sedang dilacak. `x` = state metrik [x, y, vx, vy]
-    frame ego; `kf` = Kalman filter kotak citra untuk asosiasi."""
+def ego_motion(u_ego, w_ego, dt):
+    """Pers. (3) Baek dkk. (2024), translasi dikoreksi -> (rot 2x2, translasi 2).
 
-    def __init__(self, id_, z, R, box, conf=0.0):
+    Titik yang diam di frame ego lama berpindah ke `rot @ p + t` di frame ego
+    baru, setelah ego menempuh busur laju `u_ego`, yaw rate `w_ego`, selama `dt`.
+    """
+    th = w_ego * dt
+    c, s = math.cos(th), math.sin(th)
+    rot = np.array([[c, s], [-s, c]])
+    # v/g sin(g dt) dan v/g (1 - cos(g dt)), ditulis lewat th supaya tetap
+    # terdefinisi saat g -> 0 (limitnya: ego maju lurus u dt)
+    if abs(th) < 1e-9:
+        t = np.array([-u_ego * dt, 0.0])
+    else:
+        r = u_ego * dt / th
+        t = np.array([-r * s, r * (1.0 - c)])
+    return rot, t
+
+
+class Track:
+    """Satu kendaraan yang sedang dilacak. `x` = state metrik [px, py, vx, vy]
+    frame ego, posisi relatif dan kecepatan ABSOLUT; `kf` = Kalman filter kotak
+    citra untuk asosiasi."""
+
+    def __init__(self, id_, z, R, box, conf=0.0, u_ego=0.0):
         self.id, self.conf = id_, float(conf)
-        self.x = np.array([z[0], z[1], 0.0, 0.0], dtype=float)
+        # Kecepatan awal = ikut laju ego (relatif nol), prior yang sama dengan
+        # sebelum rumus Baek dipakai.
+        self.x = np.array([z[0], z[1], u_ego, 0.0], dtype=float)
         # Kecepatan awal tidak terukur sama sekali dari satu frame: ragunya
         # dipasang selebar rentang yang mungkin, supaya koreksi frame kedua
         # hampir seluruhnya menentukan kecepatan dan tidak tertahan prior.
@@ -155,20 +189,26 @@ class Track:
         self.box = np.asarray(box, dtype=float)
         self.lost = 0                       # frame berturut tanpa pasangan
 
-    def prediction(self, dt, u_ego, a_ego, w_ego):
+    def prediction(self, dt, u_ego, w_ego):
         self.kf.prediction()
         self.box = self.kf.box()
-        c, s = math.cos(-w_ego * dt), math.sin(-w_ego * dt)
-        rot = np.array([[c, -s], [s, c]])
-        F = np.block([[rot, rot * dt], [np.zeros((2, 2)), rot]])
-        shift = rot @ np.array([u_ego, 0.0]) - np.array([u_ego + a_ego * dt, 0.0])
-        self.x = F @ self.x + np.concatenate([np.zeros(2), shift])
+        # 1. pers. (3): kompensasi gerak ego; kecepatan diputar ikut frame
+        rot, t = ego_motion(u_ego, w_ego, dt)
+        J = np.block([[rot, np.zeros((2, 2))], [np.zeros((2, 2)), rot]])
+        self.x = J @ self.x + np.concatenate([t, np.zeros(2)])
+        # 2. pers. (4): constant velocity, p += v dt
+        i2 = np.eye(2)
+        F = np.block([[i2, dt * i2], [np.zeros((2, 2)), i2]])
+        self.x = F @ self.x
         # derau proses = percepatan putih diskret; kendaraan lain boleh berubah
         # kecepatan sebesar TRACK_SIGMA_A tanpa membuat track kehilangan jejak
-        i2 = np.eye(2)
         Q = config.TRACK_SIGMA_A ** 2 * np.block(
             [[dt ** 4 / 4 * i2, dt ** 3 / 2 * i2], [dt ** 3 / 2 * i2, dt ** 2 * i2]])
-        self.P = F @ self.P @ F.T + Q
+        self.P = F @ J @ self.P @ J.T @ F.T + Q
+
+    def relative(self, u_ego):
+        """State keluaran: posisi relatif, kecepatan RELATIF terhadap ego."""
+        return self.x - np.array([0.0, 0.0, u_ego, 0.0])
 
     def correction(self, z, R, box, conf=None):
         if conf is not None:
@@ -188,14 +228,16 @@ class Tracker:
 
     def __init__(self):
         self.track, self._last_id = [], 0
+        self._u_ego = 0.0                   # laju ego tick terakhir, untuk `visible`
 
-    def update(self, box, conf, z, R, dt, u_ego=0.0, a_ego=0.0, w_ego=0.0):
+    def update(self, box, conf, z, R, dt, u_ego=0.0, w_ego=0.0):
         """Satu frame. Kembali (M, 4) = [x, y, vx, vy] frame ego, relatif ego.
 
         `box` (n,4) piksel, `conf` (n,), `z` (n,2) posisi terukur frame ego,
         `R` (n,2,2) kovarians ukur tiap deteksi (bergantung jarak -- dibangun di
         `perception.py`, yang tahu soal sensornya).
         """
+        self._u_ego = float(u_ego)
         box = np.asarray(box, dtype=float).reshape(-1, 4)
         conf = np.asarray(conf, dtype=float).reshape(-1)
         z = np.asarray(z, dtype=float).reshape(-1, 2)
@@ -205,7 +247,7 @@ class Tracker:
         high = conf > config.TRACK_CONF_HIGH
         # baris 14-16: prediksi SEMUA track, termasuk yang hilang
         for t in self.track:
-            t.prediction(dt, u_ego, a_ego, w_ego)
+            t.prediction(dt, u_ego, w_ego)
         # baris 17-19: asosiasi pertama, semua track vs D_high
         d_remain, t_remain = self._match(np.flatnonzero(high), box, z, R, conf, self.track)
         # baris 20-21: asosiasi kedua, track sisa vs D_low. Deteksi lemah yang
@@ -218,15 +260,16 @@ class Tracker:
         # baris 23-25: D_high sisa melahirkan track baru
         for i in d_remain:
             self._last_id += 1
-            self.track.append(Track(self._last_id, z[i], R[i], box[i], conf[i]))
+            self.track.append(Track(self._last_id, z[i], R[i], box[i], conf[i], u_ego))
         # keluaran: T tanpa T_lost
-        out = [t.x for t in self.track if t.lost == 0]
+        out = [t.relative(u_ego) for t in self.track if t.lost == 0]
         return np.array(out) if out else np.empty((0, 4))
 
     def visible(self):
         """[(kotak, state, id, hilang, conf), ...] untuk track yang dilaporkan. Hanya
         untuk visualisasi -- kendali cukup memakai nilai kembalian `update`."""
-        return [(t.box, t.x, t.id, t.lost, t.conf) for t in self.track if t.lost == 0]
+        return [(t.box, t.relative(self._u_ego), t.id, t.lost, t.conf)
+                for t in self.track if t.lost == 0]
 
     @staticmethod
     def _match(idx, box, z, R, conf, candidates):
