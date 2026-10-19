@@ -214,7 +214,8 @@ baru dinyalakan:
 | Keputusan kembali, posisi target | -12,27 m | -10,50 m (GT -10,4 m) |
 
 Log: `out/experiment_s1_vision_bytetrack.npz`. Pembandingnya
-`out/experiment_s1_vision.npz` sengaja tidak ditimpa.
+`out/experiment_s1_vision.npz` kini berisi hasil Kalman Baek di bawah; data pelacak
+lama ada di riwayat git.
 
 **Rumus kecepatan halangan mengikuti Baek dkk. (2024)**, *Intelligent Service
 Robotics* 17:1125-1141, pers. (3) kompensasi gerak ego (salah cetak cos paper
@@ -232,7 +233,8 @@ bagian 36). S1 vision, 10 run, di mesin sepi, pembanding di sesi server yang sam
 
 Waktu solve maks tetap > 50 ms di kedua pelacak: iterasi solver normal, tetapi
 waktu per iterasi melonjak 3-5x -- CPU sesaat lambat, bukan solver lebih berat
-(bagian 36.2). Log: `out/tracker_baek/`.
+(bagian 36.2). Log: `out/experiment_s1_vision.npz` (hasil utama, menimpa yang lama).
+Run tunggal `run_s1_mpc_vision`, gambar, dan video masih dari Kalman lama.
 
 Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
 seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian

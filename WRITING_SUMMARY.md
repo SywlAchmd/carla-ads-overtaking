@@ -3547,7 +3547,10 @@ dan main loop.
 Diukur 20 Oktober 2026 setelah komputer dinyalakan ulang, browser ditutup, dan
 tidak ada proses lain di atas 8% CPU selain CARLA. Server CARLA baru dinyalakan;
 pembanding (Kalman lama, dari git worktree commit sebelum perubahan) dan Kalman
-Baek dijalankan berurutan di sesi server yang sama. Keluaran: `out/tracker_baek/`.
+Baek dijalankan berurutan di sesi server yang sama. Hasil Kalman Baek kini
+**hasil utama** di `out/experiment_s1_vision.npz` (menimpa data bagian 34/35;
+yang lama ada di riwayat git). Data pembanding Kalman lama tidak disimpan, hanya
+angkanya di tabel ini.
 
 | Metrik | Kalman lama | **Kalman Baek dkk.** |
 |---|---|---|
