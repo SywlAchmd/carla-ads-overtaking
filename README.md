@@ -234,7 +234,8 @@ bagian 36). S1 vision, 10 run, di mesin sepi, pembanding di sesi server yang sam
 Waktu solve maks tetap > 50 ms di kedua pelacak: iterasi solver normal, tetapi
 waktu per iterasi melonjak 3-5x -- CPU sesaat lambat, bukan solver lebih berat
 (bagian 36.2). Log: `out/experiment_s1_vision.npz` (hasil utama, menimpa yang lama).
-Run tunggal `run_s1_mpc_vision`, gambar, dan video masih dari Kalman lama.
+Run tunggal `run_s1_mpc_vision` (BERHASIL, jarak bodi 1,97 m), `run_s1_mpc_vision.png`,
+`compare_s1.png`, dan `vision_s1.mp4` dibangkitkan ulang dengan Kalman Baek.
 
 Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
 seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian
