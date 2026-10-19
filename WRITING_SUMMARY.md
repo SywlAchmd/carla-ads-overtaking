@@ -24,9 +24,11 @@ Overtaking pada Sistem Autonomous Car Menggunakan CARLA Simulator
 | 8 | Perception lengkap (YOLOPX + depth + tracking) | **selesai untuk S1** |
 | 9 | Eksperimen penuh | **selesai untuk S1**; S2-S5 belum |
 
-138 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
-Terakhir diperbarui 16 Oktober 2026: pelacak diganti ByteTrack dengan Hungarian,
-parameter paper (bagian 35). Sebelumnya, 2 Oktober 2026: checkpoint YOLOPX epoch 92
+140 uji otomatis semuanya lolos tanpa perlu menyalakan CARLA.
+Terakhir diperbarui 20 Oktober 2026: rujukan rumus depth dan IPM yang sama persis
+(bagian 37). Sebelumnya, 19-20 Oktober 2026: rumus kecepatan Kalman halangan
+mengikuti Baek dkk. (2024), pers. (3) dan (4) (bagian 36). Sebelumnya, 16 Oktober
+2026: pelacak diganti ByteTrack dengan Hungarian, parameter paper (bagian 35). Sebelumnya, 2 Oktober 2026: checkpoint YOLOPX epoch 92
 dan drivable area di jalur kendali (bagian 31). Angka perception bagian 18 dan 29 memakai
 checkpoint lama; pembandingnya di bagian 31.1-31.2.
 
@@ -45,7 +47,8 @@ dikutip -- itu training lama dengan split bocor.
 
 | Bagian | Kendaraan target | Checkpoint YOLOPX | Status angka |
 |---|---|---|---|
-| **35** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** (hasil vision terbaru, pelacak ByteTrack) |
+| **36** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU untuk bab 4** (hasil vision terbaru: ByteTrack + Kalman Baek dkk.) |
+| 35 | Lincoln MKZ 2020 | epoch 92 | ByteTrack dengan Kalman lama; parameter dan sitasi ByteTrack tetap berlaku |
 | 32, 34 | Lincoln MKZ 2020 | epoch 92 | pelacak lama (serakah); pembanding bagian 35 |
 | **31** | **Lincoln MKZ 2020** | **epoch 92** | **BERLAKU** (perception, drivable area, GT); hasil vision digantikan 32 |
 | **33** | -- | **epoch 92** | **BERLAKU**: split dataset dan angka training/test YOLOPX |
@@ -694,6 +697,10 @@ hasil pencarian.
 > systematic review to inform the interactive capabilities of highly automated
 > trucks. *Frontiers in Robotics and AI*, 9, 818019.
 > https://doi.org/10.3389/frobt.2022.818019
+
+**Rumus depth, IPM, dan kecepatan halangan:** lihat bagian 37 (depth: dokumentasi
+CARLA 0.9.16 dan Cocheteux dkk. 2023; IPM: Zhou dkk. 2024, *IEEE T-ITS*) dan bagian
+36.1 (kecepatan: Baek dkk. 2024, *Intelligent Service Robotics*).
 
 **Pelacakan multi-objek (asosiasi BYTE, Hungarian):** lihat bagian 35.4 --
 Zhang dkk. (2022, ECCV) dan Bihanda dkk. (2024, *IEEE Access*).
@@ -3479,3 +3486,223 @@ ini. Hungarian di makalah ini disebut lewat SORT, bukan dirumuskan ulang.
 **Ditolak:** You dkk. (2024), *Electronics* 13(15):3033 -- isinya cocok (Hungarian
 + IoU + ByteTrack untuk kendaraan), tetapi penulis menolak jurnal MDPI. ICT
 Express (Elsevier) 2025 tidak bisa dibuka isinya, jadi tidak dipakai.
+
+---
+
+## 36. Rumus kecepatan halangan mengikuti Baek dkk. (2024) (19 Oktober 2026)
+
+**Keputusan penulis:** rumus kecepatan di Kalman filter metrik `tracking.py`
+harus bersumber jurnal kredibel <= 4 tahun yang isinya bisa dibuka, dan diikuti.
+Bentuk lama (kecepatan RELATIF, p' = Rot(-w dt)(p + v dt)) tidak ditemukan persis
+di jurnal mana pun. Asosiasi ByteTrack (bagian 35) tidak berubah.
+
+### 36.1 Sumber dan rumusnya
+
+> Baek, S., Kim, J., & Yi, K. (2024). Robust tracking and detection based on radar
+> camera fusion filtering in urban autonomous driving. *Intelligent Service
+> Robotics*, 17(6), 1125-1141. https://doi.org/10.1007/s11370-024-00563-0
+
+Springer, open access (CC BY-NC-ND 4.0), terbit 15 Oktober 2024. Isinya dibuka
+langsung; persamaan dibaca dari halaman PDF. Susunannya sama dengan di sini:
+laju longitudinal dan yaw rate ego dari sasis kendaraan, state track di frame
+kendaraan, kompensasi gerak ego lalu prediksi constant velocity.
+
+State: [px, py, vx, vy] di frame ego SAAT INI -- posisi relatif terhadap ego,
+kecepatan ABSOLUT kendaraan lain ("absolute velocity from ego-motion
+compensation"). Urutan tiap tick sama dengan paper (bagian 3.3 lalu 3.4):
+
+1. **Pers. (3), kompensasi gerak ego** (v = laju ego, g = yaw rate ego):
+
+       [px']   [ cos(g dt)   sin(g dt)   -(v/g) sin(g dt)       ] [px]
+       [py'] = [-sin(g dt)   cos(g dt)    (v/g)(1 - cos(g dt))  ] [py]
+       [ 1 ]   [    0           0                 1             ] [ 1]
+
+2. **Pers. (4), prediksi constant velocity:** px += vx dt, py += vy dt, vx dan
+   vy tetap, + Q.
+
+**Koreksi salah cetak paper.** Komponen translasi kedua pers. (3) tercetak
+(v/g) - (v/g) sin(g dt). Geometri busur (ego menempuh busur jari-jari v/g dan
+berputar g dt) memberi (v/g)(1 - cos(g dt)); komponen pertama paper sudah benar.
+Dibuktikan oleh `test_ego_motion_matches_arc_geometry`: transformasi eksak
+R(-g dt)(P - d), d = ujung busur, cocok dengan versi cos sampai 1e-12, dan versi
+salah cetak gagal. Tulis koreksi ini terang-terangan di bab 3.
+
+**Dua tambahan yang tidak ada di paper**, harus disebut:
+- Paper hanya memindahkan POSISI. Karena kecepatan di sini dinyatakan di frame
+  ego, ia ikut diputar dengan matriks rotasi yang sama.
+- Batas g -> 0 dihitung lewat limitnya (ego maju lurus v dt), supaya tidak
+  membagi dengan nol.
+
+**Yang tetap dari skripsi ini, bukan dari paper:** Q (percepatan putih diskret,
+`TRACK_SIGMA_A` = 2 m/s²) dan R (derau depth & kuantisasi kotak, bagian 18.4).
+Paper memakai Q diagonal 3², 1², 2², 1² untuk radarnya; angka itu tidak dipakai
+karena sensor dan laju sampelnya berbeda. Kontrak keluaran ke `perception.py`
+tidak berubah: `Tracker.update` tetap mengembalikan kecepatan RELATIF,
+v_rel = v_abs - [v_ego, 0]. Karena kecepatan absolut, percepatan ego kini tidak
+masuk prediksi sama sekali; argumen `a_ego` dihapus dari tracker, perception,
+dan main loop.
+
+### 36.2 Hasil, S1 vision, 10 run
+
+Diukur 20 Oktober 2026 setelah komputer dinyalakan ulang, browser ditutup, dan
+tidak ada proses lain di atas 8% CPU selain CARLA. Server CARLA baru dinyalakan;
+pembanding (Kalman lama, dari git worktree commit sebelum perubahan) dan Kalman
+Baek dijalankan berurutan di sesi server yang sama. Keluaran: `out/tracker_baek/`.
+
+| Metrik | Kalman lama | **Kalman Baek dkk.** |
+|---|---|---|
+| Berhasil | 10/10 | **10/10** |
+| Jarak bodi min | 1,962 ± 0,005 m | **2,002 ± 0,039 m** (1,957-2,046) |
+| Durasi manuver | 12,64 ± 0,05 s | 12,65 ± 0,04 s |
+| Simpangan lateral maks | -4,340 ± 0,010 m | -4,333 ± 0,012 m |
+| Deviasi lajur sebelum / ekor sesudah | 0,0113 / 0,0498 m | 0,0110 / 0,0500 m |
+| Perlambatan terdalam | -4,00 ± 0,10 m/s² | -3,22 ± 0,78 m/s² (-4,22..-2,44) |
+| Tick tanpa kandidat planner | 42,6 ± 0,9 | 42,2 ± 0,6 |
+| Galat prediksi @ 0,5 s, RMS | 0,0358 m | 0,0332 m |
+| `g` zona aman minimum | 1,103 | 1,117 |
+| Galat lateral MPC, RMS | 0,0134 m | 0,0114 m |
+| Galat kecepatan, RMS | 0,580 m/s | 0,465 m/s |
+| XTE ke lajur terdekat, RMS | 0,562 m | 0,560 m |
+| Iterasi solver rata-rata | 8,390 | 8,395 |
+| Waktu solve rata-rata / p99 | 16,35 / 23,3 ms | 16,40 / 24,5 ms |
+| Waktu solve maks | 85,38 ms | 80,53 ms |
+| Tick > 40 ms | 6 dari 4.000 | 9 dari 4.000 |
+
+**Waktu solve maks menembus 50 ms di kedua kolom, juga di mesin sepi.** Dugaan
+sebelumnya -- kontensi dari proses lain -- **gugur**: pengukuran ini dilakukan
+setelah reboot tanpa aplikasi lain. Yang terukur:
+- di tick lonjakan, jumlah iterasi solver normal (8-14, sama dengan tick biasa);
+- waktu per iterasi yang melonjak: median 1,9 ms/iterasi, di tick lonjakan
+  5,8-9,3 ms/iterasi.
+
+Solver tidak bekerja lebih berat; CPU-nya yang sesaat lebih lambat. Kandidat
+sebabnya penjadwalan OS di antara thread CARLA, PyTorch, dan IPOPT, atau turunnya
+frekuensi CPU (governor terukur `powersave`, profil daya `balanced`). Belum
+dibuktikan. Lonjakan terjadi di KEDUA pelacak dengan besaran serupa, jadi bukan
+akibat rumus Baek; tetapi angka bagian 34 (maks 31,37 ms) tidak berhasil diulang.
+Untuk bab 4: laporkan rata-rata, p99, dan jumlah tick > 40 ms, bukan hanya maks;
+nyatakan bahwa sebagian kecil tick (0,15-0,2%) melampaui anggaran 50 ms.
+
+Perlambatan terdalam rata-rata lebih dangkal tetapi sebarannya jauh lebih lebar
+(-2,44..-4,22 m/s²). Sebabnya belum ditelusuri.
+
+### 36.3 Ketelitian kecepatan, `check_estimation.py`
+
+Geometri S1 dengan kecepatan dipaksa tetap (ego 13,4 m/s, target 7,0 m/s, 55 ->
+9 m, lurus). Kode lama dijalankan dari git worktree commit sebelum perubahan,
+di sesi server yang sama:
+
+| | Kalman lama | Kalman Baek dkk. |
+|---|---|---|
+| vx, bias / RMS / maks | -0,100 / 0,289 / 1,038 m/s | -0,098 / 0,281 / 0,977 m/s |
+| vy, bias / RMS | -0,005 / 0,015 m/s | -0,005 / 0,015 m/s |
+| sd kecepatan vision | 0,265 m/s | 0,257 m/s |
+| konvergensi < 0,1 m/s | 0,80 s | 0,75 s |
+| posisi x, bias / RMS | +0,268 / 0,359 m | +0,271 / 0,358 m |
+
+Di jalan lurus (g = 0) kedua bentuk setara secara matematis kecuali suku
+percepatan ego, jadi selisih ini kecil memang diharapkan. Bedanya baru muncul
+saat ego berbelok: busur dihitung eksak, bukan garis lurus -- 1,7 cm lateral
+per detik pada g = 0,05 rad/s, 13,4 m/s.
+
+
+---
+
+## 37. Rujukan rumus depth dan IPM (19-20 Oktober 2026)
+
+**Keputusan penulis:** rumus depth, kecepatan, dan IPM harus punya rujukan yang
+rumusnya sama persis dan isinya bisa dibuka. Kecepatan di bagian 36. Bagian ini
+untuk depth dan IPM. Kodenya **tidak diubah**: rumus di kode sudah sama dengan
+rujukannya. Semua sumber di bawah dibuka langsung.
+
+### 37.1 Depth: dari citra depth CARLA ke meter (`sensors.depth_meter`)
+
+    d = (R + 256 G + 256² B) / (256³ - 1) x 1000   [m]
+
+Sama persis dengan dokumentasi resmi CARLA 0.9.16, *Sensors reference*, bagian
+*Depth camera*:
+
+    normalized = (R + G * 256 + B * 256 * 256) / (256 * 256 * 256 - 1)
+    in_meters = 1000 * normalized
+
+> CARLA Team. (2025). *Sensors reference -- Depth camera*. CARLA Simulator
+> documentation, versi 0.9.16. https://carla.readthedocs.io/en/0.9.16/ref_sensors/
+
+Dokumentasi, bukan jurnal. Untuk format keluaran sensor simulator, dokumentasi
+pembuatnya adalah sumber primer. Jurnal <= 4 tahun yang menulis rumus ini tidak
+ditemukan; satu-satunya makalah yang menulisnya preprint 2026 tanpa terbitan.
+
+**Catatan isi.** Dokumentasi menyebut nilainya "distance of each pixel to the
+camera" tanpa merinci radial atau planar. Diukur sendiri 16 September 2026 terhadap
+permukaan jalan: **planar** (sepanjang sumbu optik), rasio tepi/tengah 1,000 vs
+1,28 yang diprediksi radial. Tulis itu sebagai hasil ukur, bukan klaim dokumentasi.
+
+### 37.2 Depth: dari piksel + depth ke posisi meter (`perception.py`)
+
+    f = W / (2 tan(FOV/2))                      W = 1280 px, FOV = 90 deg
+    x_ego = d,     y_ego = -d (u - W/2) / f
+
+**Rumus f** sama persis dengan dokumentasi resmi CARLA 0.9.16, tutorial *Bounding
+boxes*, fungsi `build_projection_matrix`:
+
+    focal = w / (2.0 * np.tan(fov * np.pi / 360.0))
+    K[0, 2] = w / 2.0;  K[1, 2] = h / 2.0
+
+> CARLA Team. (2025). *Bounding boxes*. CARLA Simulator documentation, versi
+> 0.9.16. https://carla.readthedocs.io/en/0.9.16/tuto_G_bounding_boxes/
+
+**Balik-proyeksi** sama persis dengan pers. (1) PseudoCal:
+
+    z = D(u, v),   x = (u - c_U) z / f_U,   y = (v - c_V) z / f_V
+
+> Cocheteux, M., Moreau, J., & Davoine, F. (2023). PseudoCal: Towards
+> Initialisation-Free Deep Learning-Based Camera-LiDAR Self-Calibration. *British
+> Machine Vision Conference (BMVC) 2023*. arXiv:2309.09855.
+> https://arxiv.org/abs/2309.09855
+
+Pemetaan ke kode: c_U = W/2, f_U = f, z = d. Kamera: x ke kanan, z ke depan.
+Frame ego: x ke depan, y ke **kiri**. Jadi x_ego = z dan y_ego = -x_kamera; tanda
+minus itu perjanjian sumbu, bukan rumus lain. Tulis di bab 3.
+
+BMVC adalah konferensi, bukan jurnal. Bila harus jurnal: pers. (3) Ground-VIO
+(37.3) memuat balik-proyeksi yang sama dalam bentuk koordinat ternormalisasi,
+p = u_f / lambda dengan u_f = pi_c^-1 [u v 1]^T dan 1/lambda = kedalaman.
+
+**Yang BUKAN bagian rumus rujukan dan harus dijelaskan sendiri:** depth diambil
+sebagai median petak 7x7 di pusat kotak deteksi, posisi digeser ke titik asal ego
+(`rig.x`), dan koreksi muka-ke-pusat bodi (`face_correction`, bagian 18.4).
+
+### 37.3 IPM: piksel garis lajur ke titik di permukaan jalan (`lanes.ipm`)
+
+    x = f h / (v - c_v),     y = -x (u - c_u) / f        h = 1,65 m, pitch = roll = 0
+
+Rujukan:
+
+> Zhou, Y., Li, X., Li, S., Wang, X., & Shen, Z. (2024). Ground-VIO: Monocular
+> Visual-Inertial Odometry With Online Calibration of Camera-Ground Geometric
+> Parameters. *IEEE Transactions on Intelligent Transportation Systems*, 25(10),
+> 14328-14343. https://doi.org/10.1109/TITS.2024.3393125 (arXiv:2306.08341, CC BY 4.0)
+
+Paper ini menyebut eksplisit bahwa geometri kamera-jalan ini yang dipakai IPM.
+Persamaannya:
+
+    (R(alpha, theta)^T p)_y - h = 0                              pers. (1), bidang jalan
+    p = u_f / lambda,   u_f = [x  y  1]^T = pi_c^-1 [u  v  1]^T   pers. (3)
+    lambda = (1/h) (R(alpha, theta)^T u_f)_y                     pers. (4)
+
+dengan h tinggi kamera, alpha dan theta sudut roll dan pitch kamera terhadap
+jalan, lambda kebalikan kedalaman, dan u_f koordinat ternormalisasi
+(x = (u - c_u)/f, y = (v - c_v)/f untuk kamera pinhole).
+
+**Turunan ke rumus di kode.** Rig kamera di sini dipasang roll = pitch = 0, jadi
+R = I. Pers. (4) menjadi lambda = y / h, sehingga
+
+    Z = 1/lambda = h / y = f h / (v - c_v)        ->  x di kode
+    X = x / lambda = (u - c_u) Z / f              ->  y = -X di kode (sumbu kiri)
+
+Rumus di kode adalah kasus khusus roll = pitch = 0 yang **sama persis** dengan
+pers. (3)-(4). Di bab 3, tulis rumus umumnya lalu substitusi R = I.
+
+**Batasan yang ikut dari rumus ini** (sudah terukur, bagian 30): jalan dianggap
+datar, dan tinggi kamera efektif 1,6368 m terhadap 1,65 m konfigurasi (ego duduk di
+suspensi, README #12).

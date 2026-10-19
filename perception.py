@@ -52,6 +52,10 @@ class GroundTruthPerception:
         return np.array(out) if out else np.empty((0, 4))
 
 
+# Fokus dari FOV, persis `build_projection_matrix` di dokumentasi CARLA 0.9.16
+# (tutorial Bounding boxes). Balik-proyeksi di `VisionPerception.update` mengikuti
+# pers. (1) PseudoCal (Cocheteux dkk., BMVC 2023): x_kamera = (u - c_U) z / f_U;
+# y ego = -x_kamera karena sumbu y ego ke kiri. WRITING_SUMMARY bagian 37.
 F_PIXEL = config.CAMERA_WIDTH / (2.0 * math.tan(math.radians(config.CAMERA_FOV) / 2.0))
 
 

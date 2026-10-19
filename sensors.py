@@ -68,8 +68,9 @@ class CameraRig:
 def depth_meter(image):
     """Citra depth CARLA -> jarak dalam meter, ndarray (H, W).
 
-    CARLA mengkodekan jarak di tiga kanal warna; rumusnya ada di dokumentasi
-    sensor: (R + G*256 + B*256^2) / (256^3 - 1) * 1000 meter.
+    CARLA mengkodekan jarak di tiga kanal warna; rumusnya persis dokumentasi
+    resmi CARLA 0.9.16, Sensors reference > Depth camera:
+    (R + G*256 + B*256^2) / (256^3 - 1) * 1000 meter.
 
     Nilainya jarak PLANAR (sepanjang sumbu optik), bukan radial -- diukur 16
     September 2026 terhadap permukaan jalan, rasio tepi/tengah 1,000 vs 1,28

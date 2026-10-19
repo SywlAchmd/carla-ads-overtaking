@@ -53,6 +53,10 @@ def ipm(u, v, z=config.CAMERA_Z, f=F_PIXEL,
     Kamera menghadap lurus (pitch 0), jadi baris `v` di bawah horizon memotong
     permukaan pada x = f*z/(v - cv). Sumbu y memakai perjanjian yang sama dengan
     `perception`: y = -x*(u - cu)/f, positif ke kiri.
+
+    Rujukan: Zhou dkk., Ground-VIO, IEEE T-ITS 25(10), 2024, pers. (3)-(4)
+    dengan roll = pitch = 0 (R = I): kedalaman = h/y_n = f h/(v - cv).
+    WRITING_SUMMARY bagian 37.3.
     """
     dv = np.asarray(v, dtype=float) - cv
     front = dv > 1e-6

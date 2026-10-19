@@ -31,6 +31,13 @@ out/*
 # sebelum/sesudah di WRITING_SUMMARY.md hanya bisa dibaca, tidak bisa diperiksa.
 !out/run_s1_mpc_vision_before.npz
 
+# Eksperimen rumus kecepatan Baek dkk. (bagian 36): data mentah 2 x 10 run dan
+# keluaran check_estimation lama vs baru.
+!out/tracker_baek/
+out/tracker_baek/*
+!out/tracker_baek/*.npz
+!out/tracker_baek/check_estimation_*.txt
+
 # Yang diabaikan: *.mp4 (~18 MB, bisa dibangkitkan ulang dengan record_*.py)
 # dan *.npz log run tunggal (bisa dibangkitkan ulang dengan main.py).
 

@@ -33,7 +33,7 @@ Versi paket `carla` **wajib sama persis** dengan versi server. Lihat catatan di
 
 ## Menjalankan
 
-**Uji otomatis — tidak butuh server CARLA.** 138 uji, semuanya lolos.
+**Uji otomatis — tidak butuh server CARLA.** 140 uji, semuanya lolos.
 
 ```bash
 for f in tests/*.py; do python "$f"; done
@@ -99,7 +99,7 @@ carla-ads-overtaking/
 │   ├── sensors.py          CameraRig: kamera RGB + depth terpasang di ego
 │   ├── yolopx.py           pembungkus model YOLOPX (deteksi + segmentasi)       [butuh torch]
 │   ├── perception.py       GroundTruthPerception + VisionPerception -> halangan FRAME EGO
-│   ├── tracking.py         ByteTrack (BYTE + Hungarian) + Kalman filter halangan [tanpa carla]
+│   ├── tracking.py         ByteTrack (BYTE + Hungarian) + Kalman Baek dkk. (2024) [tanpa carla]
 │   ├── lanes.py            garis lajur di area jalan -> IPM -> kisi; porsi lajur tujuan & tepi jalan [tanpa carla]
 │   ├── planning.py         quintic/quartic, local planner, BehaviorFSM          [tanpa carla]
 │   ├── control.py          MPCController (CasADi + IPOPT), ThrottlePI, steer    [tanpa carla]
@@ -134,7 +134,7 @@ carla-ads-overtaking/
 │   ├── record_maneuver.py  video playback manuver                      [butuh ffmpeg]
 │   └── record_path.py      video lintasan acuan global planner         [butuh ffmpeg]
 │
-├── tests/                  138 uji, dijalankan sebagai skrip           [tanpa server]
+├── tests/                  140 uji, dijalankan sebagai skrip           [tanpa server]
 │   ├── test_architecture.py  aturan 2.4: modul numerik tidak menyentuh carla
 │   ├── test_bicycle_model.py, test_dimensions.py, test_evaluation.py, test_fsm.py
 │   └── test_lanes.py, test_localization.py, test_mpc.py, test_perception.py,
@@ -216,6 +216,24 @@ baru dinyalakan:
 Log: `out/experiment_s1_vision_bytetrack.npz`. Pembandingnya
 `out/experiment_s1_vision.npz` sengaja tidak ditimpa.
 
+**Rumus kecepatan halangan mengikuti Baek dkk. (2024)**, *Intelligent Service
+Robotics* 17:1125-1141, pers. (3) kompensasi gerak ego (salah cetak cos paper
+dikoreksi) dan pers. (4) constant velocity (19-20 Okt 2026, `WRITING_SUMMARY.md`
+bagian 36). S1 vision, 10 run, di mesin sepi, pembanding di sesi server yang sama:
+
+| Metrik | Kalman lama | **Kalman Baek dkk.** |
+|---|---|---|
+| Vonis | 10/10 | **10/10 BERHASIL** |
+| Jarak min antar bodi | 1,962 ± 0,005 m | 2,002 ± 0,039 m |
+| Galat prediksi @ 0,5 s, RMS | 0,0358 m | 0,0332 m |
+| Galat kecepatan vision, RMS (`check_estimation.py`) | 0,289 m/s | 0,281 m/s |
+| Waktu solve rata-rata / p99 | 16,35 / 23,3 ms | 16,40 / 24,5 ms |
+| Waktu solve maks / tick > 40 ms | 85,38 ms / 6 | 80,53 ms / 9 dari 4.000 |
+
+Waktu solve maks tetap > 50 ms di kedua pelacak: iterasi solver normal, tetapi
+waktu per iterasi melonjak 3-5x -- CPU sesaat lambat, bukan solver lebih berat
+(bagian 36.2). Log: `out/tracker_baek/`.
+
 Deviasi lajur **dipisah sebelum/sesudah manuver**: digabung, angkanya hampir
 seluruhnya berisi ekor transien kembali, bukan kualitas menjaga lajur (bagian
 15.5 dan 29.1).
@@ -234,7 +252,7 @@ menabrak guardrail.
 
 ## Pekerjaan yang Belum Selesai
 
-Diurutkan dari yang paling mendesak. Terakhir diperbarui 16 Oktober 2026.
+Diurutkan dari yang paling mendesak. Terakhir diperbarui 20 Oktober 2026.
 
 ### 1. Skenario S2, S4, S5 tidak punya definisi
 Bukan "belum diimplementasikan" — **naskahnya tidak ada di repo ini sama sekali**.
@@ -322,6 +340,15 @@ memakai `cv2.VideoWriter` dan tidak butuh ffmpeg.
   `tracking.py` kini ByteTrack apa adanya. Pendukung <= 4 tahun: Bihanda dkk.,
   *IEEE Access* 2024. Batas empat tahun ECCV 2022 tipis (terbit 23 Okt 2022).
   `WRITING_SUMMARY.md` bagian 35.4.
+- ~~**Rumus kecepatan Kalman halangan** tanpa sumber~~ -- selesai 19 Okt 2026:
+  Baek dkk. 2024 (*Intelligent Service Robotics*, Springer), dengan koreksi
+  salah cetak pers. (3). `WRITING_SUMMARY.md` bagian 36.1.
+- ~~**Rumus depth dan IPM** tanpa sumber~~ -- selesai 20 Okt 2026, rumus kode
+  sama persis dengan rujukan, kode tidak diubah (`WRITING_SUMMARY.md` bagian 37):
+  - decoding depth dan f = W/(2 tan(FOV/2)): dokumentasi resmi CARLA 0.9.16;
+  - balik-proyeksi piksel + depth: Cocheteux dkk., PseudoCal, BMVC 2023, pers. (1);
+  - IPM: Zhou dkk., Ground-VIO, *IEEE T-ITS* 25(10), 2024, pers. (3)-(4) dengan
+    roll = pitch = 0.
 - **Flash & Hogan (1985)** — dasar quintic minimum-jerk, belum diverifikasi ke
   sumber primer.
 - **Kebijakan aturan 4 tahun** untuk sumber asal konsep (Werling 2010,
@@ -338,10 +365,11 @@ kembali **+0,37 -> +0,11 m**, ekor deviasi **0,132 -> 0,050 m**.
 Yang tersisa: bias arah statis 0,1-0,2 deg yang bergantung lajur. Tiga dugaan
 gugur (pitch, roll, jalan menurun); sebabnya belum ketemu.
 
-### 11. ~~Waktu solve maksimum perlu diukur di mesin senggang~~ -- selesai 3 Okt 2026
-Diulang dengan server CARLA baru dinyalakan, tanpa beban lain: maksimum **31,37 ms**
-(vision, 10 run) dan 28,83 ms (GT, 5 run), semua di bawah anggaran 50 ms. Angka
-55,20 ms lama memang kontensi (`WRITING_SUMMARY.md` bagian 34).
+### 11. Waktu solve maksimum -- dibuka lagi 20 Okt 2026
+3 Okt: maksimum 31,37 ms (vision) dan 28,83 ms (GT) dengan server baru
+(`WRITING_SUMMARY.md` bagian 34). 20 Okt, di mesin sepi setelah reboot, angka itu
+**tidak berhasil diulang**: maks 80-85 ms, di kedua pelacak (#14, bagian 36.2).
+Rata-rata (~16,4 ms) dan p99 (~23-25 ms) tetap jauh di bawah 50 ms.
 
 ### 12. Kalibrasi tinggi kamera belum dilakukan
 `check_ipm.py` mengukur tinggi kamera efektif **1,6368 m** terhadap 1,6500 m yang
@@ -363,7 +391,18 @@ ada angkanya untuk ditulis di batasan masalah.
 - **Rem lebih dalam** (-3,2 -> -4,0 m/s²) terjadi saat target terlihat penuh.
   Dugaan: tau 0,6 membuat target terdeteksi 3 tick lebih lambat. Belum dibuktikan.
 
-### 14. Lain-lain
+### 14. Sisa rumus kecepatan Baek dkk.
+- **Waktu solve maks > 50 ms, juga di mesin sepi** (85,38 / 80,53 ms; 6 / 9 tick
+  dari 4.000 di atas 40 ms). Iterasi normal, waktu per iterasi melonjak 3-5x.
+  Kandidat: penjadwalan OS atau frekuensi CPU (governor `powersave`). Belum
+  dibuktikan; maks 31,37 ms di bagian 34 tidak berhasil diulang. Klaim real-time
+  di bab 4 harus memuat p99 dan jumlah tick yang melampaui anggaran.
+- **Perlambatan terdalam** rata-rata lebih dangkal (-3,22 vs -4,00 m/s²) tetapi
+  sebarannya melebar (-2,44..-4,22). Sebabnya belum ditelusuri.
+- Kecepatan absolut diputar ikut frame ego dan batas g -> 0 diambil limitnya:
+  dua tambahan yang tidak ada di paper. Sebut di bab 3.
+
+### 15. Lain-lain
 - Klaim real-time sudah diukur (`WRITING_SUMMARY.md` 21.3), tetapi mesin **tidak
   benar-benar senggang** saat pengukuran (load ~3-5). Angka di mesin sepi
   kemungkinan sedikit lebih baik, bukan lebih buruk.

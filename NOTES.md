@@ -3390,3 +3390,53 @@ target terlihat penuh, jadi bukan akibat track hilang. WRITING_SUMMARY bagian 35
 
 **Yang masih terbuka:** waktu solve maks 48,46 ms di satu run (perlu diukur ulang
 setelah restart server), dan perilaku tanpa track melayang saat ada oklusi (S3/S5).
+
+---
+
+## Rumus Kecepatan Halangan dari Baek dkk. (2024) — 19-20 Oktober 2026
+
+**Permintaan penulis:** rumus depth, kecepatan, dan IPM harus punya rujukan yang
+sama persis. Depth dan IPM ketemu (entri berikutnya). Kecepatan tidak: bentuk
+relatif p' = Rot(-w dt)(p + v dt) tidak ada di jurnal mana pun. Penulis memilih
+mengubah kode supaya mengikuti Baek, Kim & Yi (2024), *Intelligent Service
+Robotics* 17:1125-1141 (Springer, open access).
+
+**Yang diikuti:** pers. (3) kompensasi gerak ego (ego menempuh busur, posisi track
+dipindah ke frame ego baru) lalu pers. (4) constant velocity dengan kecepatan
+ABSOLUT. **Salah cetak paper:** translasi kedua tercetak (v/g) - (v/g) sin(g dt);
+geometri busur memberi (v/g)(1 - cos(g dt)). Dibuktikan dengan uji yang
+membandingkan terhadap transformasi eksak R(-g dt)(P - d); versi salah cetak
+gagal. Dua tambahan di luar paper: kecepatan ikut diputar (paper hanya memindah
+posisi), dan limit g -> 0. Q dan R tetap milik skripsi ini. Kontrak keluaran ke
+perception tidak berubah (kecepatan relatif); `a_ego` dihapus dari tracker karena
+kecepatan absolut tidak dipengaruhi percepatan ego (MPC tetap memakai `a_filt`).
+
+**Diukur di mesin sepi** (20 Okt, setelah reboot, browser ditutup; satu percobaan
+dibatalkan karena browser masih terbuka, satu lagi karena server CARLA segfault
+saat klien tersambung). Pembanding Kalman lama (git worktree) dan Kalman Baek di
+sesi server yang sama, 10 + 10 run S1 vision: keduanya 10/10; jarak bodi 1,962 ->
+2,002 m; galat prediksi 0,0358 -> 0,0332 m. `check_estimation.py`: galat vx RMS
+0,289 -> 0,281 m/s, konvergensi 0,80 -> 0,75 s.
+
+**Waktu solve maks > 50 ms di KEDUA kolom, juga di mesin sepi** (85,38 dan 80,53
+ms). Dugaan awal "kontensi" -- diajukan saat pengukuran pertama bertabrakan dengan
+uji otomatis dan browser -- **gugur**. Yang terukur: iterasi di tick lonjakan normal
+(8-14), tetapi waktu per iterasi melonjak dari median 1,9 ke 5,8-9,3 ms. CPU sesaat
+lambat, bukan solver lebih berat. Governor CPU `powersave`. Sebab pastinya belum
+dibuktikan; maks 31,37 ms bagian 34 tidak berhasil diulang.
+
+WRITING_SUMMARY bagian 36.
+
+---
+
+## Rujukan Rumus Depth dan IPM — 20 Oktober 2026
+
+Kode tidak diubah; rumusnya sudah sama persis dengan rujukan yang isinya dibuka:
+decoding depth dan f = W/(2 tan(FOV/2)) dari dokumentasi resmi CARLA 0.9.16;
+balik-proyeksi piksel + depth dari pers. (1) PseudoCal (Cocheteux dkk., BMVC 2023);
+IPM dari pers. (3)-(4) Ground-VIO (Zhou dkk., IEEE T-ITS 2024) dengan roll =
+pitch = 0. Tanda minus pada y hanya perjanjian sumbu (y ego ke kiri). Jurnal <= 4
+tahun yang menulis rumus decoding depth CARLA tidak ditemukan.
+
+WRITING_SUMMARY bagian 37.
+
